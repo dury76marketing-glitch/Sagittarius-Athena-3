@@ -299,6 +299,11 @@ export class Database {
       create index if not exists sag_feeder_signal_intel_v1_system_time on sag_feeder_signal_intel_v1(system_name,signal_at_ms desc);
       create index if not exists sag_feeder_signal_intel_v1_ticker on sag_feeder_signal_intel_v1(system_name,ticker,signal_at_ms desc);
       create table if not exists sag_audit(id bigserial primary key,ts timestamptz not null default now(),level text not null,event text not null,data jsonb not null default '{}'::jsonb);
+      create table if not exists sag_atomic_thunder_events_v1(
+        id bigserial primary key,event_key text not null unique,system_name text not null,hunter_id text not null,ticker text not null,
+        event_type text not null,at_ms bigint not null,data jsonb not null default '{}'::jsonb
+      );
+      create index if not exists sag_atomic_thunder_system_event on sag_atomic_thunder_events_v1(system_name,event_type,at_ms desc);
     `);
     await this.migrateLearningData();
   }
@@ -529,6 +534,44 @@ export class Database {
 
   async insertSnapshot(s){await this.pool.query(`insert into sag_snapshots(system_name,created_at_ms,portfolio_value_cents,realized_pnl_cents,unrealized_pnl_cents,hunter_realized_pnl_cents,hunter_unrealized_pnl_cents,feeder_realized_pnl_cents,feeder_unrealized_pnl_cents,win_rate,open_count,closed_count) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,[s.systemName,s.createdAtMs,s.portfolioValueCents,s.realizedPnlCents,s.unrealizedPnlCents,s.hunterRealizedPnlCents,s.hunterUnrealizedPnlCents,s.feederRealizedPnlCents,s.feederUnrealizedPnlCents,s.winRate,s.openCount,s.closedCount]);await this.pool.query('delete from sag_snapshots where id in (select id from sag_snapshots where system_name=$1 order by created_at_ms desc offset 2500)',[s.systemName]);}
   async snapshots(systemName,limit=500){const r=await this.pool.query('select * from sag_snapshots where system_name=$1 order by created_at_ms desc limit $2',[systemName,limit]);return r.rows.reverse();}
+  async recordAtomicThunderEvent({eventKey,systemName,hunterId,ticker,eventType,atMs=Date.now(),data={}}={}){
+    if(!eventKey||!systemName||!hunterId||!ticker||!eventType)return false;
+    const r=await this.pool.query(`insert into sag_atomic_thunder_events_v1(event_key,system_name,hunter_id,ticker,event_type,at_ms,data) values($1,$2,$3,$4,$5,$6,$7) on conflict(event_key) do nothing returning id`,[String(eventKey),String(systemName),String(hunterId),String(ticker),String(eventType),Number(atMs)||Date.now(),data||{}]);
+    return r.rowCount>0;
+  }
+  async atomicThunderStats(systemName){
+    const [events,harvests,recent]=await Promise.all([
+      this.pool.query(`select event_type,count(*)::int as count,max(at_ms)::bigint as last_at_ms from sag_atomic_thunder_events_v1 where system_name=$1 group by event_type`,[systemName]),
+      this.pool.query(`select e.id,e.pnl_cents,e.opened_at_ms,e.closed_at_ms,p.state from sag_entries e left join sag_profit_episodes_v1 p on p.id=e.id where e.system_name=$1 and e.archived=false and e.status='closed' and e.close_reason='atomic_thunder_cashout' order by e.closed_at_ms desc`,[systemName]),
+      this.pool.query(`select hunter_id,ticker,event_type,at_ms,data from sag_atomic_thunder_events_v1 where system_name=$1 order by at_ms desc,id desc limit 30`,[systemName]),
+    ]);
+    const byEvent=Object.fromEntries(events.rows.map((r)=>[r.event_type,{count:Number(r.count||0),lastAtMs:Number(r.last_at_ms||0)}]));
+    let realizedPnlCents=0,totalTimeMs=0,avoidedLossCents=0,forgoneUpsideCents=0,lossesAvoided=0,researchComplete=0;
+    for(const row of harvests.rows){
+      const actual=Number(row.pnl_cents||0);realizedPnlCents+=actual;totalTimeMs+=Math.max(0,Number(row.closed_at_ms||0)-Number(row.opened_at_ms||0));
+      const st=row.state&&typeof row.state==='object'?row.state:{};
+      const finiteOrNull=(value)=>value===null||value===undefined||value===''?null:(Number.isFinite(Number(value))?Number(value):null);
+      const postMin=finiteOrNull(st.postExitMinExecutableNetCents);const terminal=finiteOrNull(st.terminalNetCents);
+      const futureDown=[postMin,terminal].filter((v)=>v!==null);
+      if(futureDown.length){const worst=Math.min(...futureDown);if(worst<actual){avoidedLossCents+=Math.max(0,actual-worst);if(worst<0)lossesAvoided+=1;}}
+      const postMax=finiteOrNull(st.postExitMaxExecutableNetCents);const best=Math.max(0,...[postMax,terminal].filter((v)=>v!==null));
+      forgoneUpsideCents+=Math.max(0,best-actual);
+      if(st.trackingComplete===true)researchComplete+=1;
+    }
+    const harvestCount=harvests.rows.length;
+    return {
+      observedHunters:Number(byEvent.observing?.count||0),
+      opportunitiesDetected:Number(byEvent.opportunity_detected?.count||0),
+      harvestsExecuted:harvestCount,
+      invalidOpportunitiesBlocked:Number(byEvent.invalid_opportunity_blocked?.count||0),
+      confirmationResets:Number(byEvent.confirmation_reset?.count||0),
+      realizedPnlCents,averageProfitCents:harvestCount?realizedPnlCents/harvestCount:0,
+      averageTimeToHarvestMs:harvestCount?totalTimeMs/harvestCount:0,
+      lossesAvoided,avoidedLossCents,forgoneUpsideCents,researchComplete,
+      lastHarvestAtMs:Number(byEvent.harvest_executed?.lastAtMs||0)||null,
+      recent:recent.rows.map((r)=>({hunterId:r.hunter_id,ticker:r.ticker,eventType:r.event_type,atMs:Number(r.at_ms||0),data:r.data||{}})),
+    };
+  }
   async audit(level,event,data={}){await this.pool.query('insert into sag_audit(level,event,data) values($1,$2,$3)',[level,event,data]);}
   async recentAudit(limit=100){const r=await this.pool.query('select id,ts,level,event,data from sag_audit order by id desc limit $1',[limit]);return r.rows;}
 }

@@ -16,9 +16,7 @@ import {
   ATHENA_EXIT_INTELLIGENCE,
   GOLDEN_EYE,
   PROFIT_LEARNING_INTELLIGENCE,
-  HARD_ECONOMIC_LOSS_CEILING,
-  hardEconomicLossCeilingForStakeCents,
-  r43EntryQualityAssessment,
+  ATOMIC_THUNDER,
   stableDropEntry,
   estimateTimeLeftMs,
 } from './doctrine.mjs';
@@ -960,60 +958,6 @@ export class StrategyEngine {
     return { count, averagePriceCents: Number(exact.avgCents ?? q.yesAsk), bestAskCents: Number(exact.bestCents ?? q.yesAsk), freshMarket };
   }
 
-  hardEconomicLossEntryFeasibility(q, plan, settings) {
-    const count = Math.max(0, Number(plan?.count || 0));
-    const entryPriceCents = Number(plan?.averagePriceCents || q?.yesAsk || 0);
-    if (!(count > 0) || !(entryPriceCents > 0)) {
-      return { ok:false, reason:'invalid_entry_plan' };
-    }
-    const originalEntryNotionalCents = entryPriceCents * count;
-    const policy = hardEconomicLossCeilingForStakeCents(originalEntryNotionalCents);
-    const feePerContractCents = Math.max(0, Number(settings?.simFeeCents || 0));
-    const plannedEntryFeeCents = feePerContractCents * count;
-    const plannedExitFeeCents = feePerContractCents * count;
-    const hasExecutableBid = typeof this.market?.executableBid === 'function';
-    const productionVerifiedBook = typeof this.market?.refreshTickerVerified === 'function';
-    if (productionVerifiedBook && !hasExecutableBid) {
-      return {
-        ok:false, reason:'exitability_probe_unavailable',
-        originalEntryNotionalCents, maximumLossCents:policy.maximumLossCents,
-        plannedEntryFeeCents, plannedExitFeeCents,
-      };
-    }
-    const exitExec = hasExecutableBid ? this.market.executableBid(q.ticker, count, 1) : null;
-    const fullExit = Boolean(exitExec?.full && Number(exitExec?.filled || 0) + 1e-9 >= count && Number(exitExec?.avgCents || 0) > 0);
-    if (hasExecutableBid && !fullExit) {
-      return {
-        ok:false, reason:'full_exit_depth_unavailable',
-        originalEntryNotionalCents, maximumLossCents:policy.maximumLossCents, count,
-        executableExitFilled:Number(exitExec?.filled || 0), executableExitFull:Boolean(exitExec?.full),
-        plannedEntryFeeCents, plannedExitFeeCents,
-      };
-    }
-    const immediateExitPriceCents = fullExit ? Number(exitExec.avgCents) : Number(q?.yesBid || 0);
-    if (!(immediateExitPriceCents > 0)) {
-      return {
-        ok:false, reason:'immediate_exit_price_unavailable',
-        originalEntryNotionalCents, maximumLossCents:policy.maximumLossCents, count,
-        plannedEntryFeeCents, plannedExitFeeCents,
-      };
-    }
-    const projectedImmediateLossCents = Math.max(0,
-      (entryPriceCents - immediateExitPriceCents) * count + plannedEntryFeeCents + plannedExitFeeCents
-    );
-    const ok = projectedImmediateLossCents + 1e-9 < policy.maximumLossCents;
-    return {
-      ok,
-      reason: ok ? 'inside_hard_economic_loss_budget' : 'entry_consumes_hard_economic_loss_budget',
-      version:HARD_ECONOMIC_LOSS_CEILING.version,
-      policyRevision:HARD_ECONOMIC_LOSS_CEILING.policyRevision,
-      originalEntryNotionalCents, maximumLossCents:policy.maximumLossCents,
-      lossRatio:policy.lossRatio, absoluteMaximumLossCents:policy.absoluteMaximumLossCents,
-      count, entryPriceCents, immediateExitPriceCents, projectedImmediateLossCents,
-      plannedEntryFeeCents, plannedExitFeeCents, fullExitabilityProven:fullExit,
-      evidence: fullExit ? 'fresh_full_position_executable_bid' : 'isolated_adapter_top_bid_compatibility',
-    };
-  }
 
   async activeHunterTickerExposure(ticker) {
     const s = this.getSettings();
@@ -1492,57 +1436,6 @@ export class StrategyEngine {
       if (!(await this.exactTickerExposureClear(concept, q, 'pre_execution'))) { trace('R13_EXPOSURE','BLOCKED','exact_ticker_exposure'); return null; }
       trace('R13_EXPOSURE','PASS');
 
-      // R42/HELC1 entry-side feasibility: a Hunter may not be opened if the
-      // same freshly verified book cannot liquidate the planned full position
-      // inside its own stake-relative economic-loss budget. This prevents large
-      // stakes / low prices / fees / spread from creating a position that is
-      // already at or beyond the maximum capital loss the instant it opens.
-      const helcEntry = this.hardEconomicLossEntryFeasibility(executionQuote, plan, s);
-      if (!helcEntry.ok) {
-        trace('HELC_ENTRY_FEASIBILITY','BLOCKED',helcEntry.reason,{
-          basisStakeCents:helcEntry.originalEntryNotionalCents ?? null,
-          maximumLossCents:helcEntry.maximumLossCents ?? null,
-          projectedImmediateLossCents:helcEntry.projectedImmediateLossCents ?? null,
-          fullExitabilityProven:Boolean(helcEntry.fullExitabilityProven),
-        });
-        await this.audit('hunter_entry_helc_feasibility_blocked',{
-          concept,ticker:q.ticker,eventTicker:expectedEventTicker,sourceFeeder,
-          ...helcEntry,
-        },'warning');
-        return null;
-      }
-      trace('HELC_ENTRY_FEASIBILITY','PASS',helcEntry.reason,{
-        basisStakeCents:helcEntry.originalEntryNotionalCents,
-        maximumLossCents:helcEntry.maximumLossCents,
-        projectedImmediateLossCents:helcEntry.projectedImmediateLossCents,
-        fullExitabilityProven:Boolean(helcEntry.fullExitabilityProven),
-      });
-
-      // R43/EQC1: R42 only proves that the proposed position can survive inside
-      // HELC. R43 requires the immediate full-position round-trip economics to
-      // consume strictly less than 0.30R and the authoritative game clock to be
-      // at least 30 minutes old. This is a real execution gate, not telemetry.
-      const r43EntryQuality = r43EntryQualityAssessment({ helcEntry, gameMinutes: finalElapsed });
-      if (!r43EntryQuality.ok) {
-        trace('R43_ENTRY_QUALITY','BLOCKED',r43EntryQuality.reason,{
-          entryFrictionR:r43EntryQuality.entryFrictionR,
-          maximumEntryFrictionR:r43EntryQuality.maximumEntryFrictionR,
-          gameMinutes:r43EntryQuality.gameMinutes,
-          minimumGameMinutes:r43EntryQuality.minimumGameMinutes,
-        });
-        await this.audit('hunter_entry_r43_quality_blocked',{
-          concept,ticker:q.ticker,eventTicker:expectedEventTicker,sourceFeeder,
-          ...r43EntryQuality,
-        },'info');
-        return null;
-      }
-      trace('R43_ENTRY_QUALITY','PASS',r43EntryQuality.reason,{
-        entryFrictionR:r43EntryQuality.entryFrictionR,
-        maximumEntryFrictionR:r43EntryQuality.maximumEntryFrictionR,
-        gameMinutes:r43EntryQuality.gameMinutes,
-        minimumGameMinutes:r43EntryQuality.minimumGameMinutes,
-      });
-
       if (s.mode === 'SIMULATION') {
       const available = await this.simulationAvailableCashCents();
       const estimatedEntryFee = Number(s.simFeeCents || 0) * plan.count;
@@ -1608,7 +1501,15 @@ export class StrategyEngine {
       if (goldenFeedAuthority && typeof goldenFeedAuthority === 'object') frozenEntryConfig.goldenFeedAuthority = structuredClone(goldenFeedAuthority);
       if (entryQualificationSnapshot && typeof entryQualificationSnapshot === 'object') frozenEntryConfig.entryQualification = structuredClone(entryQualificationSnapshot);
       if (athenaAssessment && typeof athenaAssessment === 'object') frozenEntryConfig.athena = structuredClone(athenaAssessment);
-      frozenEntryConfig.entryQualityCovenant = structuredClone(r43EntryQuality);
+      frozenEntryConfig.atomicThunder = {
+        version:ATOMIC_THUNDER.version, policyRevision:ATOMIC_THUNDER.policyRevision,
+        enabledAtEntry:Boolean(s.atomicThunderEnabled),
+        minimumNetPerOriginalContractCents:Number(s.atomicThunderMinNetPerOriginalContractCents ?? ATOMIC_THUNDER.minimumNetPerOriginalContractCents),
+        requiredFreshConfirmations:Math.max(1,Math.floor(Number(s.atomicThunderRequiredConfirmations ?? ATOMIC_THUNDER.requiredFreshConfirmations))),
+        maximumBookAgeMs:Math.max(100,Math.floor(Number(s.atomicThunderMaximumBookAgeMs ?? ATOMIC_THUNDER.maximumBookAgeMs))),
+        confirmationWindowMs:Math.max(250,Math.floor(Number(s.atomicThunderConfirmationWindowMs ?? ATOMIC_THUNDER.confirmationWindowMs))),
+        fullPositionOnly:true, lossAuthority:'U-SG1',
+      };
       const e = {
       id, systemName: s.systemName, ownerId: s.ownerId, conceptName: concept,
       sourceFeeder, sourceTradeId, ticker: q.ticker, eventTicker: q.eventTicker || q.ticker,

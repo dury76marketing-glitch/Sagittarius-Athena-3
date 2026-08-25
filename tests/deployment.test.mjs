@@ -20,22 +20,30 @@ test('database learning schema is versioned and legacy-compatible',async()=>{con
 
 test('dashboard exposes independent ON/OFF controls for all ten entry models',async()=>{const html=await readFile(resolve(root,'public/index.html'),'utf8');const app=await readFile(resolve(root,'public/app.js'),'utf8');assert.ok(html.includes('<th>Enabled</th>'));for(const key of ['pegasusEnabled','sagittariusEnabled','dragonEnabled','goldenDragonEnabled','momentumHunterEnabled','waveSurferEnabled','recoveryHunterEnabled','crashRecoveryHunterEnabled','dragonRecoveryHunterEnabled','goldenDragonHunterEnabled'])assert.ok(app.includes(key),`${key} toggle missing`);assert.ok(app.includes("Existing Hunter positions remain protected"));});
 
-test('R43 production release promotes only the validated Entry Quality Covenant while preserving R42 loss authority',async()=>{
+test('R44 removes R42/R43 authorities, preserves EMI1, and installs Atomic Thunder as a separate profit-only authority',async()=>{
   const config=await readFile(resolve(root,'src/config.mjs'),'utf8');
   const doctrine=await readFile(resolve(root,'src/doctrine.mjs'),'utf8');
   const strategy=await readFile(resolve(root,'src/strategy.mjs'),'utf8');
   const engine=await readFile(resolve(root,'src/engine.mjs'),'utf8');
-  assert.ok(config.includes("SAGITTARIUS-R43-HF1-ENTRY-MODE-ISOLATION-2026-08-25"));
-  assert.ok(doctrine.includes("version: 'EQC1'"));
-  assert.ok(doctrine.includes("authority: 'EXECUTION'"));
-  assert.ok(doctrine.includes('maximumEntryFrictionR: 0.30'));
-  assert.ok(doctrine.includes('minimumGameMinutes: 30'));
-  assert.ok(strategy.includes("trace('R43_ENTRY_QUALITY','BLOCKED'"));
-  assert.ok(strategy.includes("'hunter_entry_r43_quality_blocked'"));
-  assert.ok(strategy.includes('frozenEntryConfig.entryQualityCovenant'));
-  assert.ok(engine.includes('r43EntryQualityCovenant: R43_ENTRY_QUALITY_COVENANT.version'));
-  assert.ok(engine.includes('hardEconomicLossCeiling: HARD_ECONOMIC_LOSS_CEILING.version'),'R42 HELC must remain present');
-  assert.ok(engine.includes('ultimateStopGuard: ULTIMATE_STOP_GUARD.version'),'U-SG1 must remain sole loss authority');
+  const db=await readFile(resolve(root,'src/db.mjs'),'utf8');
+  const html=await readFile(resolve(root,'public/index.html'),'utf8');
+  assert.ok(config.includes("SAGITTARIUS-R44-ATOMIC-THUNDER-R41-STOP-RESTORE-2026-08-26"));
+  assert.equal(doctrine.includes("version: 'EQC1'"),false);
+  assert.equal(doctrine.includes("version: 'HELC1'"),false);
+  assert.equal(strategy.includes('hardEconomicLossEntryFeasibility'),false);
+  assert.equal(strategy.includes('entryQualityCovenant'),false);
+  assert.equal(engine.includes('hardEconomicLossCeiling:'),false);
+  assert.equal(engine.includes('r43EntryQualityCovenant:'),false);
+  assert.ok(engine.includes("entryModeIsolation:'EMI1'"));
+  assert.ok(doctrine.includes("version: 'ATOMIC-THUNDER-V1'"));
+  assert.ok(doctrine.includes("authority: 'PROFIT_EXIT'"));
+  assert.ok(strategy.includes('frozenEntryConfig.atomicThunder'));
+  assert.ok(engine.includes('atomicThunder:{ version:ATOMIC_THUNDER.version'));
+  assert.ok(db.includes('sag_atomic_thunder_events_v1'));
+  assert.ok(db.includes('atomicThunderStats(systemName)'));
+  const at=html.indexOf('ATOMIC THUNDER');
+  const hunters=html.indexOf('HUNTERS &amp; FEEDERS');
+  assert.ok(at>=0&&hunters>=0&&at<hunters,'Atomic Thunder dedicated section must render above normal Hunters/Feeders');
 });
 
 
@@ -217,7 +225,7 @@ test('R40 FSI1 is diagnostics-only, persisted separately, and cannot enter the t
 });
 
 
-test('R42 Stop Guard preserves SGRL1 stake normalization and adds HELC1 as a non-negotiable U-SG1 capital covenant',async()=>{
+test('R44 restores the R41 U-SG1 plus SLW1-R2 loss doctrine without HELC1 while preserving SGRL1 evidence',async()=>{
   const doctrine=await readFile(resolve(root,'src/doctrine.mjs'),'utf8');
   const db=await readFile(resolve(root,'src/db.mjs'),'utf8');
   const learning=await readFile(resolve(root,'src/learning.mjs'),'utf8');
@@ -225,37 +233,19 @@ test('R42 Stop Guard preserves SGRL1 stake normalization and adds HELC1 as a non
   const engine=await readFile(resolve(root,'src/engine.mjs'),'utf8');
   const strategy=await readFile(resolve(root,'src/strategy.mjs'),'utf8');
   assert.ok(doctrine.includes("version: 'SGRL1'"));
-  assert.ok(doctrine.includes("policyRevision: 'SLW1-R3-HARD-ECONOMIC-CEILING'"));
-  assert.ok(doctrine.includes("version: 'HELC1'"));
-  assert.ok(doctrine.includes('lossRatio: 0.375'));
-  assert.ok(doctrine.includes('absoluteMaximumLossCents: 7500'));
-  assert.ok(doctrine.includes("fullPositionEconomicBasis: 'fee_adjusted_aggregate_liquidation_net'"));
-  assert.ok(doctrine.includes('recoveryVetoAllowed: false'));
-  assert.ok(doctrine.includes('durableFlattenRequired: true'));
-  assert.ok(doctrine.includes("lossAuthority: 'U-SG1'"));
+  assert.ok(doctrine.includes("policyRevision: 'SLW1-R2-STAKE-NORMALIZED'"));
   assert.ok(doctrine.includes("stakeBasis: 'original_entry_notional'"));
   assert.ok(doctrine.includes('wakeLossRatio: 0.30'));
   assert.ok(doctrine.includes('catastrophicLossRatio: 0.90'));
+  assert.equal(doctrine.includes("version: 'HELC1'"),false);
+  assert.equal(pg.includes('hardEconomicLossCeiling('),false);
+  assert.equal(pg.includes('probeHardEconomicLossCeiling'),false);
+  assert.equal(pg.includes('commitHardEconomicLossCeiling'),false);
+  assert.equal(strategy.includes('hardEconomicLossEntryFeasibility'),false);
   assert.ok(pg.includes('stopLossWatchdogThresholds(entry)'));
-  assert.ok(pg.includes('hardEconomicLossCeiling(entry, settings'));
-  assert.ok(pg.includes('probeHardEconomicLossCeiling'));
-  assert.ok(pg.includes('commitHardEconomicLossCeiling'));
-  assert.ok(pg.includes("commitStopGuardExit(entry, probe.q || q, durableState, 'hard_economic_loss_ceiling')"));
-  assert.ok(pg.includes("phase:'EXIT_COMMITTED'"));
-  assert.ok(pg.includes("exitReason:'hard_economic_loss_ceiling'"));
-  assert.ok(strategy.includes('hardEconomicLossEntryFeasibility'));
-  assert.ok(strategy.includes("trace('HELC_ENTRY_FEASIBILITY','BLOCKED'"));
-  assert.ok(strategy.includes("'hunter_entry_helc_feasibility_blocked'"));
-  assert.ok(strategy.includes('full_exit_depth_unavailable'));
-  assert.ok(strategy.includes('entry_consumes_hard_economic_loss_budget'));
   assert.ok(pg.includes('lossThresholds.severeLossCents'));
   assert.ok(engine.includes('stopLossWatchdogStakeNormalized: STOP_LOSS_WATCHDOG.stakeNormalized'));
-  assert.ok(engine.includes('hardEconomicLossCeiling: HARD_ECONOMIC_LOSS_CEILING.version'));
-  assert.ok(engine.includes('hardEconomicLossCeilingRatio: HARD_ECONOMIC_LOSS_CEILING.lossRatio'));
-  assert.ok(engine.includes('hardEconomicLossCeilingAbsoluteMaximumCents: HARD_ECONOMIC_LOSS_CEILING.absoluteMaximumLossCents'));
-  assert.ok(engine.includes('hardEconomicLossCeilingRecoveryVetoAllowed: HARD_ECONOMIC_LOSS_CEILING.recoveryVetoAllowed'));
-  assert.ok(engine.includes('hardEconomicLossCeilingDurableFlattenRequired: HARD_ECONOMIC_LOSS_CEILING.durableFlattenRequired'));
-  assert.ok(engine.includes('hardEconomicLossCeilingLossAuthority: HARD_ECONOMIC_LOSS_CEILING.lossAuthority'));
+  assert.ok(engine.includes("stopDoctrine: 'R41_STYLE_USG1_PLUS_SLW1_R2'"));
   assert.ok(doctrine.includes('legacyRecoveryPatternDecisionAuthority: false'));
   assert.ok(doctrine.includes('marketObserverDecisionAuthority: false'));
   assert.ok(db.includes('sag_stop_guard_recovery_v1'));
@@ -272,16 +262,11 @@ test('R42 Stop Guard preserves SGRL1 stake normalization and adds HELC1 as a non
   assert.ok(pg.includes('slw1_severe_live_deterioration'));
   assert.ok(pg.includes('slw1_catastrophic_stall'));
   assert.ok(pg.includes('economic_severe_stall'));
-  assert.ok(doctrine.includes('weakHistoryGraceMs: 5 * 60 * 1000'));
-  assert.ok(doctrine.includes('minimumLiveOverrideAgeMs: 25 * 60 * 1000'));
-  assert.ok(doctrine.includes('strongHistorySevereGraceMs: 30 * 60 * 1000'));
-  assert.ok(doctrine.includes('severeStallMs: 30 * 60 * 1000'));
-  assert.ok(doctrine.includes('catastrophicStallMs: 25 * 60 * 1000'));
   assert.ok(engine.includes('stopGuardHistoricalStrongUnlimitedVeto: false'));
   assert.ok(engine.includes("stopGuardRecoveryDefinition: 'full_position_executable_fee_adjusted_positive_net'"));
-  assert.equal(pg.includes("closeReason:'slw1"),false,'R42 must still delegate all loss execution to the existing U-SG1 hard-stop lane');
-  assert.equal(doctrine.includes('placeOrder'),false,'doctrine must never become an execution engine');
-  assert.equal(learning.includes('placeOrder'),false,'learning must never become an execution engine');
+  assert.equal(pg.includes("closeReason:'slw1"),false,'SLW1 still delegates loss execution to U-SG1');
+  assert.equal(doctrine.includes('placeOrder'),false);
+  assert.equal(learning.includes('placeOrder'),false);
 });
 
 

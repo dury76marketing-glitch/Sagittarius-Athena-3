@@ -10,7 +10,7 @@ const bool = (name, fallback) => {
 };
 const pem = (v='') => String(v).replace(/\\n/g, '\n').trim();
 
-export const RELEASE = 'SAGITTARIUS-R43-HF1-ENTRY-MODE-ISOLATION-2026-08-25';
+export const RELEASE = 'SAGITTARIUS-R44-ATOMIC-THUNDER-R41-STOP-RESTORE-2026-08-26';
 
 export const env = Object.freeze({
   port: num('PORT', 3000),
@@ -39,6 +39,12 @@ export const CANONICAL_NUMERIC_SETTINGS = Object.freeze([
   'simFillProbability',
   'simFeeCents',
   'recoveryTrackingHours',
+
+  // Atomic Thunder per-Hunter profit-harvest controls.
+  'atomicThunderMinNetPerOriginalContractCents',
+  'atomicThunderRequiredConfirmations',
+  'atomicThunderMaximumBookAgeMs',
+  'atomicThunderConfirmationWindowMs',
 
   // Pegasus reference-feeder controls.
   'pegasusReferenceStakeCents',
@@ -154,6 +160,7 @@ export const CANONICAL_BOOLEAN_SETTINGS = Object.freeze([
   'goldenDragonHunterEnabled',
   'goldenEyeEnabled',
   'goldenEyeLiveEnabled',
+  'atomicThunderEnabled',
 ]);
 
 export const EDITABLE_NUMERIC_SETTINGS = Object.freeze(CANONICAL_NUMERIC_SETTINGS.filter((k) => k !== 'resetTimestampMs'));
@@ -181,6 +188,7 @@ export function originalSettings() {
     goldenDragonHunterEnabled: false,
     goldenEyeEnabled: true,
     goldenEyeLiveEnabled: false,
+    atomicThunderEnabled: true,
 
     maxPositions: 8,
     maxEntriesPerTrade: 8,
@@ -192,6 +200,10 @@ export function originalSettings() {
     simFillProbability: 0.75,
     simFeeCents: 2,
     recoveryTrackingHours: 24,
+    atomicThunderMinNetPerOriginalContractCents: 1,
+    atomicThunderRequiredConfirmations: 2,
+    atomicThunderMaximumBookAgeMs: 1000,
+    atomicThunderConfirmationWindowMs: 3000,
 
     pegasusReferenceStakeCents: 3000,
     pegasusMinPriceCents: 80,
@@ -284,20 +296,13 @@ export function originalSettings() {
   };
 }
 
-// R43 fresh-install prospective profile. This is intentionally separate from
-// originalSettings(): older persisted deployments keep their own historical
-// settings, while a brand-new R43 database boots into the clean Pegasus -> Wave
-// broad experiment used by the external R43-SIM1 validation.
+// R44 fresh-install profile. This remains separate from originalSettings() so
+// persisted deployments preserve their settings while a brand-new database
+// boots safely in SIMULATION with the current reference/Hunter lane.
 export function freshInstallSettings() {
-  // R43 prospective lane: the strongest externally validated configuration
-  // from R43-SIM1. All other concepts remain available in the code/UI but are
-  // fail-safe OFF on a brand-new database so this repository measures one
-  // clean causal experiment instead of mixing entry models.
   return {
     ...originalSettings(),
-    // R43-HF1: this repository is a prospective SIMULATION experiment. A
-    // deployment-level DEFAULT_ENGINE_MODE=LIVE from another Sagittarius repo
-    // must never silently turn a fresh R43 database into a disarmed LIVE state.
+    // Fresh installs are always SIMULATION regardless of deployment defaults.
     // LIVE remains available only through the explicit runtime arm flow.
     mode:'SIMULATION',
     liveArmed:false,
@@ -334,11 +339,10 @@ export function freshInstallSettings() {
 export function normalizeStartupExecutionMode(settings = {}, allowLiveTrading = env.allowLiveTrading) {
   const current = settings && typeof settings === 'object' ? { ...settings } : {};
   // A persisted LIVE selection is impossible to execute when deployment policy
-  // explicitly disables LIVE trading. Leaving that state in place used to
-  // suppress the entire entry chain. For the R43 simulation repository, recover
-  // deterministically to SIMULATION while preserving engineActive and every
-  // strategy setting. If LIVE is deployment-authorized, remain fail-closed and
-  // disarmed after restart; the operator must explicitly re-arm it.
+  // explicitly disables LIVE trading. Recover deterministically to SIMULATION
+  // while preserving engineActive and every strategy setting. If LIVE is
+  // deployment-authorized, remain fail-closed and disarmed after restart; the
+  // operator must explicitly re-arm it.
   if (String(current.mode || '').toUpperCase() === 'LIVE' && allowLiveTrading !== true) {
     return { settings: { ...current, mode:'SIMULATION', liveArmed:false }, recovered:true, reason:'live_trading_disabled' };
   }
@@ -375,9 +379,8 @@ export function sanitizeRuntimeSettings(value = {}, defaults = originalSettings(
   if(hasPersistedRecord&&!looksLikeSystem6Flood){
     for(const [key,value] of Object.entries(legacyGoldenStructure)) if(!Object.hasOwn(src,key)) src[key]=value;
   }
-  // R43 fresh-install defaults no longer represent the old System 6 flood
-  // experiment. Preserve that persisted cohort explicitly instead of relying
-  // on whichever fresh-install profile happens to be current.
+  // Preserve the historical System 6 flood cohort explicitly instead of
+  // relying on whichever fresh-install profile happens to be current.
   if(hasPersistedRecord&&looksLikeSystem6Flood){
     const system6GoldenStructure={
       goldenDragonMinCrashCents:15,goldenDragonMinReboundCents:7,goldenDragonMinReclaimRate:.40,
@@ -403,6 +406,14 @@ export function sanitizeRuntimeSettings(value = {}, defaults = originalSettings(
   if (Object.hasOwn(src, 'systemName') && String(src.systemName).trim()) out.systemName = String(src.systemName).trim();
   if (Object.hasOwn(src, 'ownerId') && String(src.ownerId).trim()) out.ownerId = String(src.ownerId).trim();
   if (Object.hasOwn(src, 'mode')) out.mode = String(src.mode).toUpperCase() === 'LIVE' ? 'LIVE' : 'SIMULATION';
+  // R44 Atomic Thunder migration: a persisted SIMULATION repository adopts
+  // the new profit-harvest authority by default, while a persisted LIVE
+  // repository remains fail-closed until the operator explicitly enables it.
+  if (hasPersistedRecord && !Object.hasOwn(src, 'atomicThunderEnabled')) out.atomicThunderEnabled = out.mode === 'SIMULATION';
+  out.atomicThunderMinNetPerOriginalContractCents = Math.max(0.01, Number(out.atomicThunderMinNetPerOriginalContractCents) || 0.01);
+  out.atomicThunderRequiredConfirmations = Math.max(1, Math.floor(Number(out.atomicThunderRequiredConfirmations) || 1));
+  out.atomicThunderMaximumBookAgeMs = Math.max(100, Math.floor(Number(out.atomicThunderMaximumBookAgeMs) || 100));
+  out.atomicThunderConfirmationWindowMs = Math.max(250, Math.floor(Number(out.atomicThunderConfirmationWindowMs) || 250));
   // R37 Golden Eye is safe to auto-enable only for an already-persisted
   // SIMULATION deployment. LIVE upgrades remain fail-closed until the operator
   // explicitly enables goldenEyeLiveEnabled in addition to normal LIVE arming.

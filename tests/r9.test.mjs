@@ -55,8 +55,8 @@ function runtimeDb(initial = originalSettings()) {
   };
 }
 
-test('R42 retains Athena B1, Golden Eye GE1-R2, FSI1, DX1 and the hardened safety baseline while adding HELC1', () => {
-  assert.equal(RELEASE, 'SAGITTARIUS-R43-HF1-ENTRY-MODE-ISOLATION-2026-08-25');
+test('R44 retains Athena B1, Golden Eye GE1-R2, FSI1, DX1 and the hardened baseline while restoring R41 loss doctrine', () => {
+  assert.equal(RELEASE, 'SAGITTARIUS-R44-ATOMIC-THUNDER-R41-STOP-RESTORE-2026-08-26');
   assert.equal(originalSettings().minGameMinutes, 20, 'original Base44 min_game_minutes default must be restored');
 });
 

@@ -1,4 +1,4 @@
-import { FEEDER_CONCEPTS, ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, stopLossWatchdogThresholdsForStakeCents, HARD_ECONOMIC_LOSS_CEILING, hardEconomicLossCeilingForStakeCents, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE } from './doctrine.mjs';
+import { FEEDER_CONCEPTS, ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, stopLossWatchdogThresholdsForStakeCents, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE, ATOMIC_THUNDER } from './doctrine.mjs';
 import { advanceAthenaExitState, athenaExitTelemetry } from './athenaExit.mjs';
 import { assessAthenaBrain } from './athena.mjs';
 import { classifyDeterministic } from './learning.mjs';
@@ -294,6 +294,10 @@ export class ProfitGuard {
     this.athena = athena;
     this.getSettings = getSettings;
     this.states = new Map();
+    // Atomic Thunder confirmation state is process-local and deliberately
+    // fail-closed. A restart requires two new distinct fresh-book confirmations
+    // and therefore cannot authorize a profit exit from stale memory.
+    this.atomicThunderStates = new Map();
     this.entryLocks = new Map();
     this.activeTickers = new Set();
     this.profitLearningQueues = new Map();
@@ -347,146 +351,6 @@ export class ProfitGuard {
 
   stopLossWatchdogThresholds(entry) {
     return stopLossWatchdogThresholdsForStakeCents(this.stopLossWatchdogStakeBasisCents(entry));
-  }
-
-  hardEconomicLossCeiling(entry, settings, count = remainingCount(entry)) {
-    const policy = hardEconomicLossCeilingForStakeCents(this.stopLossWatchdogStakeBasisCents(entry));
-    const qty = Math.max(1, n(count));
-    // Kalshi prices are cent-granular. Trigger on the last integer liquidation
-    // price that can still keep aggregate fee-adjusted P/L inside the approved
-    // loss budget; waiting for the next lower cent can itself overshoot it.
-    const triggerPriceCents = this.priceForAggregateNetTargetCents(entry, qty, settings, -policy.maximumLossCents);
-    return { ...policy, triggerPriceCents, quantity:qty };
-  }
-
-  async probeHardEconomicLossCeiling(entry, q, settings, { force = false } = {}) {
-    const qty = Math.max(1, remainingCount(entry));
-    const policy = this.hardEconomicLossCeiling(entry, settings, qty);
-    const firstBid = n(q?.yesBid);
-    const firstNet = firstBid > 0 ? this.aggregateExecutableNetCents(entry, qty, firstBid, settings) : null;
-    const firstLoss = firstNet == null ? 0 : Math.max(0, -firstNet);
-    const nearCeiling = firstBid > 0 && (firstBid <= policy.triggerPriceCents || firstLoss + 1e-9 >= policy.maximumLossCents);
-    if (!force && !nearCeiling) {
-      return { breached:false, policy, q, bookFresh:false, fullExecutable:false, optimisticLossCents:firstLoss, executableLossCents:null, evidence:'not_near_ceiling' };
-    }
-
-    await this.market.ensureFreshBook(entry.ticker, STOP_LOSS_WATCHDOG.maximumBookAgeMs).catch(() => null);
-    const freshQ = this.market.getQuote(entry.ticker) || q;
-    const bid = n(freshQ?.yesBid, firstBid);
-    const ask = n(freshQ?.yesAsk);
-    const book = this.market.getBook?.(entry.ticker);
-    const bookMs = n(book?.updatedAtMs, n(freshQ?.updatedAtMs));
-    const ageMs = bookMs > 0 ? Date.now() - bookMs : Infinity;
-    const bookFresh = Boolean(book && bookMs > 0 && ageMs >= -STOP_LOSS_WATCHDOG.maximumFutureBookSkewMs && ageMs <= STOP_LOSS_WATCHDOG.maximumBookAgeMs && !freshQ?.bookInvalid && bid > 0 && ask > 0 && bid <= ask);
-    const optimisticNet = bid > 0 ? this.aggregateExecutableNetCents(entry, qty, bid, settings) : null;
-    const optimisticLossCents = optimisticNet == null ? 0 : Math.max(0, -optimisticNet);
-    const exec = bookFresh ? this.market.executableBid?.(entry.ticker, qty, 1) : null;
-    const executableFilled = n(exec?.filled);
-    const fullExecutable = Boolean(exec?.full && executableFilled + 1e-9 >= qty && n(exec?.avgCents) > 0);
-    const executablePriceCents = fullExecutable ? n(exec.avgCents) : null;
-    const executableNet = fullExecutable ? this.aggregateExecutableNetCents(entry, qty, executablePriceCents, settings) : null;
-    const executableLossCents = executableNet == null ? null : Math.max(0, -executableNet);
-    const partialAverageCents = !fullExecutable && executableFilled > 0 && n(exec?.avgCents) > 0 ? n(exec.avgCents) : null;
-
-    // Full VWAP is authoritative when available. If full depth is absent, a
-    // fresh best bid/partial VWAP at or below the last-safe price is already a
-    // mathematical lower bound: completing the liquidation cannot improve on
-    // that top-of-book price, so waiting would intentionally exceed the budget.
-    const fullBreach = fullExecutable && (executablePriceCents <= policy.triggerPriceCents || n(executableLossCents) + 1e-9 >= policy.maximumLossCents);
-    const lowerBoundBreach = bookFresh && !fullExecutable && (
-      bid <= policy.triggerPriceCents || (partialAverageCents != null && partialAverageCents <= policy.triggerPriceCents)
-    );
-    const breached = Boolean(fullBreach || lowerBoundBreach);
-    const evidence = fullBreach ? 'full_position_executable_vwap' : lowerBoundBreach ? 'fresh_executable_lower_bound_insufficient_depth' : bookFresh ? 'fresh_book_inside_ceiling' : 'book_unavailable_or_stale';
-    return { breached, policy, q:freshQ, bookFresh, fullExecutable, executableFilled, executablePriceCents, executableLossCents, optimisticLossCents, partialAverageCents, evidence, bookMs };
-  }
-
-  async commitHardEconomicLossCeiling(entry, q, settings, probe, existingState = null) {
-    const now = Date.now();
-    const bid = n(probe?.q?.yesBid, n(q?.yesBid, entry.currentPriceCents));
-    const stopLoss = stopLossForEntry(entry, settings);
-    const dangerLineCents = existingState ? n(existingState.dangerLineCents, Math.max(0, n(entry.entryPriceCents) - stopLoss)) : Math.max(0, n(entry.entryPriceCents) - stopLoss);
-    const penetrationCents = Math.max(0, dangerLineCents - bid);
-    const prior = existingState && existingState.version === ULTIMATE_STOP_GUARD.version ? existingState : null;
-    const watchdog = stopLossWatchdogState(entry) || prior?.watchdog || entry?.stopGuardState?.watchdog || null;
-    const state = {
-      ...(prior || {}),
-      version:ULTIMATE_STOP_GUARD.version,
-      phase:'HELC1_EXIT_COMMITTED',
-      armedAtMs:n(prior?.armedAtMs, now),
-      dangerLineCents,
-      stopLossCents:stopLoss,
-      zone:prior?.zone || (penetrationCents > 0 ? stopGuardZone(penetrationCents) : 'ECONOMIC_CEILING'),
-      penetrationCents,
-      maxPenetrationCents:Math.max(n(prior?.maxPenetrationCents), penetrationCents),
-      minBidCents:Math.min(n(prior?.minBidCents, bid), bid),
-      lastBidCents:bid,
-      lastObservedQuoteMs:n(probe?.q?.updatedAtMs, now),
-      structureStrong:Boolean(prior?.structureStrong),
-      watchdog,
-      stakeNormalization:{...this.stopLossWatchdogThresholds(entry)},
-      hardEconomicLossCeiling:{
-        version:HARD_ECONOMIC_LOSS_CEILING.version,
-        policyRevision:HARD_ECONOMIC_LOSS_CEILING.policyRevision,
-        stakeBasis:probe.policy.stakeBasis,
-        basisStakeCents:probe.policy.basisStakeCents,
-        lossRatio:probe.policy.lossRatio,
-        absoluteMaximumLossCents:probe.policy.absoluteMaximumLossCents,
-        maximumLossCents:probe.policy.maximumLossCents,
-        triggerPriceCents:probe.policy.triggerPriceCents,
-        evidence:probe.evidence,
-        fullExecutable:Boolean(probe.fullExecutable),
-        executableFilled:n(probe.executableFilled),
-        executablePriceCents:probe.executablePriceCents,
-        executableLossCents:probe.executableLossCents,
-        optimisticLossCents:n(probe.optimisticLossCents),
-        recoveryVetoAllowed:false,
-        durableFlattenRequired:true,
-        triggeredAtMs:now,
-      },
-    };
-    // Capital safety must become durable before any nonessential learning or
-    // telemetry work. If the process dies after this write, the normal U-SG1
-    // restart path sees EXIT_COMMITTED and resumes flattening even if price has
-    // recovered in the meantime.
-    const durableState={
-      ...state,
-      phase:'EXIT_COMMITTED',
-      exitReason:'hard_economic_loss_ceiling',
-      exitCommittedAtMs:now,
-      exitBidCents:bid,
-      updatedAtMs:now,
-    };
-    await this.db.updateEntry(entry.id,{
-      stopGuardState:durableState,
-      currentPriceCents:bid,
-      stopPriceCents:dangerLineCents,
-      updatedAtMs:now,
-    });
-    entry.stopGuardState=durableState;
-    entry.currentPriceCents=bid;
-    entry.stopPriceCents=dangerLineCents;
-
-    await this.beginStopGuardLearningEpisode(entry,'USG1',{
-      triggerPriceCents:probe.executablePriceCents ?? bid,
-      triggerLossCents:probe.executableLossCents ?? n(probe.optimisticLossCents),
-      dangerLineCents,
-      crash:typeof this.learning?.crashState==='function' ? (this.learning.crashState(entry.ticker)||{}) : {},
-      coverageKind:'causal_from_trigger',
-      atMs:now,
-    });
-    await this.audit('hard_economic_loss_ceiling_triggered', {
-      id:entry.id, ticker:entry.ticker, concept:entry.conceptName,
-      basisStakeCents:probe.policy.basisStakeCents,
-      maximumLossCents:probe.policy.maximumLossCents,
-      triggerPriceCents:probe.policy.triggerPriceCents,
-      bidCents:bid, executablePriceCents:probe.executablePriceCents,
-      executableLossCents:probe.executableLossCents,
-      optimisticLossCents:n(probe.optimisticLossCents),
-      evidence:probe.evidence, fullExecutable:Boolean(probe.fullExecutable),
-      recoveryVetoAllowed:false, lossAuthority:ULTIMATE_STOP_GUARD.version,
-    }, 'warning');
-    return this.commitStopGuardExit(entry, probe.q || q, durableState, 'hard_economic_loss_ceiling');
   }
 
   async stopGuardLearningProfile(entry, bid, penetrationCents, cohort = {}) {
@@ -595,15 +459,10 @@ export class ProfitGuard {
     if (bid0<=danger || stopGuardState(entry)) return { handled:false };
 
     const lossThresholds=this.stopLossWatchdogThresholds(entry);
-    const hardCeiling=this.hardEconomicLossCeiling(entry,settings,remainingCount(entry));
     let state=stopLossWatchdogState(entry);
     const optimisticNet0=this.aggregateExecutableNetCents(entry,remainingCount(entry),bid0,settings);
     const optimisticLoss0=optimisticNet0==null?0:Math.max(0,-optimisticNet0);
-    // R42: on large stakes the $75 absolute cap can sit well inside the normal
-    // 30% SLW1 wake level. Never skip the hard-ceiling probe merely because the
-    // classifier itself has not armed yet.
-    const nearHardCeiling0=bid0<=hardCeiling.triggerPriceCents||optimisticLoss0+1e-9>=hardCeiling.maximumLossCents;
-    if (!state && !nearHardCeiling0 && optimisticLoss0 + 1e-9 < lossThresholds.wakeLossCents) return { handled:false };
+    if (!state && optimisticLoss0 + 1e-9 < lossThresholds.wakeLossCents) return { handled:false };
 
     await this.market.ensureFreshBook(entry.ticker, STOP_LOSS_WATCHDOG.maximumBookAgeMs).catch(() => null);
     const freshQ=this.market.getQuote(entry.ticker)||q;
@@ -620,12 +479,6 @@ export class ProfitGuard {
     const executableNet=executableFull?this.aggregateExecutableNetCents(entry,count,n(exec.avgCents),settings):null;
     const executableLoss=executableNet==null?0:Math.max(0,-executableNet);
     const observedLoss=Math.max(optimisticLoss,executableLoss);
-
-    // HELC1 outranks all history, structure and grace logic. Trigger on the
-    // last safe cent/VWAP so cent granularity itself cannot intentionally push
-    // the position beyond its stake-relative budget.
-    const ceilingProbe=await this.probeHardEconomicLossCeiling(entry,freshQ,settings,{force:nearHardCeiling0||bid<=hardCeiling.triggerPriceCents||observedLoss+1e-9>=hardCeiling.maximumLossCents});
-    if(ceilingProbe.breached)return this.commitHardEconomicLossCeiling(entry,ceilingProbe.q||freshQ,settings,ceilingProbe,null);
 
     if (state && observedLoss <= lossThresholds.resetLossCents) return this.clearStopLossWatchdog(entry,freshQ,state);
     if (!state && observedLoss + 1e-9 < lossThresholds.wakeLossCents) return { handled:false };
@@ -827,13 +680,6 @@ export class ProfitGuard {
     const stopLoss = stopLossForEntry(entry, settings);
     const configuredDanger = Math.max(0, n(entry.entryPriceCents) - stopLoss);
     const danger = state ? n(state.dangerLineCents, configuredDanger) : configuredDanger;
-    // A U-SG1 exit commitment is a durable flatten obligation. If the process
-    // died after persisting EXIT_COMMITTED but before the exit path persisted
-    // exit_pending, restart must resume the sell instead of re-entering any
-    // recovery/reclaim branch.
-    if(state?.phase==='EXIT_COMMITTED'&&state?.exitReason){
-      return this.commitStopGuardExit(entry,q,state,state.exitReason);
-    }
     const touched = rawDecision?.action === 'hard_stop' || bid <= danger;
     if (!state && !touched) {
       const watchdog = await this.handleStopLossWatchdog(entry, q, settings);
@@ -951,12 +797,6 @@ export class ProfitGuard {
       if(migratedEpisode) state={...state,recoveryLearningEpisodeVersion:STOP_GUARD_RECOVERY_LEARNING.version,recoveryLearningCoverageKind:migratedEpisode.coverageKind||retryCoverage};
     }
 
-    // R42: HELC1 is evaluated before reclaim, historical profiles, structure,
-    // emergency zones and recovery deadlines. Those mechanisms may improve an
-    // exit inside the budget, but none may veto the capital ceiling.
-    const hardCeilingProbe=await this.probeHardEconomicLossCeiling(entry,q,settings);
-    if(hardCeilingProbe.breached)return this.commitHardEconomicLossCeiling(entry,hardCeilingProbe.q||q,settings,hardCeilingProbe,state);
-
     if (observedMs > n(state.lastObservedQuoteMs) && bid >= danger + ULTIMATE_STOP_GUARD.reclaimBufferCents) {
       // This branch is retained for defensive compatibility with a state that
       // was persisted by an earlier R15 build before lastObservedQuoteMs moved.
@@ -994,10 +834,7 @@ export class ProfitGuard {
     const optimisticEconomicNet=this.aggregateExecutableNetCents(entry,qty,bid,settings);
     const optimisticEconomicLoss=optimisticEconomicNet==null?0:Math.max(0,-optimisticEconomicNet);
     const retainedWatchdog=state.watchdog&&state.watchdog.version===STOP_LOSS_WATCHDOG.version?state.watchdog:null;
-    const hardCeilingPolicy=this.hardEconomicLossCeiling(entry,settings,qty);
     const economicProbeRequired=optimisticEconomicLoss>=lossThresholds.severeLossCents
-      ||optimisticEconomicLoss>=hardCeilingPolicy.maximumLossCents
-      ||bid<=hardCeilingPolicy.triggerPriceCents
       ||n(retainedWatchdog?.peakLossCents)>=lossThresholds.severeLossCents;
     if (zone !== 'RECOVERY' || now >= n(state.deadlineMs) || economicProbeRequired) {
       await this.market.ensureFreshBook(entry.ticker, STOP_LOSS_WATCHDOG.maximumBookAgeMs).catch(() => null);
@@ -1207,6 +1044,153 @@ export class ProfitGuard {
     return isGoldenEyeTradeEntry(entry);
   }
 
+  isAtomicThunderTrade(entry) {
+    if (!entry || FEEDER_CONCEPTS.has(entry.conceptName)) return false;
+    return String(entry?.entryConfig?.atomicThunder?.version || '') === ATOMIC_THUNDER.version;
+  }
+
+  isAtomicThunderExitDecision(entry, decision) {
+    if (String(decision?.reason || '') !== 'atomic_thunder_cashout') return false;
+    return this.isAtomicThunderTrade(entry)
+      || String(decision?.atomicThunder || '') === ATOMIC_THUNDER.version;
+  }
+
+  atomicThunderPolicy(entry, settings = this.getSettings()) {
+    const frozen = entry?.entryConfig?.atomicThunder;
+    const enabled = Boolean(settings?.atomicThunderEnabled) && this.isAtomicThunderTrade(entry) && frozen?.enabledAtEntry !== false;
+    const minimumNetPerOriginalContractCents = Math.max(0.01, n(frozen?.minimumNetPerOriginalContractCents, ATOMIC_THUNDER.minimumNetPerOriginalContractCents));
+    const requiredFreshConfirmations = Math.max(1, Math.floor(n(frozen?.requiredFreshConfirmations, ATOMIC_THUNDER.requiredFreshConfirmations)));
+    const maximumBookAgeMs = Math.max(100, Math.floor(n(frozen?.maximumBookAgeMs, ATOMIC_THUNDER.maximumBookAgeMs)));
+    const confirmationWindowMs = Math.max(250, Math.floor(n(frozen?.confirmationWindowMs, ATOMIC_THUNDER.confirmationWindowMs)));
+    return { enabled, minimumNetPerOriginalContractCents, requiredFreshConfirmations, maximumBookAgeMs, confirmationWindowMs };
+  }
+
+  atomicThunderTargetNetCents(entry, settings = this.getSettings()) {
+    const policy = this.atomicThunderPolicy(entry, settings);
+    return policy.minimumNetPerOriginalContractCents * Math.max(0, n(entry?.count));
+  }
+
+  atomicThunderExitFloorCents(entry, settings = this.getSettings()) {
+    return this.priceForAggregateNetTargetCents(entry, remainingCount(entry), settings, this.atomicThunderTargetNetCents(entry, settings));
+  }
+
+  async recordAtomicThunderEvent(entry, eventType, data = {}, eventSuffix = '') {
+    if (typeof this.db?.recordAtomicThunderEvent !== 'function' || !entry?.id) return false;
+    const suffix = eventSuffix ? `:${eventSuffix}` : '';
+    const systemName = entry.systemName || this.getSettings()?.systemName || 'SAGITTARIUS';
+    const eventKey = `${systemName}:${ATOMIC_THUNDER.version}:${entry.id}:${eventType}${suffix}`;
+    return this.db.recordAtomicThunderEvent({
+      eventKey, systemName, hunterId:entry.id, ticker:entry.ticker, eventType, atMs:Date.now(),
+      data:{ version:ATOMIC_THUNDER.version, policyRevision:ATOMIC_THUNDER.policyRevision, ...(data || {}) },
+    }).catch(() => false);
+  }
+
+  async resetAtomicThunderConfirmation(entry, reason, extra = {}) {
+    const prior = this.atomicThunderStates.get(entry.id);
+    if (!prior || n(prior.confirmations) <= 0) return;
+    this.atomicThunderStates.delete(entry.id);
+    await this.recordAtomicThunderEvent(entry, 'confirmation_reset', {
+      reason, priorConfirmations:n(prior.confirmations), lastEvidenceMs:n(prior.lastEvidenceMs), ...extra,
+    }, `${n(prior.lastEvidenceMs)}:${reason}`);
+  }
+
+  atomicThunderTelemetry(entry, assessment = null) {
+    const state = this.atomicThunderStates.get(entry?.id) || {};
+    const a = assessment || {};
+    return {
+      atomicThunder:ATOMIC_THUNDER.version,
+      atomicThunderPolicyRevision:ATOMIC_THUNDER.policyRevision,
+      atomicThunderState:a.triggered ? 'HARVEST_READY' : n(state.confirmations) > 0 ? 'PROFIT_CONFIRMING' : 'OBSERVING',
+      atomicThunderConfirmations:n(state.confirmations),
+      atomicThunderRequiredConfirmations:n(a.policy?.requiredFreshConfirmations, n(state.requiredFreshConfirmations, ATOMIC_THUNDER.requiredFreshConfirmations)),
+      atomicThunderExecutableNetCents:Number.isFinite(Number(a.executableNetCents)) ? n(a.executableNetCents) : null,
+      atomicThunderTargetNetCents:Number.isFinite(Number(a.targetNetCents)) ? n(a.targetNetCents) : null,
+      atomicThunderExitFloorCents:Number.isFinite(Number(a.exitFloorCents)) ? n(a.exitFloorCents) : null,
+      atomicThunderExecutableBidCents:Number.isFinite(Number(a.executableBidCents)) ? n(a.executableBidCents) : null,
+    };
+  }
+
+  async evaluateAtomicThunder(entry, q, settings) {
+    const policy = this.atomicThunderPolicy(entry, settings);
+    if (!policy.enabled) {
+      this.atomicThunderStates.delete(entry?.id);
+      return { eligible:false, triggered:false, policy, q };
+    }
+
+    await this.recordAtomicThunderEvent(entry, 'observing', {
+      concept:entry.conceptName, sourceFeeder:entry.sourceFeeder || null,
+      minimumNetPerOriginalContractCents:policy.minimumNetPerOriginalContractCents,
+      requiredFreshConfirmations:policy.requiredFreshConfirmations,
+    });
+
+    const remain = remainingCount(entry);
+    if (remain <= 1e-9) return { eligible:true, triggered:false, policy, q, reason:'no_remaining_position' };
+
+    await this.market.ensureFreshBook(entry.ticker, policy.maximumBookAgeMs).catch(() => null);
+    const freshQ = this.market.getQuote(entry.ticker) || q;
+    const book = this.market.getBook?.(entry.ticker);
+    const bookMs = n(book?.updatedAtMs);
+    const quoteMs = n(freshQ?.updatedAtMs, bookMs);
+    const now = Date.now();
+    const bookAgeMs = bookMs > 0 ? now - bookMs : Infinity;
+    const quoteAgeMs = quoteMs > 0 ? now - quoteMs : Infinity;
+    const bid = n(freshQ?.yesBid);
+    const ask = n(freshQ?.yesAsk);
+    const validFresh = Boolean(
+      book && bookMs > 0 && bookAgeMs >= -STOP_LOSS_WATCHDOG.maximumFutureBookSkewMs && bookAgeMs <= policy.maximumBookAgeMs
+      && quoteMs > 0 && quoteAgeMs >= -STOP_LOSS_WATCHDOG.maximumFutureBookSkewMs && quoteAgeMs <= ATOMIC_THUNDER.maximumQuoteAgeMs
+      && !freshQ?.bookInvalid && bid > 0 && (ask <= 0 || bid <= ask)
+    );
+    if (!validFresh) {
+      await this.resetAtomicThunderConfirmation(entry, 'stale_or_invalid_book', { bookAgeMs, quoteAgeMs, bidCents:bid });
+      if (bid > n(entry.entryPriceCents)) await this.recordAtomicThunderEvent(entry, 'invalid_opportunity_blocked', { reason:'stale_or_invalid_book', bidCents:bid, bookAgeMs, quoteAgeMs }, 'stale_or_invalid_book');
+      return { eligible:true, triggered:false, policy, q:freshQ, reason:'stale_or_invalid_book', bookMs, bookAgeMs, quoteAgeMs };
+    }
+
+    const targetNetCents = this.atomicThunderTargetNetCents(entry, settings);
+    const exitFloorCents = this.atomicThunderExitFloorCents(entry, settings);
+    const exec = this.market.executableBid?.(entry.ticker, remain, 1) || null;
+    const fullExecutable = Boolean(exec?.full && n(exec?.filled) + 1e-9 >= remain && n(exec?.avgCents) > 0);
+    const executableBidCents = fullExecutable ? n(exec.avgCents) : null;
+    const executableNetCents = fullExecutable ? this.aggregateExecutableNetCents(entry, remain, executableBidCents, settings) : null;
+    const qualifies = fullExecutable && n(executableNetCents, -Infinity) + 1e-9 >= targetNetCents;
+
+    if (!qualifies) {
+      const prior = this.atomicThunderStates.get(entry.id);
+      if (prior?.confirmations) await this.resetAtomicThunderConfirmation(entry, 'profit_window_lost', { bidCents:bid, exitFloorCents, executableFull:fullExecutable, executableFilled:n(exec?.filled), executableNetCents });
+      if (bid > n(entry.entryPriceCents)) {
+        const reason = !fullExecutable ? 'insufficient_full_position_depth' : 'fee_adjusted_net_below_threshold';
+        await this.recordAtomicThunderEvent(entry, 'invalid_opportunity_blocked', {
+          reason, bidCents:bid, exitFloorCents, remaining:remain, executableFilled:n(exec?.filled), executableFull:fullExecutable,
+          executableNetCents, targetNetCents,
+        }, reason);
+      }
+      return { eligible:true, triggered:false, policy, q:freshQ, reason:!fullExecutable?'insufficient_full_position_depth':'net_below_threshold', targetNetCents, exitFloorCents, executableNetCents, executableBidCents, fullExecutable, bookMs };
+    }
+
+    const prior = this.atomicThunderStates.get(entry.id);
+    const distinctEvidence = !prior || bookMs > n(prior.lastEvidenceMs);
+    let confirmations = n(prior?.confirmations);
+    const withinWindow = Boolean(prior) && now - n(prior?.lastQualifiedAtMs) <= policy.confirmationWindowMs;
+    if (!withinWindow) confirmations = 0;
+    if (distinctEvidence) confirmations += 1;
+    const state = {
+      confirmations, requiredFreshConfirmations:policy.requiredFreshConfirmations,
+      firstQualifiedAtMs:withinWindow ? n(prior?.firstQualifiedAtMs, now) : now,
+      lastQualifiedAtMs:now, lastEvidenceMs:distinctEvidence ? bookMs : n(prior?.lastEvidenceMs, bookMs),
+      executableNetCents, targetNetCents, exitFloorCents, executableBidCents,
+    };
+    this.atomicThunderStates.set(entry.id, state);
+    if (confirmations === 1 && distinctEvidence) {
+      await this.recordAtomicThunderEvent(entry, 'opportunity_detected', {
+        bidCents:bid, executableBidCents, executableNetCents, targetNetCents, exitFloorCents,
+        confirmations, requiredFreshConfirmations:policy.requiredFreshConfirmations, bookMs,
+      });
+    }
+    const triggered = confirmations >= policy.requiredFreshConfirmations;
+    return { eligible:true, triggered, policy, q:freshQ, targetNetCents, exitFloorCents, executableNetCents, executableBidCents, fullExecutable:true, confirmations, bookMs, state };
+  }
+
   isGoldenEyeExitDecision(entry, decision) {
     if (String(decision?.reason || '') !== 'golden_eye_cashout') return false;
     return this.isGoldenEyeTrade(entry) || String(decision?.goldenEye || '') === GOLDEN_EYE.version;
@@ -1217,7 +1201,7 @@ export class ProfitGuard {
   }
 
   isProfitLearningTrade(entry) {
-    return this.isProtectedRunnerTrade(entry) || this.isAthenaExitTrade(entry) || this.isGoldenEyeTrade(entry);
+    return this.isAtomicThunderTrade(entry) || this.isProtectedRunnerTrade(entry) || this.isAthenaExitTrade(entry) || this.isGoldenEyeTrade(entry);
   }
 
   isAthenaExitDecision(entry, decision) {
@@ -1451,7 +1435,7 @@ export class ProfitGuard {
     const observedBookMs = Math.max(1, n(book?.updatedAtMs, n(freshQ?.updatedAtMs, Date.now())));
     const bookFresh = Boolean(
       book && observedBookMs > 0 && Date.now() - observedBookMs <= 5000
-      && !freshQ?.bookInvalid && bid > 0 && ask > 0 && bid <= ask
+      && !freshQ?.bookInvalid && bid > 0 && (ask <= 0 || bid <= ask)
     );
     const breakEvenPriceCents = this.protectedRunnerBreakEvenPriceCents(entry, settings);
     const originalCount = Math.max(count, n(entry.count, count));
@@ -1627,7 +1611,7 @@ export class ProfitGuard {
     const observedBookMs = Math.max(1, n(book?.updatedAtMs, n(freshQ?.updatedAtMs, Date.now())));
     const bookFresh = Boolean(
       book && observedBookMs > 0 && Date.now() - observedBookMs <= 5000
-      && !freshQ?.bookInvalid && bid > 0 && ask > 0 && bid <= ask
+      && !freshQ?.bookInvalid && bid > 0 && (ask <= 0 || bid <= ask)
     );
     const breakEvenPriceCents = this.protectedRunnerBreakEvenPriceCents(entry, settings);
     const originalCount = Math.max(count, n(entry.count, count));
@@ -2447,6 +2431,7 @@ export class ProfitGuard {
     const pri1Exit = this.isProtectedRunnerExitDecision(entry, decision);
     const x1Exit = this.isAthenaExitDecision(entry, decision);
     const goldenEyeExit = this.isGoldenEyeExitDecision(entry, decision);
+    const atomicThunderExit = this.isAtomicThunderExitDecision(entry, decision);
     let nextPri1State = null;
     let nextX1State = null;
     if (pri1Exit) {
@@ -2527,6 +2512,21 @@ export class ProfitGuard {
         fillPriceCents:px, exitVwapCents:averageExit, realizedNetCents:pnl,
       });
     }
+    if (atomicThunderExit) {
+      const eventType = remaining <= 1e-9 ? 'harvest_executed' : 'harvest_partial';
+      await this.recordAtomicThunderEvent(closedEntry, eventType, {
+        concept:entry.conceptName, sourceFeeder:entry.sourceFeeder || null, filled, remaining,
+        fillPriceCents:px, exitVwapCents:averageExit, realizedNetCents:pnl,
+        timeToHarvestMs:closedAtMs ? Math.max(0, closedAtMs - n(entry.openedAtMs)) : null,
+        targetNetCents:n(decision.atomicThunderTargetNetCents),
+        executableNetCents:n(decision.atomicThunderExecutableNetCents),
+      });
+      await this.audit(remaining <= 1e-9 ? 'atomic_thunder_harvest_filled' : 'atomic_thunder_harvest_partial', {
+        id:entry.id, ticker:entry.ticker, concept:entry.conceptName, filled, remaining,
+        fillPriceCents:px, exitVwapCents:averageExit, realizedNetCents:pnl,
+      });
+      if (remaining <= 1e-9) this.atomicThunderStates.delete(entry.id);
+    }
     return { closed: remaining <= 1e-9, remaining, filled, fillPriceCents: px, pnlCents: pnl, patch };
   }
 
@@ -2592,7 +2592,10 @@ export class ProfitGuard {
   async simulationExit(entry, decision, q) {
     const s = this.getSettings();
     const goldenEyeExitPre = this.isGoldenEyeExitDecision(entry, decision);
-    await this.market.ensureFreshBook(entry.ticker, goldenEyeExitPre ? GOLDEN_EYE.maximumExecutionBookAgeMs : 5000).catch(() => null);
+    const atomicThunderExitPre = this.isAtomicThunderExitDecision(entry, decision);
+    const atomicPolicyPre = atomicThunderExitPre ? this.atomicThunderPolicy(entry, s) : null;
+    const requiredBookAgeMs = atomicThunderExitPre ? atomicPolicyPre.maximumBookAgeMs : goldenEyeExitPre ? GOLDEN_EYE.maximumExecutionBookAgeMs : 5000;
+    await this.market.ensureFreshBook(entry.ticker, requiredBookAgeMs).catch(() => null);
     const freshQ = this.market.getQuote(entry.ticker) || q;
     const book = this.market.getBook(entry.ticker);
     const bookMs = n(book?.updatedAtMs);
@@ -2606,7 +2609,13 @@ export class ProfitGuard {
     const pri1Exit = this.isProtectedRunnerExitDecision(entry, decision);
     const x1Exit = this.isAthenaExitDecision(entry, decision);
     const goldenEyeExit = goldenEyeExitPre;
-    const profitProtectedExit = upg3Exit || apexExit || pri1Exit || x1Exit || goldenEyeExit;
+    const atomicThunderExit = atomicThunderExitPre;
+    const atomicPolicy = atomicThunderExit ? this.atomicThunderPolicy(entry, s) : null;
+    const profitProtectedExit = upg3Exit || apexExit || pri1Exit || x1Exit || goldenEyeExit || atomicThunderExit;
+    if (atomicThunderExit && (!book || bookMs <= 0 || Date.now() - bookMs > atomicPolicy.maximumBookAgeMs || freshQ?.bookInvalid)) {
+      await this.audit('atomic_thunder_exit_waiting_executable_book', { id:entry.id, ticker:entry.ticker, mode:'SIMULATION', bidCents:bid, remaining:remainingCount(entry), reason:'stale_or_invalid_book' }, 'warning');
+      return { closed:false, pending:false, remaining:remainingCount(entry), skipped:'atomic_thunder_stale_book' };
+    }
     if (pri1Exit && (!book || bookMs <= 0 || Date.now() - bookMs > 5000 || freshQ?.bookInvalid)) {
       await this.audit('pri1_exit_waiting_capital_execution', { id:entry.id, ticker:entry.ticker, mode:'SIMULATION', bidCents:bid, remaining:remainingCount(entry), reason:'stale_or_invalid_book' });
       return { closed:false, pending:false, remaining:remainingCount(entry), skipped:'pri1_stale_book' };
@@ -2624,6 +2633,10 @@ export class ProfitGuard {
       return { closed:false, pending:false, remaining:remainingCount(entry), skipped:'apex_profit_guard_stale_book' };
     }
     if (bid <= 0 || !book) {
+      if (atomicThunderExit) {
+        await this.audit('atomic_thunder_exit_waiting_executable_book', { id:entry.id, ticker:entry.ticker, mode:'SIMULATION', bidCents:bid, remaining:remainingCount(entry), reason:'no_executable_bid' });
+        return { closed:false, pending:false, remaining:remainingCount(entry), skipped:'atomic_thunder_no_executable_bid' };
+      }
       if (goldenEyeExit) {
         await this.audit('golden_eye_exit_waiting_executable_book', { id:entry.id, ticker:entry.ticker, mode:'SIMULATION', bidCents:bid, remaining:remainingCount(entry), reason:'no_executable_bid' });
         return { closed:false, pending:false, remaining:remainingCount(entry), skipped:'golden_eye_no_executable_bid' };
@@ -2649,8 +2662,12 @@ export class ProfitGuard {
       });
       return { closed: false, pending: true, remaining: remainingCount(entry), skipped: 'no_executable_bid' };
     }
-    const exitFloorCents = profitProtectedExit ? (goldenEyeExit ? this.goldenEyeBreakEvenPriceCents(entry, s) : x1Exit ? this.athenaExitBreakEvenPriceCents(entry, s) : pri1Exit ? this.protectedRunnerBreakEvenPriceCents(entry, s) : apexExit ? this.apexProfitGuardExitFloorCents(entry, s) : this.upg3ExitFloorCents(entry, s)) : bid;
+    const exitFloorCents = profitProtectedExit ? (atomicThunderExit ? this.atomicThunderExitFloorCents(entry, s) : goldenEyeExit ? this.goldenEyeBreakEvenPriceCents(entry, s) : x1Exit ? this.athenaExitBreakEvenPriceCents(entry, s) : pri1Exit ? this.protectedRunnerBreakEvenPriceCents(entry, s) : apexExit ? this.apexProfitGuardExitFloorCents(entry, s) : this.upg3ExitFloorCents(entry, s)) : bid;
     if (profitProtectedExit && bid < exitFloorCents) {
+      if (atomicThunderExit) {
+        await this.audit('atomic_thunder_exit_window_lost', { id:entry.id, ticker:entry.ticker, mode:'SIMULATION', bidCents:bid, profitFloorCents:exitFloorCents, remaining:remainingCount(entry) }, 'warning');
+        return { closed:false, pending:false, remaining:remainingCount(entry), skipped:'atomic_thunder_profit_floor_unavailable' };
+      }
       if (goldenEyeExit) {
         await this.audit('golden_eye_exit_waiting_positive_execution', { id:entry.id, ticker:entry.ticker, mode:'SIMULATION', bidCents:bid, breakEvenPriceCents:exitFloorCents, remaining:remainingCount(entry), reason:'capital_floor_unavailable' });
         return { closed:false, pending:false, remaining:remainingCount(entry), skipped:'golden_eye_capital_floor_unavailable' };
@@ -2691,6 +2708,10 @@ export class ProfitGuard {
     }
     const exec = this.market.executableBid(entry.ticker, remainingCount(entry), exitFloorCents);
     if (!exec || exec.filled <= 0) {
+      if (atomicThunderExit) {
+        await this.audit('atomic_thunder_exit_waiting_executable_book', { id:entry.id, ticker:entry.ticker, mode:'SIMULATION', bidCents:bid, profitFloorCents:exitFloorCents, remaining:remainingCount(entry), reason:'no_executable_bid' });
+        return { closed:false, pending:false, remaining:remainingCount(entry), skipped:'atomic_thunder_no_executable_bid' };
+      }
       if (goldenEyeExit) {
         await this.audit('golden_eye_exit_waiting_executable_book', { id:entry.id, ticker:entry.ticker, mode:'SIMULATION', bidCents:bid, breakEvenPriceCents:exitFloorCents, remaining:remainingCount(entry), reason:'no_executable_bid' });
         return { closed:false, pending:false, remaining:remainingCount(entry), skipped:'golden_eye_no_executable_bid' };
@@ -2717,14 +2738,15 @@ export class ProfitGuard {
       await this.audit('sim_exit_no_executable_bid', { id: entry.id, ticker: entry.ticker, reason: decision.reason, bidCents: bid, remaining: remainingCount(entry) });
       return { closed: false, pending: true, remaining: remainingCount(entry), skipped: 'no_executable_bid' };
     }
-    if ((x1Exit || goldenEyeExit) && (!exec.full || n(exec.filled) + 1e-9 < remainingCount(entry))) {
-      await this.audit(goldenEyeExit ? 'golden_eye_exit_waiting_full_position_depth' : 'athena_x1_exit_waiting_full_position_depth', {
+    if ((atomicThunderExit || x1Exit || goldenEyeExit) && (!exec.full || n(exec.filled) + 1e-9 < remainingCount(entry))) {
+      const depthEvent = atomicThunderExit ? 'atomic_thunder_exit_waiting_full_position_depth' : goldenEyeExit ? 'golden_eye_exit_waiting_full_position_depth' : 'athena_x1_exit_waiting_full_position_depth';
+      await this.audit(depthEvent, {
         id:entry.id,ticker:entry.ticker,mode:'SIMULATION',bidCents:bid,breakEvenPriceCents:exitFloorCents,
         remaining:remainingCount(entry),executableFilled:n(exec.filled),executableFull:Boolean(exec.full),
       }, 'warning');
-      return { closed:false,pending:false,remaining:remainingCount(entry),skipped:goldenEyeExit ? 'golden_eye_partial_depth_no_split' : 'athena_x1_partial_depth_no_split' };
+      return { closed:false,pending:false,remaining:remainingCount(entry),skipped:atomicThunderExit ? 'atomic_thunder_partial_depth_no_split' : goldenEyeExit ? 'golden_eye_partial_depth_no_split' : 'athena_x1_partial_depth_no_split' };
     }
-    const executionCount=(x1Exit||goldenEyeExit)?remainingCount(entry):n(exec.filled);
+    const executionCount=(atomicThunderExit||x1Exit||goldenEyeExit)?remainingCount(entry):n(exec.filled);
     const fee = n(s.simFeeCents) * executionCount;
     const result = await this.applyExitFill(entry, decision, {
       fillCount: executionCount,
@@ -2779,7 +2801,10 @@ export class ProfitGuard {
     if (entry.exitClientOrderId) return this.reconcileExistingExitIntent(entry, decision);
 
     const goldenEyeExitPre = this.isGoldenEyeExitDecision(entry, decision);
-    await this.market.ensureFreshBook(entry.ticker, goldenEyeExitPre ? GOLDEN_EYE.maximumExecutionBookAgeMs : 5000).catch(() => null);
+    const atomicThunderExitPre = this.isAtomicThunderExitDecision(entry, decision);
+    const atomicPolicyPre = atomicThunderExitPre ? this.atomicThunderPolicy(entry, s) : null;
+    const requiredBookAgeMs = atomicThunderExitPre ? atomicPolicyPre.maximumBookAgeMs : goldenEyeExitPre ? GOLDEN_EYE.maximumExecutionBookAgeMs : 5000;
+    await this.market.ensureFreshBook(entry.ticker, requiredBookAgeMs).catch(() => null);
     const q = this.market.getQuote(entry.ticker);
     const bid = n(q?.yesBid);
     const upg3Exit = this.isUpg3ExitDecision(entry, decision);
@@ -2787,9 +2812,15 @@ export class ProfitGuard {
     const pri1Exit = this.isProtectedRunnerExitDecision(entry, decision);
     const x1Exit = this.isAthenaExitDecision(entry, decision);
     const goldenEyeExit = goldenEyeExitPre;
-    const profitProtectedExit = upg3Exit || apexExit || pri1Exit || x1Exit || goldenEyeExit;
+    const atomicThunderExit = atomicThunderExitPre;
+    const atomicPolicy = atomicThunderExit ? this.atomicThunderPolicy(entry, s) : null;
+    const profitProtectedExit = upg3Exit || apexExit || pri1Exit || x1Exit || goldenEyeExit || atomicThunderExit;
     const exitBook = this.market.getBook?.(entry.ticker);
     const exitBookMs = n(exitBook?.updatedAtMs);
+    if (atomicThunderExit && (!exitBook || exitBookMs <= 0 || Date.now() - exitBookMs > atomicPolicy.maximumBookAgeMs || q?.bookInvalid)) {
+      await this.audit('atomic_thunder_exit_waiting_executable_book', { id:entry.id, ticker:entry.ticker, mode:'LIVE', bidCents:bid, remaining:remain, reason:'stale_or_invalid_book' }, 'warning');
+      return { closed:false, pending:false, remaining:remain, skipped:'atomic_thunder_stale_book' };
+    }
     if (pri1Exit && (!exitBook || exitBookMs <= 0 || Date.now() - exitBookMs > 5000 || q?.bookInvalid)) {
       await this.audit('pri1_exit_waiting_capital_execution', { id:entry.id, ticker:entry.ticker, mode:'LIVE', bidCents:bid, remaining:remain, reason:'stale_or_invalid_book' }, 'warning');
       return { closed:false, pending:false, remaining:remain, skipped:'pri1_stale_book' };
@@ -2807,6 +2838,10 @@ export class ProfitGuard {
       return { closed:false, pending:false, remaining:remain, skipped:'apex_profit_guard_stale_book' };
     }
     if (bid <= 0) {
+      if (atomicThunderExit) {
+        await this.audit('atomic_thunder_exit_waiting_executable_book', { id:entry.id, ticker:entry.ticker, mode:'LIVE', bidCents:bid, remaining:remain, reason:'no_bid' });
+        return { closed:false, pending:false, remaining:remain, skipped:'atomic_thunder_no_bid' };
+      }
       if (goldenEyeExit) {
         await this.audit('golden_eye_exit_waiting_executable_book', { id:entry.id, ticker:entry.ticker, mode:'LIVE', bidCents:bid, remaining:remain, reason:'no_bid' });
         return { closed:false, pending:false, remaining:remain, skipped:'golden_eye_no_bid' };
@@ -2832,8 +2867,12 @@ export class ProfitGuard {
       return { closed: false, pending: true, remaining: remain, skipped: 'no_bid' };
     }
 
-    const exitFloorCents = profitProtectedExit ? (goldenEyeExit ? this.goldenEyeBreakEvenPriceCents(entry, s) : x1Exit ? this.athenaExitBreakEvenPriceCents(entry, s) : pri1Exit ? this.protectedRunnerBreakEvenPriceCents(entry, s) : apexExit ? this.apexProfitGuardExitFloorCents(entry, s) : this.upg3ExitFloorCents(entry, s)) : bid;
+    const exitFloorCents = profitProtectedExit ? (atomicThunderExit ? this.atomicThunderExitFloorCents(entry, s) : goldenEyeExit ? this.goldenEyeBreakEvenPriceCents(entry, s) : x1Exit ? this.athenaExitBreakEvenPriceCents(entry, s) : pri1Exit ? this.protectedRunnerBreakEvenPriceCents(entry, s) : apexExit ? this.apexProfitGuardExitFloorCents(entry, s) : this.upg3ExitFloorCents(entry, s)) : bid;
     if (profitProtectedExit && bid < exitFloorCents) {
+      if (atomicThunderExit) {
+        await this.audit('atomic_thunder_exit_window_lost', { id:entry.id, ticker:entry.ticker, mode:'LIVE', bidCents:bid, profitFloorCents:exitFloorCents, remaining:remain }, 'warning');
+        return { closed:false, pending:false, remaining:remain, skipped:'atomic_thunder_profit_floor_unavailable' };
+      }
       if (goldenEyeExit) {
         await this.audit('golden_eye_exit_waiting_positive_execution', { id:entry.id, ticker:entry.ticker, mode:'LIVE', bidCents:bid, breakEvenPriceCents:exitFloorCents, remaining:remain, reason:'capital_floor_unavailable' }, 'warning');
         return { closed:false, pending:false, remaining:remain, skipped:'golden_eye_capital_floor_unavailable' };
@@ -2873,15 +2912,20 @@ export class ProfitGuard {
     }
 
     const exec = this.market.executableBid(entry.ticker, remain, exitFloorCents);
-    if ((x1Exit || goldenEyeExit) && exec && n(exec.filled) > 0 && (!exec.full || n(exec.filled) + 1e-9 < remain)) {
-      await this.audit(goldenEyeExit ? 'golden_eye_exit_waiting_full_position_depth' : 'athena_x1_exit_waiting_full_position_depth', {
+    if ((atomicThunderExit || x1Exit || goldenEyeExit) && exec && n(exec.filled) > 0 && (!exec.full || n(exec.filled) + 1e-9 < remain)) {
+      const depthEvent = atomicThunderExit ? 'atomic_thunder_exit_waiting_full_position_depth' : goldenEyeExit ? 'golden_eye_exit_waiting_full_position_depth' : 'athena_x1_exit_waiting_full_position_depth';
+      await this.audit(depthEvent, {
         id:entry.id,ticker:entry.ticker,mode:'LIVE',bidCents:bid,breakEvenPriceCents:exitFloorCents,
         remaining:remain,executableFilled:n(exec.filled),executableFull:Boolean(exec.full),
       }, 'warning');
-      return { closed:false,pending:false,remaining:remain,skipped:goldenEyeExit ? 'golden_eye_partial_depth_no_split' : 'athena_x1_partial_depth_no_split' };
+      return { closed:false,pending:false,remaining:remain,skipped:atomicThunderExit ? 'atomic_thunder_partial_depth_no_split' : goldenEyeExit ? 'golden_eye_partial_depth_no_split' : 'athena_x1_partial_depth_no_split' };
     }
-    const submitCount = (x1Exit || goldenEyeExit) && exec?.full && n(exec.filled) + 1e-9 >= remain ? remain : Math.max(0, n(exec?.filled));
+    const submitCount = (atomicThunderExit || x1Exit || goldenEyeExit) && exec?.full && n(exec.filled) + 1e-9 >= remain ? remain : Math.max(0, n(exec?.filled));
     if (submitCount <= 0) {
+      if (atomicThunderExit) {
+        await this.audit('atomic_thunder_exit_waiting_executable_book', { id:entry.id, ticker:entry.ticker, mode:'LIVE', bidCents:bid, profitFloorCents:exitFloorCents, remaining:remain, reason:'no_executable_bid' }, 'warning');
+        return { closed:false, pending:false, remaining:remain, skipped:'atomic_thunder_no_executable_bid' };
+      }
       if (goldenEyeExit) {
         await this.audit('golden_eye_exit_waiting_executable_book', { id:entry.id, ticker:entry.ticker, mode:'LIVE', bidCents:bid, breakEvenPriceCents:exitFloorCents, remaining:remain, reason:'no_executable_bid' }, 'warning');
         return { closed:false, pending:false, remaining:remain, skipped:'golden_eye_no_executable_bid' };
@@ -2935,9 +2979,9 @@ export class ProfitGuard {
         orderId: r.orderId,
         clearClientId: true,
       });
-      if (goldenEyeExit && !applied.closed && applied.remaining > 0) {
+      if ((atomicThunderExit || goldenEyeExit) && !applied.closed && applied.remaining > 0) {
         await this.db.updateEntry(entry.id, { status:'open', closeReason:null, exitClientOrderId:null, updatedAtMs:Date.now() });
-        await this.audit('golden_eye_live_partial_reopened', { id:entry.id,ticker:entry.ticker,filled:applied.filled,remaining:applied.remaining,fillPriceCents:applied.fillPriceCents }, 'warning');
+        await this.audit(atomicThunderExit ? 'atomic_thunder_live_partial_reopened' : 'golden_eye_live_partial_reopened', { id:entry.id,ticker:entry.ticker,filled:applied.filled,remaining:applied.remaining,fillPriceCents:applied.fillPriceCents }, 'warning');
         return { ...applied, pending:false, reopened:true };
       }
       return applied;
@@ -2983,6 +3027,39 @@ export class ProfitGuard {
       const fresh = await this.db.entryById(entry.id);
       if (!fresh || fresh.status === 'closed') return { closed: true };
       entry = fresh;
+    }
+
+    // Atomic Thunder is a cash-now profit opportunity, never a durable license
+    // to chase a remainder below its fee-adjusted target. If an IOC is terminal
+    // or unfilled and no broker receipt remains, reopen immediately when the
+    // full-position profit covenant disappears. U-SG1 then regains the normal
+    // loss path while Atomic Thunder waits for a newly confirmed profit window.
+    if (entry.status === 'exit_pending' && entry.closeReason === 'atomic_thunder_cashout' && !entry.exitClientOrderId && !finalMarket(q)) {
+      const atPolicy = this.atomicThunderPolicy(entry, s);
+      await this.market.ensureFreshBook(entry.ticker, atPolicy.maximumBookAgeMs).catch(() => null);
+      const atFloor = this.atomicThunderExitFloorCents(entry, s);
+      const atQ = this.market.getQuote(entry.ticker) || q;
+      const atBid = n(atQ?.yesBid);
+      const atBook = this.market.getBook?.(entry.ticker);
+      const atBookMs = n(atBook?.updatedAtMs);
+      const atBookFresh = Boolean(atBook && atBookMs > 0 && Date.now() - atBookMs <= atPolicy.maximumBookAgeMs && !atQ?.bookInvalid);
+      const atExec = atBookFresh && atBid >= atFloor
+        ? this.market.executableBid(entry.ticker, remainingCount(entry), atFloor)
+        : null;
+      const atNet = atExec?.full ? this.aggregateExecutableNetCents(entry, remainingCount(entry), n(atExec.avgCents), s) : null;
+      const atTarget = this.atomicThunderTargetNetCents(entry, s);
+      if (!atExec?.full || n(atExec.filled) + 1e-9 < remainingCount(entry) || n(atNet, -Infinity) + 1e-9 < atTarget) {
+        await this.db.updateEntry(entry.id, { status:'open', closeReason:null, exitOrderId:null, updatedAtMs:Date.now() });
+        entry.status = 'open';
+        entry.closeReason = null;
+        entry.exitOrderId = null;
+        this.atomicThunderStates.delete(entry.id);
+        await this.audit('atomic_thunder_exit_released_after_window', {
+          id:entry.id, ticker:entry.ticker, concept:entry.conceptName, bidCents:atBid,
+          profitFloorCents:atFloor, targetNetCents:atTarget, executableNetCents:atNet,
+          remaining:remainingCount(entry), executableFull:Boolean(atExec?.full),
+        }, 'warning');
+      }
     }
 
     // Golden Eye is a cash-now opportunity, not a durable permission to chase
@@ -3101,6 +3178,8 @@ export class ProfitGuard {
         exitPriceCents: n(q.yesBid, entry.currentPriceCents),
         liveExitPriceCents: n(q.yesBid, entry.currentPriceCents),
         reason: entry.closeReason,
+        atomicThunder: entry.closeReason === 'atomic_thunder_cashout' ? ATOMIC_THUNDER.version : null,
+        atomicThunderPolicyRevision: entry.closeReason === 'atomic_thunder_cashout' ? ATOMIC_THUNDER.policyRevision : null,
         goldenEye: entry.closeReason === 'golden_eye_cashout' ? GOLDEN_EYE.version : null,
         goldenEyePolicyRevision: entry.closeReason === 'golden_eye_cashout' ? GOLDEN_EYE.policyRevision : null,
         guardState: n(q.yesBid) > 0 ? 'EXIT_PENDING' : 'EXIT_PENDING_NO_BID',
@@ -3184,6 +3263,54 @@ export class ProfitGuard {
         if (fresh) await this.learning.onHardStop(fresh);
       }
       return out;
+    }
+
+    // R44 Atomic Thunder owns the individual profit domain for new R44
+    // Hunters. Loss protection and settlement have already run above. While
+    // Atomic Thunder is enabled for the frozen entry, Golden Eye and all legacy
+    // profit authorities are research-only for this Hunter and cannot race the
+    // first independently confirmed full-position net-profit harvest.
+    if (this.isAtomicThunderTrade(entry) && this.atomicThunderPolicy(entry, s).enabled) {
+      const at = await this.evaluateAtomicThunder(entry, q, s);
+      const atQ = at?.q || q;
+      if (at?.triggered) {
+        const meta = this.atomicThunderTelemetry(entry, at);
+        const pd = {
+          ...d, ...meta,
+          action:'atomic_thunder_cashout', reason:'atomic_thunder_cashout',
+          guardState:'ATOMIC_THUNDER_EXIT',
+          exitPriceCents:n(atQ?.yesBid, entry.currentPriceCents),
+          liveExitPriceCents:n(atQ?.yesBid, entry.currentPriceCents),
+          atomicThunder:ATOMIC_THUNDER.version,
+          atomicThunderPolicyRevision:ATOMIC_THUNDER.policyRevision,
+          stopPriceCents:n(d.hardStopCents,d.stopPriceCents),
+          peakPriceCents:Math.max(n(entry.peakPriceCents,entry.entryPriceCents),n(atQ?.yesBid)),
+        };
+        this.setState(entry,pd);
+        await this.audit('atomic_thunder_harvest_committed', {
+          id:entry.id,ticker:entry.ticker,concept:entry.conceptName,sourceFeeder:entry.sourceFeeder||null,
+          executableNetCents:n(at.executableNetCents),targetNetCents:n(at.targetNetCents),
+          executableBidCents:n(at.executableBidCents),profitFloorCents:n(at.exitFloorCents),
+          confirmations:n(at.confirmations),requiredFreshConfirmations:n(at.policy?.requiredFreshConfirmations),
+          fullPositionOnly:true,lossAuthority:ATOMIC_THUNDER.lossAuthority,
+        });
+        const out = entry.mode === 'LIVE' ? await this.liveExit(entry,pd) : await this.simulationExit(entry,pd,atQ);
+        if (!out.closed && !out.pending) this.atomicThunderStates.delete(entry.id);
+        return out;
+      }
+      const meta = this.atomicThunderTelemetry(entry,at);
+      const hold = {
+        ...d,...meta,action:'hold',guardState:meta.atomicThunderState,
+        stopPriceCents:n(d.hardStopCents,d.stopPriceCents),
+      };
+      this.setState(entry,hold);
+      await this.db.updateEntry(entry.id,{
+        currentPriceCents:n(atQ?.yesBid,entry.currentPriceCents),
+        peakPriceCents:Math.max(n(entry.peakPriceCents,entry.entryPriceCents),n(atQ?.yesBid)),
+        stopPriceCents:n(d.hardStopCents,d.stopPriceCents),
+        updatedAtMs:Date.now(),volume24h:atQ?.volume24h||entry.volume24h,
+      });
+      return { protected:true, action:'hold', profitAuthority:ATOMIC_THUNDER.version, atomicThunder:meta };
     }
 
     // R37 Golden Eye owns the profit domain for new R37 Hunters at the
@@ -3495,6 +3622,10 @@ export class ProfitGuard {
     return this.withEntryLockQueued(entry.id, async () => {
       const exitReason = reason === 'golden_eye_cashout' ? 'golden_eye_cashout' : 'manual_cashout';
       const goldenEyeExit = exitReason === 'golden_eye_cashout';
+      if (goldenEyeExit && this.isAtomicThunderTrade(entry) && this.atomicThunderPolicy(entry, this.getSettings()).enabled) {
+        await this.audit('golden_eye_cashout_skipped_atomic_thunder_priority', { id:entry.id,ticker:entry.ticker,concept:entry.conceptName,atomicThunder:ATOMIC_THUNDER.version });
+        return { closed:false, skipped:'atomic_thunder_has_priority' };
+      }
       const maximumBookAgeMs = goldenEyeExit ? GOLDEN_EYE.maximumExecutionBookAgeMs : QUOTE_STALE_MS;
       let current = q;
       if (!current || this.market.quoteAgeMs(entry.ticker) > maximumBookAgeMs || n(current.yesBid) <= 0) current = await this.market.refreshTicker(entry.ticker).catch(() => null);

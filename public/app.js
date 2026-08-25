@@ -115,6 +115,7 @@ const MODEL_FIELDS = {
 };
 const MODEL_DRAFTS = new Map();
 const GENERAL_DRAFTS = new Map();
+const ATOMIC_DRAFTS = new Map();
 const draftOrSetting = (s, key) => MODEL_DRAFTS.has(key) ? MODEL_DRAFTS.get(key) : (s.settings[key] ?? '');
 function modelFieldsHtml(s, name) {
   const fields = MODEL_FIELDS[name] || [];
@@ -165,6 +166,40 @@ function currentCell(x) {
   if (!x.avgEntryCents || d === 0) return pc(x.avgCurrentCents);
   return `${pc(x.avgCurrentCents)} <span class="${d > 0 ? 'positive' : 'negative'}">${d > 0 ? '▲' : '▼'}${Math.abs(d)}c</span>`;
 }
+function renderAtomicThunder(s) {
+  const at = s.atomicThunder || {};
+  const enabled = s.settings.atomicThunderEnabled === true;
+  const status = $('atomicThunderStatus');
+  status.textContent = enabled ? 'ACTIVE' : 'OFF';
+  status.className = `pill ${enabled ? 'green' : 'red'}`;
+  const toggle = $('atomicThunderToggle');
+  toggle.textContent = enabled ? 'ON' : 'OFF';
+  toggle.dataset.enabled = String(enabled);
+  toggle.className = `model-toggle ${enabled ? 'enabled' : 'disabled'}`;
+  const fields = [
+    ['atomicThunderMinNet','atomicThunderMinNetPerOriginalContractCents'],
+    ['atomicThunderConfirmations','atomicThunderRequiredConfirmations'],
+    ['atomicThunderBookAge','atomicThunderMaximumBookAgeMs'],
+    ['atomicThunderWindow','atomicThunderConfirmationWindowMs'],
+  ];
+  for (const [id,key] of fields) {
+    const input=$(id); if (!input) continue;
+    const value=ATOMIC_DRAFTS.has(key)?ATOMIC_DRAFTS.get(key):(s.settings[key]??'');
+    if(document.activeElement!==input)input.value=value;
+  }
+  $('atObserved').textContent = Number(at.observedHunters || 0);
+  $('atOpportunities').textContent = Number(at.opportunitiesDetected || 0);
+  $('atHarvests').textContent = Number(at.harvestsExecuted || 0);
+  $('atRealized').textContent = money(at.realizedPnlCents || 0); $('atRealized').className=pnlClass(at.realizedPnlCents || 0);
+  $('atAverage').textContent = money(at.averageProfitCents || 0); $('atAverage').className=pnlClass(at.averageProfitCents || 0);
+  $('atTime').textContent = duration(at.averageTimeToHarvestMs || null);
+  $('atLossesAvoided').textContent = Number(at.lossesAvoided || 0);
+  $('atAvoidedLoss').textContent = money(at.avoidedLossCents || 0); $('atAvoidedLoss').className=pnlClass(at.avoidedLossCents || 0);
+  $('atForgoneUpside').textContent = money(at.forgoneUpsideCents || 0);
+  $('atInvalid').textContent = Number(at.invalidOpportunitiesBlocked || 0);
+  $('atResearch').textContent = Number(at.researchComplete || 0);
+}
+
 function renderConcepts(s) {
   if (document.activeElement?.classList?.contains('model-setting-input')) return;
   const rows = s.conceptStats || [];
@@ -272,7 +307,7 @@ const SETTINGS = [
 ];
 function renderSettings(s) {
   if (!$('settingsForm').dataset.built) {
-    $('settingsForm').innerHTML = SETTINGS.map(([k, l]) => `<label>${esc(l)}<input name="${k}" data-general-setting="${k}" type="number" step="any"></label>`).join('') + `<div class="muted"><strong>Exact ticker Hunter lock: ON</strong><br>Maximum one real Hunter on an exact ticker until that Hunter is fully closed. Pegasus/Sagittarius/Dragon/Golden Dragon feeder signals are exempt.<br><br><strong>R43 Entry Quality Covenant: ON</strong><br>Real Hunters require fresh full-position exitability, immediate entry friction strictly below 0.30R, and at least 30 verified game minutes before capital can be committed.</div>`;
+    $('settingsForm').innerHTML = SETTINGS.map(([k, l]) => `<label>${esc(l)}<input name="${k}" data-general-setting="${k}" type="number" step="any"></label>`).join('') + `<div class="muted"><strong>Exact ticker Hunter lock: ON</strong><br>Maximum one real Hunter on an exact ticker until that Hunter is fully closed. Pegasus/Sagittarius/Dragon/Golden Dragon feeder signals are exempt.<br><br><strong>Stop doctrine: U-SG1 + SLW1-R2</strong><br>The pre-hard-ceiling stake-normalized Stop Guard doctrine is active. Atomic Thunder owns first-opportunity profit harvesting for new Atomic-enabled Hunters and is configured in its dedicated section above the Hunter table.</div>`;
     $('settingsForm').dataset.built = '1';
   }
   for (const [k] of SETTINGS) {
@@ -301,10 +336,33 @@ function render(s) {
   const errors = (s.audit || []).filter((x) => x.level === 'error' && Date.now() - Date.parse(x.ts) < 10 * 60 * 1000); $('errorWatchdog').classList.toggle('hidden', !errors.length); if (errors.length) $('errorWatchdog').innerHTML = `<strong>Error Watchdog - ${errors.length} recent errors</strong><br>${esc(errors[0].event)}: ${esc(errors[0].data?.message || '')}`;
   const scanFresh = Number(s.scanner.lastScanMs || 0) > 0 && Date.now() - Number(s.scanner.lastScanMs) < 10 * 60 * 1000;
   $('entryRunning').textContent = scanFresh ? 'Running' : 'Waiting'; $('entryRunning').className = `pill ${scanFresh ? 'green' : 'amber'}`;
-  renderCharts(s); renderSettings(s); renderConcepts(s); renderTrades(s); renderLearning(s); renderCrashLearning(s); renderScanner(s);
+  renderCharts(s); renderSettings(s); renderAtomicThunder(s); renderConcepts(s); renderTrades(s); renderLearning(s); renderCrashLearning(s); renderScanner(s);
   $('systemNameInput').value = s.settings.systemName; $('connectionPill').textContent = h.restOk && h.websocketFresh ? 'Connected' : 'Connection check'; $('connectionPill').className = `pill ${h.restOk && h.websocketFresh ? 'green' : 'amber'}`;
 }
 async function load() { try { const r = await fetch('/api/state'); render(await r.json()); } catch (e) { console.error(e); } }
+
+$('atomicThunderSection').oninput = (e) => {
+  const map = {
+    atomicThunderMinNet:'atomicThunderMinNetPerOriginalContractCents',
+    atomicThunderConfirmations:'atomicThunderRequiredConfirmations',
+    atomicThunderBookAge:'atomicThunderMaximumBookAgeMs',
+    atomicThunderWindow:'atomicThunderConfirmationWindowMs',
+  };
+  const key=map[e.target?.id]; if(key)ATOMIC_DRAFTS.set(key,e.target.value);
+};
+$('atomicThunderToggle').onclick = async () => {
+  const btn=$('atomicThunderToggle'); const enable=btn.dataset.enabled!=='true'; btn.disabled=true;
+  try { await patch('/api/settings',{atomicThunderEnabled:enable}); btn.blur(); await load(); msg(enable?'Atomic Thunder enabled for eligible new Hunters.':'Atomic Thunder disabled. Existing positions remain under normal loss protection.'); }
+  catch(e){msg(e.message,true);} finally{btn.disabled=false;}
+};
+$('atomicThunderSave').onclick = async () => {
+  const data={};
+  for(const [key,value] of ATOMIC_DRAFTS.entries())data[key]=Number(value);
+  if(!Object.keys(data).length)return msg('No Atomic Thunder setting changes to save.');
+  const btn=$('atomicThunderSave');btn.disabled=true;
+  try{const fresh=await patchSettingsVerified(data);for(const key of Object.keys(data))ATOMIC_DRAFTS.delete(key);btn.blur();render(fresh);msg('Atomic Thunder settings saved and verified.');}
+  catch(e){msg(e.message,true);} finally{btn.disabled=false;}
+};
 
 $('conceptBody').oninput = (e) => {
   const input = e.target.closest('[data-setting-key]');

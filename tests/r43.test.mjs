@@ -2,15 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { freshInstallSettings, normalizeStartupExecutionMode, RELEASE } from '../src/config.mjs';
+import { freshInstallSettings, normalizeStartupExecutionMode, sanitizeRuntimeSettings, RELEASE } from '../src/config.mjs';
 import { SagittariusEngine } from '../src/engine.mjs';
 import { StrategyEngine } from '../src/strategy.mjs';
 
 const root = resolve(new URL('..', import.meta.url).pathname);
 
-test('R43-HF1 fresh install is deterministically SIMULATION and impossible persisted LIVE recovers only when deployment LIVE is disabled', () => {
+test('R44 EMI1 fresh install is deterministically SIMULATION and impossible persisted LIVE recovers only when deployment LIVE is disabled', () => {
   const fresh = freshInstallSettings();
-  assert.equal(RELEASE, 'SAGITTARIUS-R43-HF1-ENTRY-MODE-ISOLATION-2026-08-25');
+  assert.equal(RELEASE, 'SAGITTARIUS-R44-ATOMIC-THUNDER-R41-STOP-RESTORE-2026-08-26');
   assert.equal(fresh.mode, 'SIMULATION');
   assert.equal(fresh.liveArmed, false);
   assert.equal(fresh.engineActive, true);
@@ -28,7 +28,7 @@ test('R43-HF1 fresh install is deterministically SIMULATION and impossible persi
   assert.equal(authorizedDeployment.settings.liveArmed, false, 'restart must still disarm LIVE even when deployment policy permits it');
 });
 
-test('R43-HF1 entry-chain isolation keeps reference feeders active in LIVE-disarmed state while every real Hunter stays blocked', async () => {
+test('R44 EMI1 entry-chain isolation keeps reference feeders active in LIVE-disarmed state while every real Hunter stays blocked', async () => {
   const engine = Object.create(SagittariusEngine.prototype);
   engine.settings = { ...freshInstallSettings(), systemName:'S', mode:'LIVE', liveArmed:false, engineActive:true };
   engine.health = { degraded:false };
@@ -53,7 +53,7 @@ test('R43-HF1 entry-chain isolation keeps reference feeders active in LIVE-disar
   assert.equal(engine.entryExecutionGate().allowed, false);
 });
 
-test('R43-HF1 SIMULATION runs the complete entry chain in recovery-first and feeder-before-downstream order', async () => {
+test('R44 EMI1 SIMULATION runs the complete entry chain in recovery-first and feeder-before-downstream order', async () => {
   const engine = Object.create(SagittariusEngine.prototype);
   engine.settings = { ...freshInstallSettings(), systemName:'S', mode:'SIMULATION', liveArmed:false, engineActive:true };
   engine.health = { degraded:false };
@@ -79,7 +79,7 @@ test('R43-HF1 SIMULATION runs the complete entry chain in recovery-first and fee
   assert.equal(engine.entryExecutionGate().reason, 'simulation');
 });
 
-test('R43-HF1 createHunter independently blocks disarmed LIVE before book refresh or broker mutation', async () => {
+test('R44 EMI1 createHunter independently blocks disarmed LIVE before book refresh or broker mutation', async () => {
   const audits = [];
   const settings = { ...freshInstallSettings(), systemName:'S', ownerId:'O', mode:'LIVE', liveArmed:false, engineActive:true, waveSurferEnabled:true, pegasusEnabled:true };
   const strategy = new StrategyEngine({
@@ -99,7 +99,7 @@ test('R43-HF1 createHunter independently blocks disarmed LIVE before book refres
   assert.equal(summary.byStage['MODE_AUTHORIZATION:BLOCKED'], 1);
 });
 
-test('R43-HF1 Pegasus reference signals do not stop when real-Hunter maxPositions is full', async () => {
+test('R44 EMI1 Pegasus reference signals do not stop when real-Hunter maxPositions is full', async () => {
   const now = Date.now();
   const entries = Array.from({length:20}, (_,i)=>({
     id:`H${i}`, systemName:'S', ownerId:'O', conceptName:'Wave Surfer', ticker:`H${i}`, eventTicker:`E${i}`,
@@ -128,9 +128,35 @@ test('R43-HF1 Pegasus reference signals do not stop when real-Hunter maxPosition
   assert.equal(entries.filter((e)=>e.conceptName==='Wave Surfer' && e.status==='open').length, 20, 'real-Hunter capacity remains full and unchanged');
 });
 
-test('R43-HF1 UI can always escape LIVE-disarmed state back to SIMULATION', async () => {
+test('R44 EMI1 UI can always escape LIVE-disarmed state back to SIMULATION', async () => {
   const app = await readFile(resolve(root, 'public/app.js'), 'utf8');
   assert.match(app, /if \(STATE\.settings\.mode === 'LIVE'\) \{ await post\('\/api\/mode', \{ mode:'SIMULATION' \}\)/);
   assert.doesNotMatch(app, /STATE\.settings\.mode === 'LIVE' && STATE\.settings\.liveArmed/);
   assert.match(app, /LIVE DISARMED/);
+});
+
+test('R44 removes R42 HELC1 and R43 EQC1 runtime gates while preserving EMI1', async () => {
+  const doctrine = await readFile(resolve(root, 'src/doctrine.mjs'), 'utf8');
+  const strategy = await readFile(resolve(root, 'src/strategy.mjs'), 'utf8');
+  const engine = await readFile(resolve(root, 'src/engine.mjs'), 'utf8');
+  assert.equal(doctrine.includes("version: 'HELC1'"), false);
+  assert.equal(doctrine.includes("version: 'EQC1'"), false);
+  assert.equal(strategy.includes('hardEconomicLossEntryFeasibility'), false);
+  assert.equal(strategy.includes('entryQualityCovenant'), false);
+  assert.equal(engine.includes('hardEconomicLossCeiling:'), false);
+  assert.equal(engine.includes('r43EntryQualityCovenant:'), false);
+  assert.ok(engine.includes("entryModeIsolation:'EMI1'"));
+});
+
+
+test('R44 Atomic Thunder migration auto-enables only persisted SIMULATION and clamps unsafe numeric settings',()=>{
+  const sim=sanitizeRuntimeSettings({systemName:'S',ownerId:'O',mode:'SIMULATION'});
+  const live=sanitizeRuntimeSettings({systemName:'S',ownerId:'O',mode:'LIVE'});
+  assert.equal(sim.atomicThunderEnabled,true);
+  assert.equal(live.atomicThunderEnabled,false);
+  const clamped=sanitizeRuntimeSettings({systemName:'S',ownerId:'O',mode:'SIMULATION',atomicThunderEnabled:true,atomicThunderMinNetPerOriginalContractCents:-5,atomicThunderRequiredConfirmations:0,atomicThunderMaximumBookAgeMs:1,atomicThunderConfirmationWindowMs:1});
+  assert.equal(clamped.atomicThunderMinNetPerOriginalContractCents,0.01);
+  assert.equal(clamped.atomicThunderRequiredConfirmations,1);
+  assert.equal(clamped.atomicThunderMaximumBookAgeMs,100);
+  assert.equal(clamped.atomicThunderConfirmationWindowMs,250);
 });

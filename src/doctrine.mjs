@@ -99,7 +99,7 @@ export const RECOVERY_MARKET_DROP_CENTS = 5;
 // likely dead rather than temporarily wounded.
 export const STOP_LOSS_WATCHDOG = Object.freeze({
   version: 'SLW1',
-  policyRevision: 'SLW1-R3-HARD-ECONOMIC-CEILING',
+  policyRevision: 'SLW1-R2-STAKE-NORMALIZED',
   // The original R39 values were calibrated on a $200 Hunter. R41-HF1 keeps
   // those exact economics at $200 but expresses them as fractions of the
   // Hunter's immutable original entry notional so $20/$50/$500 trades receive
@@ -111,13 +111,6 @@ export const STOP_LOSS_WATCHDOG = Object.freeze({
   resetLossRatio: 0.20,
   severeLossRatio: 0.45,
   catastrophicLossRatio: 0.90,
-  // R42: recovery intelligence is subordinate to a non-negotiable capital
-  // budget. The budget scales with immutable original filled notional up to the
-  // approved $75 absolute ceiling. It is not a new exit authority: U-SG1 owns
-  // the full-position flatten obligation when this covenant is reached.
-  hardEconomicLossCeilingEnabled: true,
-  hardEconomicLossCeilingRatio: 0.375,
-  hardEconomicLossCeilingAbsoluteCents: 7500,
   // Reference-only compatibility values for diagnostics/tests. Runtime loss
   // decisions MUST use stopLossWatchdogThresholdsForStakeCents().
   wakeLossCents: 6000,
@@ -161,101 +154,6 @@ export function stopLossWatchdogThresholdsForStakeCents(stakeCents = STOP_LOSS_W
     resetLossCents: basisStakeCents * STOP_LOSS_WATCHDOG.resetLossRatio,
     severeLossCents: basisStakeCents * STOP_LOSS_WATCHDOG.severeLossRatio,
     catastrophicLossCents: basisStakeCents * STOP_LOSS_WATCHDOG.catastrophicLossRatio,
-    hardEconomicLossCeilingCents: Math.min(
-      basisStakeCents * STOP_LOSS_WATCHDOG.hardEconomicLossCeilingRatio,
-      STOP_LOSS_WATCHDOG.hardEconomicLossCeilingAbsoluteCents,
-    ),
-  });
-}
-
-// R42 HELC1 Hard Economic Loss Ceiling. This is a capital-preservation
-// covenant inside U-SG1, not a competing stop engine. Recovery/history/grace
-// logic may operate only while the aggregate fee-adjusted liquidation economics
-// remain inside the budget. Once triggered, the existing U-SG1 hard-stop exit
-// obligation is durable until the owned quantity is flat or the market is final.
-export const HARD_ECONOMIC_LOSS_CEILING = Object.freeze({
-  version: 'HELC1',
-  policyRevision: 'HELC1-R1-STAKE-RELATIVE-75-ABSOLUTE-CAP',
-  role: 'non_negotiable_capital_loss_budget_inside_usg1',
-  stakeBasis: 'original_entry_notional',
-  lossRatio: 0.375,
-  absoluteMaximumLossCents: 7500,
-  fullPositionEconomicBasis: 'fee_adjusted_aggregate_liquidation_net',
-  recoveryVetoAllowed: false,
-  durableFlattenRequired: true,
-  lossAuthority: 'U-SG1',
-});
-
-export function hardEconomicLossCeilingForStakeCents(stakeCents = STOP_LOSS_WATCHDOG.referenceStakeCents) {
-  const raw = Number(stakeCents);
-  const basisStakeCents = Number.isFinite(raw) && raw > 0 ? raw : STOP_LOSS_WATCHDOG.referenceStakeCents;
-  return Object.freeze({
-    version: HARD_ECONOMIC_LOSS_CEILING.version,
-    policyRevision: HARD_ECONOMIC_LOSS_CEILING.policyRevision,
-    stakeBasis: HARD_ECONOMIC_LOSS_CEILING.stakeBasis,
-    basisStakeCents,
-    lossRatio: HARD_ECONOMIC_LOSS_CEILING.lossRatio,
-    absoluteMaximumLossCents: HARD_ECONOMIC_LOSS_CEILING.absoluteMaximumLossCents,
-    maximumLossCents: Math.min(
-      basisStakeCents * HARD_ECONOMIC_LOSS_CEILING.lossRatio,
-      HARD_ECONOMIC_LOSS_CEILING.absoluteMaximumLossCents,
-    ),
-  });
-}
-
-// R43 EQC1 Entry Quality Covenant. R42 proves that a position can fit
-// inside its maximum loss budget; R43 adds the stricter professional question:
-// is enough of that budget still available AFTER immediate spread + round-trip
-// fee/liquidation economics, and is the game mature enough to justify risk?
-// This is an execution authority for all real Hunters in the R43 repository.
-export const R43_ENTRY_QUALITY_COVENANT = Object.freeze({
-  version: 'EQC1',
-  policyRevision: 'EQC1-R43-FRICTION-LT-0.30R-GAME-30M',
-  role: 'pre_capital_risk_normalized_entry_quality_authority',
-  authority: 'EXECUTION',
-  appliesTo: 'all_real_hunters',
-  riskUnit: 'HELC1_maximum_loss_budget',
-  maximumEntryFrictionR: 0.30,
-  strictLessThan: true,
-  minimumGameMinutes: 30,
-  economicBasis: 'fresh_full_position_fee_adjusted_immediate_liquidation',
-  fullExitabilityRequired: true,
-});
-
-export function r43EntryQualityAssessment({ helcEntry = null, gameMinutes = null } = {}) {
-  const maximumLossCents = Number(helcEntry?.maximumLossCents);
-  const projectedImmediateLossCents = Number(helcEntry?.projectedImmediateLossCents);
-  const fullExitabilityProven = helcEntry?.fullExitabilityProven === true;
-  const game = Number(gameMinutes);
-  const gameKnown = Number.isFinite(game) && game >= 0;
-  const riskValid = Number.isFinite(maximumLossCents) && maximumLossCents > 0;
-  const economicsKnown = Number.isFinite(projectedImmediateLossCents) && projectedImmediateLossCents >= 0;
-  const entryFrictionR = riskValid && economicsKnown ? projectedImmediateLossCents / maximumLossCents : Number.POSITIVE_INFINITY;
-  const frictionPass = fullExitabilityProven && riskValid && economicsKnown
-    && entryFrictionR + 1e-12 < R43_ENTRY_QUALITY_COVENANT.maximumEntryFrictionR;
-  const maturityPass = gameKnown && game + 1e-9 >= R43_ENTRY_QUALITY_COVENANT.minimumGameMinutes;
-  const ok = frictionPass && maturityPass;
-  const reason = !fullExitabilityProven ? 'full_exitability_unproven'
-    : !riskValid || !economicsKnown ? 'entry_economics_unknown'
-      : !frictionPass ? 'entry_friction_not_below_0_30r'
-        : !maturityPass ? 'game_maturity_below_30_minutes'
-          : 'entry_quality_covenant_pass';
-  return Object.freeze({
-    ok,
-    version: R43_ENTRY_QUALITY_COVENANT.version,
-    policyRevision: R43_ENTRY_QUALITY_COVENANT.policyRevision,
-    authority: R43_ENTRY_QUALITY_COVENANT.authority,
-    reason,
-    riskUnit: R43_ENTRY_QUALITY_COVENANT.riskUnit,
-    maximumLossCents: riskValid ? maximumLossCents : null,
-    projectedImmediateLossCents: economicsKnown ? projectedImmediateLossCents : null,
-    entryFrictionR: Number.isFinite(entryFrictionR) ? entryFrictionR : null,
-    maximumEntryFrictionR: R43_ENTRY_QUALITY_COVENANT.maximumEntryFrictionR,
-    strictLessThan: true,
-    gameMinutes: gameKnown ? game : null,
-    minimumGameMinutes: R43_ENTRY_QUALITY_COVENANT.minimumGameMinutes,
-    fullExitabilityProven,
-    economicBasis: R43_ENTRY_QUALITY_COVENANT.economicBasis,
   });
 }
 
@@ -510,6 +408,28 @@ export const GOLDEN_EYE = Object.freeze({
   minimumJumpCents:100,
   minimumSignalSpacingMs:500,
   maximumParallelCashouts:8,
+});
+
+
+// R44 Atomic Thunder. This is a per-Hunter profit-domain authority, not an
+// entry model and never a loss-domain authority. It harvests the first genuine
+// full-position executable fee-adjusted profit after independent fresh-book
+// confirmations. U-SG1 remains exclusive loss authority.
+export const ATOMIC_THUNDER = Object.freeze({
+  version: 'ATOMIC-THUNDER-V1',
+  policyRevision: 'AT1-R1-FIRST-FULL-EXECUTABLE-NET-PROFIT',
+  role: 'per_hunter_first_executable_net_profit_harvest_authority',
+  authority: 'PROFIT_EXIT',
+  appliesTo: 'R44_plus_real_hunters_with_ATOMIC_THUNDER_snapshot',
+  fullPositionOnly: true,
+  minimumNetPerOriginalContractCents: 1,
+  requiredFreshConfirmations: 2,
+  maximumBookAgeMs: 1000,
+  maximumQuoteAgeMs: 1000,
+  confirmationWindowMs: 3000,
+  requiresDistinctBookEvidence: true,
+  lossAuthority: ULTIMATE_STOP_GUARD.version,
+  goldenEyePrecedence: 'ATOMIC_THUNDER_FIRST',
 });
 
 

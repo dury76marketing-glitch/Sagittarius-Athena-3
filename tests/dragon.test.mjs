@@ -221,13 +221,13 @@ test('R27 GPI2 event-driven queue wakes Golden on a Golden-only candidate when n
   assert.deepEqual(calls,[['golden','G']]);
 });
 
-test('R43 fresh install defaults are the clean Pegasus -> Wave broad prospective lane while LIVE stays disarmed',()=>{
+test('R44 fresh install defaults preserve the clean Pegasus -> Wave prospective lane while LIVE stays disarmed and Atomic Thunder is enabled',()=>{
   const s=freshInstallSettings();
   assert.equal(s.liveArmed,false);
   assert.equal(s.pegasusEnabled,true); assert.equal(s.waveSurferEnabled,true);
   assert.equal(s.sagittariusEnabled,false); assert.equal(s.dragonEnabled,false); assert.equal(s.goldenDragonEnabled,false);
   assert.equal(s.momentumHunterEnabled,false); assert.equal(s.recoveryHunterEnabled,false); assert.equal(s.crashRecoveryHunterEnabled,false); assert.equal(s.dragonRecoveryHunterEnabled,false); assert.equal(s.goldenDragonHunterEnabled,false);
-  assert.equal(s.goldenEyeEnabled,true); assert.equal(s.goldenEyeLiveEnabled,false);
+  assert.equal(s.goldenEyeEnabled,true); assert.equal(s.goldenEyeLiveEnabled,false); assert.equal(s.atomicThunderEnabled,true);
   assert.equal(s.maxPositions,20); assert.equal(s.maxEntriesPerTrade,3); assert.equal(s.hunterCooldownMinutes,45); assert.equal(s.minGameMinutes,30); assert.equal(s.startingCapitalCents,1_000_000);
   assert.deepEqual({stake:s.pegasusReferenceStakeCents,min:s.pegasusMinPriceCents,max:s.pegasusMaxPriceCents,drop:s.pegasusDropCents},{stake:3000,min:27,max:89,drop:1});
   assert.deepEqual({stake:s.waveStakeCents,min:s.waveMinEntryCents,max:s.waveMaxEntryCents,stop:s.waveStopCents,move:s.waveMinFeederFavorableMoveCents,spread:s.waveMaxSpreadCents},{stake:20000,min:27,max:89,stop:35,move:1,spread:3});
@@ -1307,10 +1307,9 @@ test('R28 production-chain simulation completes Golden -> GDH25 -> GCA2 -> execu
   assert.equal(strategy.goldenPipelineSummary().byReason.hunter_created,1);
 
   // Drive the same persisted Hunter through the real protection machinery.
-  // Entry 89 with a 35c frozen stop gives a 54c danger line. R42's HELC1 capital
-  // covenant sits above that loss budget. This synthetic market then gaps directly
-  // to 25c, so U-SG1 must commit immediately even though the realized fill can
-  // exceed the decision ceiling because no intermediate executable book existed.
+  // Entry 89 with a 35c frozen stop gives a 54c danger line. Under the restored
+  // R41 doctrine this synthetic market gaps directly to 25c, so U-SG1 must
+  // commit the emergency-boundary full-position exit immediately.
   current={...current,yesBid:25,yesAsk:26,updatedAtMs:Date.now(),recentTradesObservedAtMs:Date.now()};
   bookMs=Math.max(bookMs+10,Date.now());
   const guard=new ProfitGuard({db,kalshi,market,learning,getSettings:()=>s});
@@ -1327,8 +1326,8 @@ test('R28 production-chain simulation completes Golden -> GDH25 -> GCA2 -> execu
   assert.ok(closed.pnlCents<0);
   assert.equal(hardStops,1,'closed hard-stop trade must enter recovery learning exactly once');
   assert.ok(executionCalls.some((x)=>x.side==='sell'&&x.count===hunter.count&&x.priceCents===25),'simulation must execute the full owned quantity on the sell side');
-  assert.ok(audits.some((x)=>x.event==='hard_economic_loss_ceiling_triggered'));
-  assert.ok(audits.some((x)=>x.event==='usg1_exit_committed'&&x.data.exitReason==='hard_economic_loss_ceiling'));
+  assert.equal(audits.some((x)=>x.event==='hard_economic_loss_ceiling_triggered'),false);
+  assert.ok(audits.some((x)=>x.event==='usg1_exit_committed'&&x.data.exitReason==='emergency_boundary'));
 });
 
 test('R28 production sell-contract proof persists the receipt before broker mutation and sends exact owned quantity as LIVE sell', async () => {
@@ -1624,84 +1623,53 @@ test('R31 GFB1 persisted approval self-validates creation-time recovery age with
 });
 
 
-test('R42 HELC1 blocks an entry whose round-trip fee economics alone consume the $75 absolute budget',async()=>{
-  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2});
-  const candidate=r26Quote('R42-FEE',49,50),fresh=r26Quote('R42-FEE',50,50);
+
+test('R44 removal of HELC1 no longer rejects a Hunter solely because entry fee economics would have consumed the former hard ceiling',async()=>{
+  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2,minGameMinutes:0,atomicThunderEnabled:true});
+  const candidate=r26Quote('R44-NO-HELC',49,50),fresh=r26Quote('R44-NO-HELC',50,50);
   const {d,st}=r26Strategy({s,candidate,fresh,plan:{filled:2000,full:true,avgCents:50,bestCents:50}});
   const made=await st.createHunter('Momentum Hunter',candidate,100_000,35,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:45,feederPeakPriceCents:52}});
-  assert.equal(made,null);
-  const block=d.audits.find(x=>x.event==='hunter_entry_helc_feasibility_blocked');
-  assert.ok(block);
-  assert.equal(block.data.reason,'entry_consumes_hard_economic_loss_budget');
-  assert.equal(block.data.originalEntryNotionalCents,100_000);
-  assert.equal(block.data.maximumLossCents,7500);
-  assert.equal(block.data.projectedImmediateLossCents,8000);
-  assert.equal(d.inserted.length,0,'capital-infeasible HELC position must be rejected before any simulated fill/persistence');
+  assert.ok(made,'former HELC1 entry-side rejection must be absent in R44');
+  assert.equal(d.audits.some(x=>x.event==='hunter_entry_helc_feasibility_blocked'),false);
+  const summary=st.entryPipelineSummary();
+  assert.equal(Object.keys(summary.byStage).some(k=>k.startsWith('HELC_ENTRY_FEASIBILITY:')),false);
 });
 
-test('R42 HELC1 blocks entry when the freshly verified book cannot prove full-position sell-side exitability',async()=>{
-  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2});
-  const candidate=r26Quote('R42-DEPTH',49,50),fresh=r26Quote('R42-DEPTH',49,50);
+test('R44 removal of HELC1 does not require sell-side full exitability as an entry gate',async()=>{
+  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2,minGameMinutes:0,atomicThunderEnabled:true});
+  const candidate=r26Quote('R44-NO-HELC-DEPTH',49,50),fresh=r26Quote('R44-NO-HELC-DEPTH',49,50);
   const {d,st}=r26Strategy({s,candidate,fresh,plan:{filled:400,full:true,avgCents:50,bestCents:50}});
   st.market.executableBid=(_ticker,count)=>({filled:Math.min(10,count),full:false,avgCents:49,bestCents:49});
   const made=await st.createHunter('Momentum Hunter',candidate,20_000,35,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:45,feederPeakPriceCents:52}});
-  assert.equal(made,null);
-  const block=d.audits.find(x=>x.event==='hunter_entry_helc_feasibility_blocked');
-  assert.ok(block);
-  assert.equal(block.data.reason,'full_exit_depth_unavailable');
-  assert.equal(d.inserted.length,0);
-});
-
-test('R42 HELC1 entry feasibility passes when full immediate liquidation remains strictly inside the stake-relative budget',async()=>{
-  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2});
-  const candidate=r26Quote('R42-OK',49,50),fresh=r26Quote('R42-OK',49,50);
-  const {d,st}=r26Strategy({s,candidate,fresh,plan:{filled:400,full:true,avgCents:50,bestCents:50}});
-  const made=await st.createHunter('Momentum Hunter',candidate,20_000,35,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:45,feederPeakPriceCents:52}});
-  assert.ok(made);
-  assert.equal(made.entryPriceCents,50);
-  assert.equal(made.count,400);
+  assert.ok(made,'pre-R42 entry doctrine must not add a new sell-depth veto');
   assert.equal(d.audits.some(x=>x.event==='hunter_entry_helc_feasibility_blocked'),false);
-  const summary=st.entryPipelineSummary();
-  assert.ok(summary.byStage['HELC_ENTRY_FEASIBILITY:PASS']>=1);
 });
 
-
-test('R43 EQC1 blocks a Hunter whose fresh immediate economics consume 0.32R even though R42 HELC would allow it',async()=>{
-  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2,minGameMinutes:0});
-  const candidate=r26Quote('R43-FRICTION',48,50),fresh=r26Quote('R43-FRICTION',48,50);
-  const {d,st}=r26Strategy({s,candidate,fresh,plan:{filled:400,full:true,avgCents:50,bestCents:50}});
-  const made=await st.createHunter('Momentum Hunter',candidate,20_000,35,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:45,feederPeakPriceCents:52}});
-  assert.equal(made,null);
-  assert.equal(d.audits.some(x=>x.event==='hunter_entry_helc_feasibility_blocked'),false,'R42 must still regard 0.32R as inside its 1R ceiling');
-  const block=d.audits.find(x=>x.event==='hunter_entry_r43_quality_blocked');
-  assert.ok(block); assert.equal(block.data.reason,'entry_friction_not_below_0_30r');
-  assert.ok(block.data.entryFrictionR>0.30); assert.equal(d.inserted.length,0);
-});
-
-test('R43 EQC1 blocks a 29-minute candidate even when the editable legacy min-game setting is lower',async()=>{
-  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2,minGameMinutes:0});
-  const candidate=r26Quote('R43-EARLY',49,50),fresh=r26Quote('R43-EARLY',49,50);
+test('R44 removal of EQC1 no longer imposes an independent 30-minute R43 maturity gate',async()=>{
+  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2,minGameMinutes:0,atomicThunderEnabled:true});
+  const candidate=r26Quote('R44-NO-EQC-EARLY',49,50),fresh=r26Quote('R44-NO-EQC-EARLY',49,50);
   const start=Date.now()-29*60_000;
   candidate.gameStartTimeMs=start; candidate.gameClockState=r26Clock(candidate.eventTicker,start);
   fresh.gameStartTimeMs=start; fresh.gameClockState=r26Clock(fresh.eventTicker,start);
   const {d,st}=r26Strategy({s,candidate,fresh,plan:{filled:400,full:true,avgCents:50,bestCents:50}});
   const made=await st.createHunter('Momentum Hunter',candidate,20_000,35,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:45,feederPeakPriceCents:52}});
-  assert.equal(made,null);
-  const block=d.audits.find(x=>x.event==='hunter_entry_r43_quality_blocked');
-  assert.ok(block); assert.equal(block.data.reason,'game_maturity_below_30_minutes');
-  assert.equal(d.inserted.length,0);
+  assert.ok(made,'editable shared minGameMinutes=0 must govern after EQC1 removal');
+  assert.equal(d.audits.some(x=>x.event==='hunter_entry_r43_quality_blocked'),false);
+  const summary=st.entryPipelineSummary();
+  assert.equal(Object.keys(summary.byStage).some(k=>k.startsWith('R43_ENTRY_QUALITY:')),false);
 });
 
-test('R43 EQC1 allows mature low-friction entry and freezes the exact covenant evidence into entryConfig',async()=>{
-  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2,minGameMinutes:0});
-  const candidate=r26Quote('R43-PASS',49,50),fresh=r26Quote('R43-PASS',49,50);
-  const {d,st}=r26Strategy({s,candidate,fresh,plan:{filled:400,full:true,avgCents:50,bestCents:50}});
+test('R44 freezes Atomic Thunder profit-harvest policy into every new real Hunter entry without changing feeder ownership',async()=>{
+  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2,minGameMinutes:0,atomicThunderEnabled:true,atomicThunderMinNetPerOriginalContractCents:1,atomicThunderRequiredConfirmations:2,atomicThunderMaximumBookAgeMs:1000,atomicThunderConfirmationWindowMs:3000});
+  const candidate=r26Quote('R44-AT-SNAPSHOT',49,50),fresh=r26Quote('R44-AT-SNAPSHOT',49,50);
+  const {st}=r26Strategy({s,candidate,fresh,plan:{filled:400,full:true,avgCents:50,bestCents:50}});
   const made=await st.createHunter('Momentum Hunter',candidate,20_000,35,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:45,feederPeakPriceCents:52}});
-  assert.ok(made); assert.equal(d.inserted.length,1);
-  assert.equal(made.entryConfig.entryQualityCovenant.version,'EQC1');
-  assert.equal(made.entryConfig.entryQualityCovenant.authority,'EXECUTION');
-  assert.ok(made.entryConfig.entryQualityCovenant.entryFrictionR<0.30);
-  assert.ok(made.entryConfig.entryQualityCovenant.gameMinutes>=30);
-  const summary=st.entryPipelineSummary();
-  assert.ok(summary.byStage['R43_ENTRY_QUALITY:PASS']>=1);
+  assert.ok(made);
+  assert.equal(made.entryConfig.atomicThunder.version,'ATOMIC-THUNDER-V1');
+  assert.equal(made.entryConfig.atomicThunder.enabledAtEntry,true);
+  assert.equal(made.entryConfig.atomicThunder.minimumNetPerOriginalContractCents,1);
+  assert.equal(made.entryConfig.atomicThunder.requiredFreshConfirmations,2);
+  assert.equal(made.entryConfig.atomicThunder.fullPositionOnly,true);
+  assert.equal(made.entryConfig.atomicThunder.lossAuthority,'U-SG1');
+  assert.equal(Object.hasOwn(made.entryConfig,'entryQualityCovenant'),false);
 });

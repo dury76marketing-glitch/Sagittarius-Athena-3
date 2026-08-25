@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ProfitGuard, profitGuardDecision } from '../src/profitGuard.mjs';
 import { LearningEngine, advanceProfitLearningState, recommendProfitRetentionRatio, recommendProfitRunnerGivebackCents, profitEpisodeMetrics, advanceStopGuardRecoveryState, stopGuardEntryBand, stopGuardDropBucket, stopGuardGameBucket, stopGuardRecoveryProfileKeys } from '../src/learning.mjs';
-import { ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, stopLossWatchdogThresholdsForStakeCents, HARD_ECONOMIC_LOSS_CEILING, hardEconomicLossCeilingForStakeCents, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE } from '../src/doctrine.mjs';
+import { ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, stopLossWatchdogThresholdsForStakeCents, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE, ATOMIC_THUNDER } from '../src/doctrine.mjs';
 import { Database } from '../src/db.mjs';
 import { entryConfigSnapshot } from '../src/strategy.mjs';
 import { advanceAthenaExitState } from '../src/athenaExit.mjs';
@@ -53,16 +53,17 @@ test('a committed LIVE exit remains sticky until owned quantity is flattened',as
   assert.equal(updates.at(-1).p.closeReason,'manual_cashout');
 });
 
-function guardHarness({bid=86,full=true,filled=100,executableAvg=null,entryOverrides={},stopProfile=null,lossWatchdogProfile=null,apgEnabled=false,pri1Enabled=false,pri1R2Enabled=false,x1Enabled=false,retentionProfile=null,crashState=null,athena=null}={}){
+function guardHarness({bid=86,full=true,filled=100,executableAvg=null,entryOverrides={},stopProfile=null,lossWatchdogProfile=null,apgEnabled=false,pri1Enabled=false,pri1R2Enabled=false,x1Enabled=false,atomicThunderEnabled=false,retentionProfile=null,crashState=null,athena=null}={}){
   const now=Date.now();
-  const row={...base,id:'guard-1',mode:'SIMULATION',status:'open',entryPriceCents:80,currentPriceCents:80,peakPriceCents:80,stopLossCents:35,count:100,remainingCount:100,pnlCents:0,entryFeeCents:200,profitHarvestPeakPnlCents:0,stopGuardState:{},profitGuardState:{},apexProfitGuardState:{},entryConfig:x1Enabled?{profitAuthority:'ATHENA-X1',profitLearning:'PLI1',profitAuthorityRevision:'ATHENA-X1-R1',athena:{version:'ATHENA-B1',score:50,classification:'NEUTRAL'}}:pri1R2Enabled?{profitAuthority:'PRI1',profitLearning:'PLI1',profitAuthorityRevision:'PRI1-R2'}:pri1Enabled?{profitAuthority:'PRI1',profitLearning:'PLI1'}:undefined,openedAtMs:now-60000,updatedAtMs:now-1000,...entryOverrides};
-  const rows=new Map([[row.id,row]]); const audits=[];
+  const row={...base,id:'guard-1',mode:'SIMULATION',status:'open',entryPriceCents:80,currentPriceCents:80,peakPriceCents:80,stopLossCents:35,count:100,remainingCount:100,pnlCents:0,entryFeeCents:200,profitHarvestPeakPnlCents:0,stopGuardState:{},profitGuardState:{},apexProfitGuardState:{},entryConfig:atomicThunderEnabled?{profitAuthority:'GOLDEN-EYE-V1',profitLearning:'PLI1',atomicThunder:{version:ATOMIC_THUNDER.version,policyRevision:ATOMIC_THUNDER.policyRevision,enabledAtEntry:true,minimumNetPerOriginalContractCents:1,requiredFreshConfirmations:2,maximumBookAgeMs:1000,confirmationWindowMs:3000,fullPositionOnly:true,lossAuthority:'U-SG1'}}:x1Enabled?{profitAuthority:'ATHENA-X1',profitLearning:'PLI1',profitAuthorityRevision:'ATHENA-X1-R1',athena:{version:'ATHENA-B1',score:50,classification:'NEUTRAL'}}:pri1R2Enabled?{profitAuthority:'PRI1',profitLearning:'PLI1',profitAuthorityRevision:'PRI1-R2'}:pri1Enabled?{profitAuthority:'PRI1',profitLearning:'PLI1'}:undefined,openedAtMs:now-60000,updatedAtMs:now-1000,...entryOverrides};
+  const rows=new Map([[row.id,row]]); const audits=[]; const atomicEvents=[];
   const db={
     async updateEntry(id,p){Object.assign(rows.get(id),structuredClone(p));},
     async entryById(id){return rows.get(id)?structuredClone(rows.get(id)):null;},
     async audit(level,event,data){audits.push({level,event,data});},
     async openEntries(){return [...rows.values()].map(structuredClone);},
     async openEntriesByTicker(){return [...rows.values()].map(structuredClone);},
+    async recordAtomicThunderEvent(e){atomicEvents.push(structuredClone(e));return true;},
   };
   let quoteMs=now;
   let quote={yesBid:bid,yesAsk:Math.min(100,bid+1),volume24h:10000,updatedAtMs:quoteMs,status:'active',result:'',bookInvalid:false};
@@ -77,10 +78,10 @@ function guardHarness({bid=86,full=true,filled=100,executableAvg=null,entryOverr
     executableBid:(_ticker,count)=>({filled:Math.min(count,executableFilled),full:fullDepth&&executableFilled+1e-9>=count,avgCents:executableAverage==null?quote.yesBid:executableAverage,bestCents:quote.yesBid}),
   };
   const learning={hardStops:0,profitExitMarks:[],profitObservations:[],async onHardStop(){this.hardStops++;},async stopGuardProfile(){return stopProfile;},async lossWatchdogProfile(){return lossWatchdogProfile;},profitLearningState(){return null;},async observeProfitOpportunity(_entry,o){this.profitObservations.push(structuredClone(o));return null;},profitRetentionProfileCached(){return retentionProfile||{retentionRatio:0.92,specificity:'cold_start',promoted:false,totalObservations:0,oneTickPullbacks:0,oneTickRecoveries:0,continuationRate:.5,collapseRate:.25,confidence:'low'};},crashState(){return crashState?structuredClone(crashState):null;},async profitRetentionProfile(){return this.profitRetentionProfileCached();},async markProfitExit(entry,o){this.profitExitMarks.push({entry:structuredClone(entry),o:structuredClone(o)});}};
-  const guard=new ProfitGuard({db,kalshi:{},market,learning,athena,getSettings:()=>({...settings,simFeeCents:2,systemName:'SAGITTARIUS'})});
+  const guard=new ProfitGuard({db,kalshi:{},market,learning,athena,getSettings:()=>({...settings,simFeeCents:2,systemName:'SAGITTARIUS',atomicThunderEnabled,atomicThunderMinNetPerOriginalContractCents:1,atomicThunderRequiredConfirmations:2,atomicThunderMaximumBookAgeMs:1000,atomicThunderConfirmationWindowMs:3000})});
   if (!apgEnabled) guard.evaluateApexProfitGuard=async()=>null; // Legacy U-PG3 unit tests isolate the U-PG3 lane; R30 tests enable APG1 explicitly.
   return {
-    guard,db,rows,audits,learning,
+    guard,db,rows,audits,atomicEvents,learning,
     setBid(v){const next=Math.max(Date.now(),bookMs+1,quoteMs+1);quoteMs=next;bookMs=next;quote={...quote,yesBid:v,yesAsk:Math.min(100,v+1),updatedAtMs:quoteMs};},
     setBidSameBook(v){quote={...quote,yesBid:v,yesAsk:Math.min(100,v+1)};},
     setDepth({full,filled}){fullDepth=full;executableFilled=filled;const next=Math.max(Date.now(),bookMs+1,quoteMs+1);bookMs=next;quoteMs=next;quote={...quote,updatedAtMs:quoteMs};},
@@ -371,9 +372,9 @@ test('settlement retains precedence over an armed U-PG3 state',async()=>{
 });
 
 test('U-SG1 emergency boundary retains precedence over an armed U-PG3 state',async()=>{
-  const h=guardHarness({bid:96,entryOverrides:{stopLossCents:10}});
+  const h=guardHarness({bid:96});
   await h.guard.protect(h.row());
-  h.setBid(55); // 15c below the 70c Danger Line, but still inside HELC1's $30 budget.
+  h.setBid(30);
   const out=await h.guard.protect(h.row());
   assert.equal(out.closed,true);
   assert.equal(h.row().closeReason,'hard_stop_loss');
@@ -484,47 +485,46 @@ test('ghost feeders remain excluded from U-PG3',async()=>{
 });
 
 test('U-SG1 arms at the frozen Danger Line instead of immediately liquidating',async()=>{
-  const h=guardHarness({bid:70,stopProfile:{totalObservations:40,smoothedRecoveryRate:.95,avgRecoveryTimeMs:600000,troughBucket:'0-5',specificity:'exact'},entryOverrides:{stopLossCents:10}});
+  const h=guardHarness({bid:45,stopProfile:{totalObservations:40,smoothedRecoveryRate:.95,avgRecoveryTimeMs:600000,troughBucket:'0-5',specificity:'exact'}});
   const out=await h.guard.protect(h.row());
   assert.equal(out.protected,true);
   assert.equal(h.row().status,'open');
   assert.equal(h.row().stopGuardState.version,'U-SG1');
-  assert.equal(h.row().stopGuardState.dangerLineCents,70);
+  assert.equal(h.row().stopGuardState.dangerLineCents,45);
   assert.equal(h.guard.getState('guard-1').guardState,'USG1_RECOVERY_ZONE');
   assert.equal(h.audits.filter(x=>x.event==='usg1_armed').length,1);
 });
 
 test('U-SG1 requires two fresh +2c reclaim confirmations before returning to normal protection',async()=>{
   const profile={totalObservations:40,smoothedRecoveryRate:.95,avgRecoveryTimeMs:600000,troughBucket:'0-5',specificity:'exact'};
-  const h=guardHarness({bid:70,stopProfile:profile,entryOverrides:{stopLossCents:10}});
+  const h=guardHarness({bid:45,stopProfile:profile});
   await h.guard.protect(h.row());
-  h.setBid(72);
+  h.setBid(47);
   let out=await h.guard.protect(h.row());
   assert.equal(out.protected,true);
   assert.equal(h.row().stopGuardState.reclaimConfirmations,1);
-  h.setBid(72);
+  h.setBid(47);
   out=await h.guard.protect(h.row());
-  assert.equal(out.closed??false,false);
+  assert.equal(out.protected,true);
   assert.equal(h.row().stopGuardState.version,undefined,'U-SG1 must clear after the second fresh reclaim confirmation');
-  assert.equal(h.row().stopGuardState.watchdog,undefined,'the recovered position is also below the 30% SLW1 wake threshold');
-  assert.equal(h.guard.getState('guard-1').guardState,'PROTECTED');
+  assert.equal(h.row().stopGuardState.watchdog?.version,'SLW1','stake-normalized SLW1 may immediately resume early protection while the position is still >30% economically wounded');
+  assert.equal(h.guard.getState('guard-1').guardState,'SLW1_RECOVERY_GRACE');
   assert.equal(h.audits.filter(x=>x.event==='usg1_recovered').length,1);
 });
 
 test('U-SG1 recovery state survives a fresh ProfitGuard instance and still needs fresh reclaim confirmations',async()=>{
   const profile={totalObservations:40,smoothedRecoveryRate:.95,avgRecoveryTimeMs:600000,troughBucket:'0-5',specificity:'exact'};
-  const h=guardHarness({bid:70,stopProfile:profile,entryOverrides:{stopLossCents:10}});
+  const h=guardHarness({bid:45,stopProfile:profile});
   await h.guard.protect(h.row());
   const restarted=new ProfitGuard({db:h.db,kalshi:{},market:h.guard.market,learning:h.learning,getSettings:()=>({...settings,simFeeCents:2,systemName:'SAGITTARIUS'})});
-  restarted.evaluateApexProfitGuard=async()=>null;
-  h.setBid(72);
+  h.setBid(47);
   await restarted.protect(h.row());
   assert.equal(h.row().stopGuardState.reclaimConfirmations,1);
-  h.setBid(72);
+  h.setBid(47);
   await restarted.protect(h.row());
   assert.equal(h.row().stopGuardState.version,undefined);
-  assert.equal(h.row().stopGuardState.watchdog,undefined);
-  assert.equal(restarted.getState('guard-1').guardState,'PROTECTED');
+  assert.equal(h.row().stopGuardState.watchdog?.version,'SLW1');
+  assert.equal(restarted.getState('guard-1').guardState,'SLW1_RECOVERY_GRACE');
 });
 
 test('R41 SGRL1 U-SG1 profile beta-smooths small perfect Hunter-only samples instead of treating them as certainty',async()=>{
@@ -544,7 +544,7 @@ test('R41 SGRL1 U-SG1 profile beta-smooths small perfect Hunter-only samples ins
 
 test('U-SG1 rejects a weak-learning critical collapse before the emergency boundary',async()=>{
   const weak={totalObservations:20,smoothedRecoveryRate:.60,avgRecoveryTimeMs:600000,troughBucket:'10+',specificity:'exact'};
-  const h=guardHarness({bid:59,stopProfile:weak,entryOverrides:{stopLossCents:10}});
+  const h=guardHarness({bid:34,stopProfile:weak});
   const out=await h.guard.protect(h.row());
   assert.equal(out.closed,true);
   assert.equal(h.row().closeReason,'hard_stop_loss');
@@ -553,11 +553,11 @@ test('U-SG1 rejects a weak-learning critical collapse before the emergency bound
 
 test('U-SG1 persists a critical probe for high-confidence recovery and never exceeds the emergency ceiling',async()=>{
   const strong={totalObservations:50,smoothedRecoveryRate:.90,avgRecoveryTimeMs:1200000,troughBucket:'10+',specificity:'exact'};
-  const h=guardHarness({bid:59,stopProfile:strong,entryOverrides:{stopLossCents:10}});
+  const h=guardHarness({bid:34,stopProfile:strong});
   let out=await h.guard.protect(h.row());
   assert.equal(out.protected,true);
   assert.equal(h.guard.getState('guard-1').guardState,'USG1_CRITICAL_PROBE');
-  h.setBid(55); // emergency at 15c penetration; HELC1 would not trigger until the next lower cent.
+  h.setBid(30);
   out=await h.guard.protect(h.row());
   assert.equal(out.closed,true);
   assert.equal(h.row().stopGuardState.exitReason,'emergency_boundary');
@@ -1996,7 +1996,7 @@ function r36AuthorizedQuote(ticker){
 test('R37 Gate 5 every real Hunter crosses ATHENA-B1 exactly once, freezes Golden Eye, holds through per-position ProfitGuard, and can complete a full Golden Eye cashout',async()=>{
   for(const concept of ['Momentum Hunter','Wave Surfer','Recovery Hunter','Crash Recovery Hunter','Dragon Recovery Hunter','Golden Dragon Hunter']){
     const rows=[],audits=[];let b1Calls=0;
-    const s={...originalSettings(),systemName:'S',ownerId:'O',mode:'SIMULATION',liveArmed:false,engineActive:true,minGameMinutes:0,maxPositions:99,maxEntriesPerTrade:99,hunterCooldownMinutes:0,startingCapitalCents:1_000_000,simFillProbability:1,pegasusEnabled:true,dragonEnabled:true,goldenDragonEnabled:true,momentumHunterEnabled:true,waveSurferEnabled:true,recoveryHunterEnabled:true,crashRecoveryHunterEnabled:true,dragonRecoveryHunterEnabled:true,goldenDragonHunterEnabled:true,goldenEyeEnabled:true};
+    const s={...originalSettings(),systemName:'S',ownerId:'O',mode:'SIMULATION',liveArmed:false,engineActive:true,minGameMinutes:0,maxPositions:99,maxEntriesPerTrade:99,hunterCooldownMinutes:0,startingCapitalCents:1_000_000,simFillProbability:1,pegasusEnabled:true,dragonEnabled:true,goldenDragonEnabled:true,momentumHunterEnabled:true,waveSurferEnabled:true,recoveryHunterEnabled:true,crashRecoveryHunterEnabled:true,dragonRecoveryHunterEnabled:true,goldenDragonHunterEnabled:true,goldenEyeEnabled:true,atomicThunderEnabled:false};
     const db={async entries(){return rows;},async openEntries(){return rows.filter(x=>['open','entry_pending','exit_pending','pending_recovery'].includes(x.status));},async openEntriesByTicker(_sys,t){return rows.filter(x=>x.ticker===t&&['open','entry_pending','exit_pending','pending_recovery'].includes(x.status));},async insertEntry(e){rows.push(structuredClone(e));},async updateEntry(id,patch){const row=rows.find(x=>x.id===id);if(row)Object.assign(row,structuredClone(patch));},async entryById(id){const row=rows.find(x=>x.id===id);return row?structuredClone(row):null;},async audit(level,event,data){audits.push({level,event,data});}};
     const quote=r36AuthorizedQuote(`R37-${concept.replaceAll(' ','-')}`);
     let runtimeQuote=structuredClone(quote),bookMs=Date.now();
@@ -2303,15 +2303,15 @@ test('R37 Golden Eye never outranks lifecycle finality: settlement closes before
 });
 
 
-test('R42 preserves R41 stake normalization and adds the hard economic loss ceiling',()=>{
+test('R41-HF1 SLW1 keeps the $200 reference calibration but runtime thresholds are stake-normalized',()=>{
   assert.equal(STOP_LOSS_WATCHDOG.version,'SLW1');
-  assert.equal(STOP_LOSS_WATCHDOG.policyRevision,'SLW1-R3-HARD-ECONOMIC-CEILING');
+  assert.equal(STOP_LOSS_WATCHDOG.policyRevision,'SLW1-R2-STAKE-NORMALIZED');
   assert.equal(STOP_LOSS_WATCHDOG.stakeNormalized,true);
   assert.equal(STOP_LOSS_WATCHDOG.wakeLossCents,6000);
   assert.equal(STOP_LOSS_WATCHDOG.resetLossCents,4000);
   assert.deepEqual(stopLossWatchdogThresholdsForStakeCents(20000),{
-    policyRevision:'SLW1-R3-HARD-ECONOMIC-CEILING',stakeBasis:'original_entry_notional',basisStakeCents:20000,
-    wakeLossCents:6000,resetLossCents:4000,severeLossCents:9000,catastrophicLossCents:18000,hardEconomicLossCeilingCents:7500,
+    policyRevision:'SLW1-R2-STAKE-NORMALIZED',stakeBasis:'original_entry_notional',basisStakeCents:20000,
+    wakeLossCents:6000,resetLossCents:4000,severeLossCents:9000,catastrophicLossCents:18000,
   });
   assert.equal(ULTIMATE_STOP_GUARD.version,'U-SG1');
   const d=profitGuardDecision({...base,entryPriceCents:80,stopLossCents:35,count:250,remainingCount:250},{yesBid:60,yesAsk:61,result:''},{...settings,simFeeCents:2});
@@ -2331,7 +2331,7 @@ test('R39 SLW1 arms above the U-SG1 Danger Line using full-position after-fee ec
   assert.equal(h.row().status,'open');
 });
 
-test('R42 SLW1 classifier thresholds remain stake-relative while HELC1 caps the loss budget at $75',()=>{
+test('R41-HF1 SLW1 thresholds scale linearly across $20, $50, $200 and $500 original stakes',()=>{
   const cases=[[2000,600,400,900,1800],[5000,1500,1000,2250,4500],[20000,6000,4000,9000,18000],[50000,15000,10000,22500,45000]];
   for(const [stake,wake,reset,severe,catastrophic] of cases){
     const t=stopLossWatchdogThresholdsForStakeCents(stake);
@@ -2340,12 +2340,7 @@ test('R42 SLW1 classifier thresholds remain stake-relative while HELC1 caps the 
     assert.equal(t.resetLossCents,reset);
     assert.equal(t.severeLossCents,severe);
     assert.equal(t.catastrophicLossCents,catastrophic);
-    assert.equal(t.hardEconomicLossCeilingCents,Math.min(stake*.375,7500));
   }
-  assert.equal(HARD_ECONOMIC_LOSS_CEILING.version,'HELC1');
-  assert.equal(HARD_ECONOMIC_LOSS_CEILING.absoluteMaximumLossCents,7500);
-  assert.equal(hardEconomicLossCeilingForStakeCents(2000).maximumLossCents,750);
-  assert.equal(hardEconomicLossCeilingForStakeCents(50000).maximumLossCents,7500);
 });
 
 test('R41-HF1 a $20 Hunter receives the same early-watchdog percentage protection instead of waiting for a fixed $60 loss',async()=>{
@@ -2414,15 +2409,17 @@ test('R39 SLW1 does not kill an unknown cohort from dollar loss alone',async()=>
   assert.equal(h.guard.getState('guard-1').guardState,'SLW1_DANGER');
 });
 
-test('R42 sparse-history recovery grace is bounded absolutely by HELC1',async()=>{
+test('R41 sparse-history crash deterioration exits only after the bounded cold-start recovery window',async()=>{
   const profile={totalObservations:2,recoveredCount:1,smoothedRecoveryRate:0.5,avgRecoveryTimeMs:0,specificity:'global_pre_stop',dropBucket:'15+'};
   const crash={phase:'CRASHING',lowerLowCount:3,reboundCents:0,stableObservations:0,upwardTicks:0};
   const h=guardHarness({bid:56,filled:250,lossWatchdogProfile:profile,crashState:crash,entryOverrides:{entryPriceCents:80,currentPriceCents:80,peakPriceCents:80,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,entryConfig:{profitAuthority:'GOLDEN-EYE-V1',profitAuthorityRevision:'GE1-R2'}}});
-  let out=await h.guard.protect(h.row());
-  assert.equal(out.closed??false,false,'sparse history still receives recovery authority while executable loss is inside HELC1');
-  h.setBid(54); out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true,'the cold-start recovery clock cannot extend beyond the capital budget');
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
+  await h.guard.protect(h.row());
+  h.setBid(52); let out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false,'sparse history must not create an immediate crash exit inside the R41 recovery window');
+  h.rows.get('guard-1').stopGuardState.watchdog.armedAtMs=Date.now()-STOP_LOSS_WATCHDOG.minimumLiveOverrideAgeMs-1000;
+  h.setBid(48); out=await h.guard.protect(h.row());
+  assert.equal(out.closed,true);
+  assert.equal(h.row().stopGuardState.exitReason,'slw1_crash_dead_market');
   assert.equal(h.row().closeReason,'hard_stop_loss');
 });
 
@@ -2436,15 +2433,15 @@ test('R39 SLW1 stale books fail closed to DATA_HOLD and cannot create a new dead
   assert.equal(h.row().status,'open');
 });
 
-test('R42 HELC1 preempts a model Danger Line that would require more than the approved loss budget',async()=>{
+test('R39 SLW1 yields completely to standard U-SG1 once the immutable Danger Line is touched',async()=>{
   const profile={totalObservations:30,recoveredCount:1,smoothedRecoveryRate:0.06,avgRecoveryTimeMs:0,specificity:'exact_pre_stop',dropBucket:'15+'};
   const h=guardHarness({bid:60,filled:250,lossWatchdogProfile:profile,stopProfile:{totalObservations:20,recoveredCount:18,smoothedRecoveryRate:0.86,avgRecoveryTimeMs:60000,specificity:'global_drop',troughBucket:'0-5'},entryOverrides:{entryPriceCents:80,currentPriceCents:80,peakPriceCents:80,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,entryConfig:{profitAuthority:'GOLDEN-EYE-V1',profitAuthorityRevision:'GE1-R2'}}});
   await h.guard.protect(h.row());
-  h.setBid(54); const out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true,'HELC1 must preempt a model Danger Line that lies outside the approved capital budget');
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
+  h.setBid(44); const out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false,'U-SG1 recovery zone should own the touched Danger Line and may hold');
+  assert.equal(h.row().stopGuardState.version,'U-SG1');
   assert.equal(h.row().stopGuardState.dangerLineCents,45);
-  assert.ok(h.row().stopGuardState.exitBidCents>45);
+  assert.notEqual(h.guard.getState('guard-1').guardState,'SLW1_DANGER');
 });
 
 test('R41 SGRL1 Stop Guard ignores legacy recovery patterns and MarketObserver contamination',async()=>{
@@ -2573,55 +2570,69 @@ test('R41 SGRL1 full-position economics preserve prior realized PnL and current 
 });
 
 
-test('R42 replay Hanshin-style Wave: strong recovery history cannot veto the hard economic loss ceiling',async()=>{
+test('R41 replay Hanshin-style Wave overrides even strong history after bounded severe-loss grace and exits above the frozen Danger Line',async()=>{
   const now=Date.now();
   const strong={totalObservations:80,recoveredCount:76,smoothedRecoveryRate:.94,avgRecoveryTimeMs:180000,specificity:'exact',evidenceVersion:'SGRL1'};
-  const watchdog={version:'SLW1',phase:'SLW1_ALIVE',armedAtMs:now-58*60000,lastObservedBookMs:now-2000,observationCount:3368,lastBidCents:41,minBidCents:41,lowerLowCount:7,consecutiveDown:2,stableObservations:0,upwardTicks:0,reboundFromTroughCents:0,currentLossCents:7000,peakLossCents:7000,profile:strong,profileUpdatedAtMs:now-1000,structureStrong:false};
-  const h=guardHarness({bid:39,filled:357,lossWatchdogProfile:strong,entryOverrides:{conceptName:'Wave Surfer',ticker:'KXNPBGAME-HAN',entryPriceCents:56,currentPriceCents:39,peakPriceCents:56,stopLossCents:35,count:357,remainingCount:357,entryFeeCents:714,stopGuardState:{watchdog},openedAtMs:now-90*60000}});
+  const watchdog={version:'SLW1',phase:'SLW1_ALIVE',armedAtMs:now-58*60000,lastObservedBookMs:now-2000,observationCount:3368,lastBidCents:23,minBidCents:23,lowerLowCount:7,consecutiveDown:2,stableObservations:0,upwardTicks:0,reboundFromTroughCents:0,currentLossCents:13000,peakLossCents:19013,profile:strong,profileUpdatedAtMs:now-1000,structureStrong:false};
+  const h=guardHarness({bid:22,filled:357,lossWatchdogProfile:strong,entryOverrides:{conceptName:'Wave Surfer',ticker:'KXNPBGAME-HAN',entryPriceCents:56,currentPriceCents:22,peakPriceCents:56,stopLossCents:35,count:357,remainingCount:357,entryFeeCents:714,stopGuardState:{watchdog},openedAtMs:now-90*60000}});
   const out=await h.guard.protect(h.row());
   assert.equal(out.closed,true);
+  assert.equal(h.row().exitPriceCents,22);
   assert.equal(h.row().closeReason,'hard_stop_loss');
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.equal(h.row().stopGuardState.hardEconomicLossCeiling.recoveryVetoAllowed,false);
-  assert.ok(h.row().exitPriceCents>21,'HELC1 must act materially above the old frozen Danger Line when the book provides the opportunity');
+  assert.equal(h.row().stopGuardState.exitReason,'slw1_severe_live_deterioration');
+  assert.ok(h.row().exitPriceCents>21,'R41 must act before the frozen 21c Danger Line in this proven dead-market pattern');
 });
 
-test('R42 replay Montagud-style prolonged loss: HELC1 replaces catastrophic grace with a capital budget',async()=>{
+test('R41 replay Montagud-style prolonged near-total executable loss cannot be kept alive by strong history',async()=>{
   const now=Date.now();
   const strong={totalObservations:40,recoveredCount:37,smoothedRecoveryRate:.90,avgRecoveryTimeMs:180000,specificity:'exact',evidenceVersion:'SGRL1'};
-  const watchdog={version:'SLW1',phase:'SLW1_ALIVE',armedAtMs:now-31*60000,lastObservedBookMs:now-2000,observationCount:1265,lastBidCents:41,minBidCents:41,lowerLowCount:3,consecutiveDown:1,stableObservations:1,upwardTicks:0,reboundFromTroughCents:0,currentLossCents:7000,peakLossCents:7000,profile:strong,profileUpdatedAtMs:now-1000,structureStrong:false};
-  const h=guardHarness({bid:40,filled:350,lossWatchdogProfile:strong,entryOverrides:{conceptName:'Crash Recovery Hunter',ticker:'KXITFMATCH-MONTAGUD',sourceFeeder:'Dragon',entryPriceCents:57,currentPriceCents:40,peakPriceCents:57,stopLossCents:35,count:350,remainingCount:350,entryFeeCents:700,stopGuardState:{watchdog},openedAtMs:now-90*60000}});
+  const watchdog={version:'SLW1',phase:'SLW1_ALIVE',armedAtMs:now-31*60000,lastObservedBookMs:now-2000,observationCount:1265,lastBidCents:25,minBidCents:23,lowerLowCount:3,consecutiveDown:1,stableObservations:1,upwardTicks:0,reboundFromTroughCents:2,currentLossCents:19070,peakLossCents:19070,profile:strong,profileUpdatedAtMs:now-1000,structureStrong:false};
+  const h=guardHarness({bid:25,filled:350,executableAvg:7,lossWatchdogProfile:strong,entryOverrides:{conceptName:'Crash Recovery Hunter',ticker:'KXITFMATCH-MONTAGUD',sourceFeeder:'Dragon',entryPriceCents:57,currentPriceCents:25,peakPriceCents:57,stopLossCents:35,count:350,remainingCount:350,entryFeeCents:700,stopGuardState:{watchdog},openedAtMs:now-90*60000}});
   const out=await h.guard.protect(h.row());
   assert.equal(out.closed,true);
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.ok(h.row().pnlCents>=-7500,'with executable depth available, the $75 absolute ceiling must bound the simulated realized loss');
+  assert.equal(h.row().exitPriceCents,7);
+  assert.equal(h.row().stopGuardState.exitReason,'slw1_catastrophic_stall');
+  assert.ok(h.row().pnlCents>-20650,'candidate must improve on the actual -$206.50 settlement loss even after simulated exit fees');
 });
 
-test('R42 Hiroshima cold-start counterexample is intentionally sacrificed once HELC1 is consumed',async()=>{
+test('R41 cold-start Hiroshima replay preserves the observed ~23-minute trough-to-recovery window instead of becoming a disguised tight stop',async()=>{
   const now=Date.now();
   const cold={totalObservations:0,recoveredCount:0,smoothedRecoveryRate:.5,avgRecoveryTimeMs:0,specificity:'cold_start',evidenceVersion:'SGRL1'};
-  const watchdog={version:'SLW1',phase:'SLW1_DANGER',armedAtMs:now-20*60000,lastObservedBookMs:now-2000,observationCount:20,lastBidCents:27,minBidCents:27,lowerLowCount:8,consecutiveDown:3,stableObservations:0,upwardTicks:0,reboundFromTroughCents:0,currentLossCents:6800,peakLossCents:6800,profile:cold,profileUpdatedAtMs:now-1000,structureStrong:false,recoveryLearningTriggerDropCents:8,recoveryLearningCrashBucket:'CRASHING',recoveryLearningEpisodeVersion:'SGRL1',recoveryLearningCoverageKind:'causal_from_trigger'};
+  const watchdog={version:'SLW1',phase:'SLW1_DANGER',armedAtMs:now-20*60000,lastObservedBookMs:now-2000,observationCount:20,lastBidCents:4,minBidCents:2,lowerLowCount:8,consecutiveDown:3,stableObservations:0,upwardTicks:0,reboundFromTroughCents:2,currentLossCents:19000,peakLossCents:21000,profile:cold,profileUpdatedAtMs:now-1000,structureStrong:false,recoveryLearningTriggerDropCents:10,recoveryLearningCrashBucket:'CRASHING',recoveryLearningEpisodeVersion:'SGRL1',recoveryLearningCoverageKind:'causal_from_trigger'};
   const crashState={phase:'CRASHING',lowerLowCount:10,reboundCents:0,stableObservations:0,upwardTicks:0};
-  const h=guardHarness({bid:26,filled:571,lossWatchdogProfile:cold,crashState,entryOverrides:{conceptName:'Crash Recovery Hunter',ticker:'KXNPBGAME-HIROSHIMA-COLD',sourceFeeder:'Dragon',entryPriceCents:35,currentPriceCents:26,peakPriceCents:35,stopLossCents:35,count:571,remainingCount:571,entryFeeCents:1142,stopGuardState:{watchdog},openedAtMs:now-90*60000}});
-  const out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true,'the new capital doctrine intentionally sacrifices a miracle recovery once its loss budget is consumed');
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.equal(h.row().stopGuardState.hardEconomicLossCeiling.recoveryVetoAllowed,false);
+  const h=guardHarness({bid:3,filled:571,lossWatchdogProfile:cold,crashState,entryOverrides:{conceptName:'Crash Recovery Hunter',ticker:'KXNPBGAME-HIROSHIMA-COLD',sourceFeeder:'Dragon',entryPriceCents:35,currentPriceCents:3,peakPriceCents:35,stopLossCents:35,count:571,remainingCount:571,entryFeeCents:1142,stopGuardState:{watchdog},openedAtMs:now-90*60000}});
+  let out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false,'cold-start severe deterioration must receive the bounded recovery window');
+  assert.equal(h.guard.getState('guard-1').guardState,'SLW1_RECOVERY_GRACE');
+  // The captured R40 trajectory moved from the 2-3c trough back through the
+  // high-20s/30c area roughly 22 minutes later and then above entry around the
+  // 23-minute mark. Those fresh improvements must be allowed to establish live
+  // recovery structure before the 25-minute cold-start override can fire.
+  h.setBid(27);out=await h.guard.protect(h.row());assert.equal(out.closed??false,false);
+  h.setBid(30);out=await h.guard.protect(h.row());assert.equal(out.closed??false,false);assert.equal(h.row().stopGuardState.watchdog.structureStrong,true);
+  h.setBid(45);out=await h.guard.protect(h.row());assert.equal(out.closed??false,false);
+  assert.equal(h.row().status,'open');
+  assert.equal(h.row().stopGuardState.watchdog,undefined,'economic recovery clears SLW1 instead of liquidating the recovered position');
 });
 
-test('R42 Hiroshima strong-structure counterexample cannot veto HELC1',async()=>{
+test('R41 replay Hiroshima-style deep drawdown remains alive when fresh rebound structure is strong, preserving the recovery edge',async()=>{
   const now=Date.now();
   const strong={totalObservations:50,recoveredCount:45,smoothedRecoveryRate:.88,avgRecoveryTimeMs:180000,specificity:'exact',evidenceVersion:'SGRL1'};
-  const watchdog={version:'SLW1',phase:'SLW1_ALIVE',armedAtMs:now-30*60000,lastObservedBookMs:now-2000,observationCount:631,lastBidCents:27,minBidCents:20,lowerLowCount:15,consecutiveDown:0,stableObservations:82,upwardTicks:2,reboundFromTroughCents:7,currentLossCents:6800,peakLossCents:7000,profile:strong,profileUpdatedAtMs:now-1000,structureStrong:true};
+  const watchdog={version:'SLW1',phase:'SLW1_ALIVE',armedAtMs:now-30*60000,lastObservedBookMs:now-2000,observationCount:631,lastBidCents:14,minBidCents:2,lowerLowCount:15,consecutiveDown:0,stableObservations:82,upwardTicks:2,reboundFromTroughCents:12,currentLossCents:13704,peakLossCents:21375,profile:strong,profileUpdatedAtMs:now-1000,structureStrong:true};
   const crashState={phase:'CRASHING',lowerLowCount:24,reboundCents:13,stableObservations:20,upwardTicks:4};
-  const h=guardHarness({bid:26,filled:571,lossWatchdogProfile:strong,crashState,entryOverrides:{conceptName:'Crash Recovery Hunter',ticker:'KXNPBGAME-HIROSHIMA',sourceFeeder:'Dragon',entryPriceCents:35,currentPriceCents:26,peakPriceCents:35,stopLossCents:35,count:571,remainingCount:571,entryFeeCents:1142,stopGuardState:{watchdog},openedAtMs:now-90*60000}});
-  const out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true);
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.equal(h.row().stopGuardState.hardEconomicLossCeiling.recoveryVetoAllowed,false,'fresh rebound structure is advisory only inside the capital budget');
+  const h=guardHarness({bid:15,filled:571,lossWatchdogProfile:strong,crashState,entryOverrides:{conceptName:'Crash Recovery Hunter',ticker:'KXNPBGAME-HIROSHIMA',sourceFeeder:'Dragon',entryPriceCents:35,currentPriceCents:15,peakPriceCents:35,stopLossCents:35,count:571,remainingCount:571,entryFeeCents:1142,stopGuardState:{watchdog},openedAtMs:now-90*60000}});
+  let out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false);
+  assert.equal(h.row().status,'open');
+  assert.equal(h.guard.getState('guard-1').guardState,'SLW1_ALIVE');
+  h.setBid(80);h.setDepth({full:true,filled:571});
+  out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false);
+  assert.equal(h.row().status,'open');
+  assert.equal(h.row().stopGuardState.watchdog,undefined);
 });
 
-test('R42 YAK replay: a long U-SG1 recovery wound cannot remain beyond HELC1',async()=>{
+test('R41 replay YAK-style long U-SG1 recovery-zone wound exits when severe economics remain structurally stalled',async()=>{
   const now=Date.now();
   const profile={totalObservations:40,recoveredCount:35,smoothedRecoveryRate:.85,avgRecoveryTimeMs:180000,specificity:'exact',dropBucket:'30-39',evidenceVersion:'SGRL1'};
   const watchdog={version:'SLW1',phase:'SLW1_ALIVE',armedAtMs:now-48*60000,lastObservedBookMs:now-2000,observationCount:2323,lastBidCents:11,minBidCents:10,lowerLowCount:8,consecutiveDown:1,stableObservations:1,upwardTicks:0,reboundFromTroughCents:0,currentLossCents:16492,peakLossCents:20279,profile,profileUpdatedAtMs:now-1000,structureStrong:false,liveDeteriorating:false};
@@ -2629,19 +2640,21 @@ test('R42 YAK replay: a long U-SG1 recovery wound cannot remain beyond HELC1',as
   const h=guardHarness({bid:11,filled:434,stopProfile:profile,entryOverrides:{conceptName:'Wave Surfer',ticker:'KXNPBGAME-YAK',entryPriceCents:45,currentPriceCents:11,peakPriceCents:45,stopLossCents:35,count:434,remainingCount:434,entryFeeCents:868,stopGuardState:usg,openedAtMs:now-90*60000}});
   const out=await h.guard.protect(h.row());
   assert.equal(out.closed,true);
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
+  assert.equal(h.row().exitPriceCents,11);
+  assert.equal(h.row().stopGuardState.exitReason,'economic_severe_stall');
 });
 
-test('R42 HANCHU replay: strong rebound structure cannot veto HELC1 after the budget is consumed',async()=>{
+test('R41 replay HANCHU-style U-SG1 stressed-zone drawdown is not liquidated while fresh rebound structure is strong',async()=>{
   const now=Date.now();
   const profile={totalObservations:40,recoveredCount:35,smoothedRecoveryRate:.85,avgRecoveryTimeMs:180000,specificity:'exact',dropBucket:'40+',evidenceVersion:'SGRL1'};
   const watchdog={version:'SLW1',phase:'SLW1_ALIVE',armedAtMs:now-61*60000,observationCount:2443,lastBidCents:7,minBidCents:2,lowerLowCount:7,consecutiveDown:5,stableObservations:5,upwardTicks:0,reboundFromTroughCents:5,currentLossCents:9184,peakLossCents:12444,profile,structureStrong:false,liveDeteriorating:true};
   const usg={version:'U-SG1',phase:'USG1_STRESSED_ZONE',armedAtMs:now-22*60000,dangerLineCents:13,stopLossCents:35,baseWindowMs:30*60000,deadlineMs:now+8*60000,minBidCents:2,lastBidCents:6,lastObservedQuoteMs:now-2000,maxPenetrationCents:11,penetrationCents:6,zone:'STRESSED',criticalEnteredAtMs:null,stableObservations:49,upwardTicks:1,reclaimConfirmations:0,extensionUsed:false,reboundFromTroughCents:4,structureStrong:true,profile,profileUpdatedAtMs:now-1000,watchdog};
   const h=guardHarness({bid:7,filled:250,stopProfile:profile,entryOverrides:{conceptName:'Crash Recovery Hunter',ticker:'KXNPBGAME-HANCHU',sourceFeeder:'Dragon',entryPriceCents:48,currentPriceCents:7,peakPriceCents:48,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:usg,openedAtMs:now-120*60000}});
   const out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true);
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.equal(h.row().stopGuardState.hardEconomicLossCeiling.recoveryVetoAllowed,false);
+  assert.equal(out.closed??false,false);
+  assert.equal(h.row().status,'open');
+  assert.equal(h.row().stopGuardState.structureStrong,true);
+  assert.equal(h.audits.some(a=>a.event==='usg1_economic_dead_market_detected'),false);
 });
 
 test('R41 Stop Guard profile cache preserves the causal trigger cohort between timed refreshes',async()=>{
@@ -2658,12 +2671,13 @@ test('R41 Stop Guard profile cache preserves the causal trigger cohort between t
 test('R41 U-SG1 strong history is advisory and cannot defeat the bounded critical structure grace',async()=>{
   const now=Date.now();
   const strong={totalObservations:50,recoveredCount:48,smoothedRecoveryRate:.94,avgRecoveryTimeMs:600000,specificity:'exact',evidenceVersion:'SGRL1'};
-  const usg={version:'U-SG1',phase:'USG1_CRITICAL_PROBE',armedAtMs:now-10*60000,dangerLineCents:70,stopLossCents:10,baseWindowMs:1200000,deadlineMs:now+600000,minBidCents:59,lastBidCents:59,lastObservedQuoteMs:now-2000,maxPenetrationCents:11,penetrationCents:11,zone:'CRITICAL',criticalEnteredAtMs:now-ULTIMATE_STOP_GUARD.criticalStructureGraceMs-1000,stableObservations:0,upwardTicks:0,reclaimConfirmations:0,extensionUsed:false,reboundFromTroughCents:0,structureStrong:false,profile:strong,profileUpdatedAtMs:now-1000};
-  const h=guardHarness({bid:59,filled:100,stopProfile:strong,entryOverrides:{stopLossCents:10,stopGuardState:usg}});
+  const usg={version:'U-SG1',phase:'USG1_CRITICAL_PROBE',armedAtMs:now-10*60000,dangerLineCents:45,stopLossCents:35,baseWindowMs:1200000,deadlineMs:now+600000,minBidCents:34,lastBidCents:34,lastObservedQuoteMs:now-2000,maxPenetrationCents:11,penetrationCents:11,zone:'CRITICAL',criticalEnteredAtMs:now-ULTIMATE_STOP_GUARD.criticalStructureGraceMs-1000,stableObservations:0,upwardTicks:0,reclaimConfirmations:0,extensionUsed:false,reboundFromTroughCents:0,structureStrong:false,profile:strong,profileUpdatedAtMs:now-1000};
+  const h=guardHarness({bid:34,filled:100,stopProfile:strong,entryOverrides:{stopGuardState:usg}});
   const out=await h.guard.protect(h.row());
   assert.equal(out.closed,true);
   assert.equal(h.row().stopGuardState.exitReason,'critical_structure_failed');
 });
+
 
 test('R39 SLW1 does not count repeated reads of the same book as fresh deterioration confirmations',async()=>{
   const profile={totalObservations:30,recoveredCount:1,smoothedRecoveryRate:0.06,avgRecoveryTimeMs:0,specificity:'exact_pre_stop',dropBucket:'15+'};
@@ -2725,27 +2739,30 @@ test('R39 SLW1 stale DATA_HOLD observations never pre-load the fresh lower-low c
 });
 
 
-test('R42 SAMMAE-style low-entry Wave is capped economically even when its price stop is 0c',async()=>{
+test('R41 SAMMAE-style low-entry Wave is cut above its 0c stop after weak-history grace',async()=>{
   const profile={totalObservations:20,recoveredCount:2,smoothedRecoveryRate:0.14,avgRecoveryTimeMs:0,specificity:'sport_drop_pre_stop',dropBucket:'15+'};
   const h=guardHarness({bid:29,filled:540,lossWatchdogProfile:profile,entryOverrides:{conceptName:'Wave Surfer',ticker:'KXATPMATCH-26AUG24SAMMAE-MAE',entryPriceCents:37,currentPriceCents:37,peakPriceCents:39,stopLossCents:50,count:540,remainingCount:540,entryFeeCents:1080,entryConfig:{profitAuthority:'GOLDEN-EYE-V1',profitAuthorityRevision:'GE1-R2'}}});
   await h.guard.protect(h.row());
   assert.equal(h.row().stopGuardState.watchdog.version,'SLW1');
   assert.equal(profitGuardDecision(h.row(),{yesBid:29,yesAsk:30,result:''},{...settings,waveStopCents:50}).hardStopCents,0);
-  h.setBid(28); const out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true,'HELC1 exits at the last cent that can still remain inside the budget, because the next lower cent would overshoot it');
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.ok(h.row().pnlCents>=-7492.5);
+  h.setBid(28); let out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false,'R41 must preserve a short recovery opportunity before acting');
+  h.rows.get('guard-1').stopGuardState.watchdog.armedAtMs=Date.now()-STOP_LOSS_WATCHDOG.weakHistoryGraceMs-1000;
+  h.setBid(27); out=await h.guard.protect(h.row());
+  assert.equal(out.closed,true);
+  assert.equal(h.row().stopGuardState.exitReason,'slw1_historical_dead_market');
 });
 
-test('R42 Garin-style deep drawdown: strong learned recovery helps only inside HELC1',async()=>{
+test('R39 today-replay Garin-style deep drawdown survives SLW1 when learned recovery is strong',async()=>{
   const profile={totalObservations:30,recoveredCount:25,smoothedRecoveryRate:0.8125,avgRecoveryTimeMs:120000,specificity:'exact_pre_stop',dropBucket:'15+'};
   const h=guardHarness({bid:62,filled:238,lossWatchdogProfile:profile,entryOverrides:{entryPriceCents:84,currentPriceCents:84,peakPriceCents:84,stopLossCents:35,count:238,remainingCount:238,entryFeeCents:476,entryConfig:{profitAuthority:'GOLDEN-EYE-V1',profitAuthorityRevision:'GE1-R2'}}});
   await h.guard.protect(h.row());
   h.setBid(58); let out=await h.guard.protect(h.row());
-  assert.equal(out.closed??false,false,'strong recovery history may still support a trade while it is inside HELC1');
-  h.setBid(57); out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true,'history loses all veto authority at the last safe HELC1 liquidation cent');
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
+  assert.equal(out.closed??false,false);
+  h.setBid(55); out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false,'strong recovery history must prevent a blind dollar-loss liquidation');
+  h.setBid(64); out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false);
 });
 
 test('R41 DENOLI-style weak lower-low collapse exits above its 52c Danger Line after weak-history grace',async()=>{
@@ -2781,7 +2798,7 @@ test('R41 SGRL1 excludes partial-from-upgrade episodes from decision profiles ev
 test('R41 existing R40 SLW1 state is backfilled as partial-from-upgrade while a newly armed SLW1 episode is causal',async()=>{
   const now=Date.now();
   const oldWatchdog={version:'SLW1',phase:'SLW1_DANGER',armedAtMs:now-60_000,lastObservedBookMs:now-2000,observationCount:5,lastBidCents:55,minBidCents:54,lowerLowCount:0,consecutiveDown:0,stableObservations:2,upwardTicks:1,reboundFromTroughCents:1,currentLossCents:7000,peakLossCents:7000,profile:{totalObservations:0,smoothedRecoveryRate:.5,dropBucket:'20-29',evidenceVersion:'SGRL1'},profileUpdatedAtMs:now,structureStrong:false};
-  const migrated=guardHarness({bid:56,filled:250,entryOverrides:{entryPriceCents:80,currentPriceCents:56,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:{watchdog:oldWatchdog}}});
+  const migrated=guardHarness({bid:54,filled:250,entryOverrides:{entryPriceCents:80,currentPriceCents:54,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:{watchdog:oldWatchdog}}});
   const seen=[];
   migrated.learning.beginStopGuardRecoveryEpisode=async(_entry,o)=>{seen.push(structuredClone(o));return{coverageKind:o.coverageKind};};
   await migrated.guard.protect(migrated.row());
@@ -2790,7 +2807,7 @@ test('R41 existing R40 SLW1 state is backfilled as partial-from-upgrade while a 
   assert.equal(seen[0].coverageKind,'partial_from_upgrade');
   assert.equal(migrated.row().stopGuardState.watchdog.recoveryLearningEpisodeVersion,'SGRL1');
 
-  const fresh=guardHarness({bid:56,filled:250,entryOverrides:{entryPriceCents:80,currentPriceCents:80,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:{}}});
+  const fresh=guardHarness({bid:54,filled:250,entryOverrides:{entryPriceCents:80,currentPriceCents:80,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:{}}});
   const freshSeen=[];
   fresh.learning.beginStopGuardRecoveryEpisode=async(_entry,o)=>{freshSeen.push(structuredClone(o));return{coverageKind:o.coverageKind};};
   await fresh.guard.protect(fresh.row());
@@ -2800,7 +2817,7 @@ test('R41 existing R40 SLW1 state is backfilled as partial-from-upgrade while a 
 });
 
 test('R41 native SLW1 trigger remains causal after a transient SGRL1 persistence failure instead of being downgraded to upgrade-partial evidence',async()=>{
-  const h=guardHarness({bid:56,filled:250,entryOverrides:{entryPriceCents:80,currentPriceCents:80,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:{}}});
+  const h=guardHarness({bid:54,filled:250,entryOverrides:{entryPriceCents:80,currentPriceCents:80,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:{}}});
   const seen=[];let calls=0;
   h.learning.beginStopGuardRecoveryEpisode=async(_entry,o)=>{seen.push(o.coverageKind);calls+=1;return calls===1?null:{coverageKind:o.coverageKind};};
   await h.guard.protect(h.row());
@@ -2810,7 +2827,7 @@ test('R41 native SLW1 trigger remains causal after a transient SGRL1 persistence
 });
 
 test('R41 persisted SGRL1 coverage identity wins over the requested native classification on conflict/restart',async()=>{
-  const h=guardHarness({bid:56,filled:250,entryOverrides:{entryPriceCents:80,currentPriceCents:80,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:{}}});
+  const h=guardHarness({bid:54,filled:250,entryOverrides:{entryPriceCents:80,currentPriceCents:80,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:{}}});
   h.learning.beginStopGuardRecoveryEpisode=async()=>({coverageKind:'partial_from_upgrade'});
   await h.guard.protect(h.row());
   assert.equal(h.row().stopGuardState.watchdog.recoveryLearningEpisodeVersion,'SGRL1');
@@ -2820,13 +2837,13 @@ test('R41 persisted SGRL1 coverage identity wins over the requested native class
 test('R41 existing R40 U-SG1 state is backfilled as partial-from-upgrade without changing its frozen Danger Line',async()=>{
   const now=Date.now();
   const profile={totalObservations:0,recoveredCount:0,smoothedRecoveryRate:.5,avgRecoveryTimeMs:0,specificity:'cold_start',dropBucket:'30-39',evidenceVersion:'SGRL1'};
-  const usg={version:'U-SG1',phase:'USG1_RECOVERY_ZONE',armedAtMs:now-60_000,dangerLineCents:70,stopLossCents:10,baseWindowMs:30*60000,deadlineMs:now+29*60000,minBidCents:69,lastBidCents:69,lastObservedQuoteMs:now-2000,maxPenetrationCents:1,penetrationCents:1,zone:'RECOVERY',criticalEnteredAtMs:null,stableObservations:2,upwardTicks:1,reclaimConfirmations:0,extensionUsed:false,reboundFromTroughCents:0,structureStrong:false,profile,profileUpdatedAtMs:now};
-  const h=guardHarness({bid:69,filled:10,stopProfile:profile,entryOverrides:{entryPriceCents:80,currentPriceCents:69,stopLossCents:10,count:10,remainingCount:10,entryFeeCents:20,stopGuardState:usg}});
+  const usg={version:'U-SG1',phase:'USG1_RECOVERY_ZONE',armedAtMs:now-60_000,dangerLineCents:45,stopLossCents:35,baseWindowMs:30*60000,deadlineMs:now+29*60000,minBidCents:44,lastBidCents:44,lastObservedQuoteMs:now-2000,maxPenetrationCents:1,penetrationCents:1,zone:'RECOVERY',criticalEnteredAtMs:null,stableObservations:2,upwardTicks:1,reclaimConfirmations:0,extensionUsed:false,reboundFromTroughCents:0,structureStrong:false,profile,profileUpdatedAtMs:now};
+  const h=guardHarness({bid:44,filled:10,stopProfile:profile,entryOverrides:{entryPriceCents:80,currentPriceCents:44,stopLossCents:35,count:10,remainingCount:10,entryFeeCents:20,stopGuardState:usg}});
   const seen=[];h.learning.beginStopGuardRecoveryEpisode=async(_entry,o)=>{seen.push(structuredClone(o));return{coverageKind:o.coverageKind};};
   const out=await h.guard.protect(h.row());
   assert.equal(out.closed??false,false);
   assert.equal(seen.length,1);assert.equal(seen[0].triggerStage,'USG1');assert.equal(seen[0].coverageKind,'partial_from_upgrade');
-  assert.equal(h.row().stopGuardState.dangerLineCents,70);
+  assert.equal(h.row().stopGuardState.dangerLineCents,45);
   assert.equal(h.row().stopGuardState.recoveryLearningCoverageKind,'partial_from_upgrade');
 });
 
@@ -2865,7 +2882,7 @@ test('R41 SLW1 historical cohort identity stays frozen at trigger while live det
   const now=Date.now();let calls=0;const seen=[];
   const profile={totalObservations:20,recoveredCount:10,smoothedRecoveryRate:.5,avgRecoveryTimeMs:1000,specificity:'exact',dropBucket:'20-29',crashBucket:'NORMAL',evidenceVersion:'SGRL1'};
   const watchdog={version:'SLW1',phase:'SLW1_DANGER',armedAtMs:now-1000,lastObservedBookMs:now-2000,observationCount:5,lastBidCents:59,minBidCents:58,lowerLowCount:0,consecutiveDown:0,stableObservations:2,upwardTicks:1,reboundFromTroughCents:1,currentLossCents:7000,peakLossCents:7000,profile,profileUpdatedAtMs:now-61_000,structureStrong:false,recoveryLearningTriggerDropCents:22,recoveryLearningCrashBucket:'NORMAL',recoveryLearningGameMinutesAtEntry:30,recoveryLearningEpisodeVersion:'SGRL1',recoveryLearningCoverageKind:'causal_from_trigger'};
-  const h=guardHarness({bid:56,filled:250,lossWatchdogProfile:profile,crashState:{phase:'CRASHING',lowerLowCount:4,reboundCents:0,upwardTicks:0},entryOverrides:{entryPriceCents:80,currentPriceCents:56,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:{watchdog}}});
+  const h=guardHarness({bid:50,filled:250,lossWatchdogProfile:profile,crashState:{phase:'CRASHING',lowerLowCount:4,reboundCents:0,upwardTicks:0},entryOverrides:{entryPriceCents:80,currentPriceCents:45,stopLossCents:35,count:250,remainingCount:250,entryFeeCents:500,stopGuardState:{watchdog}}});
   h.learning.lossWatchdogProfile=async(o)=>{calls+=1;seen.push(structuredClone(o));return{...profile,dropBucket:'20-29',crashBucket:'NORMAL'};};
   await h.guard.protect(h.row());
   assert.equal(calls,1,'time refresh should reload the prior without changing cohort identity');
@@ -2890,150 +2907,143 @@ test('R41 SGRL1 row lock prevents overlapping quote/full-scan telemetry from dou
   releaseUpdate();const first=await p1;assert.equal(first.tracked,1);
 });
 
-test('R42 replay: Niels $192.93 Wave must commit by the last safe 41c executable level instead of drifting to a three-digit loss',async()=>{
-  const h=guardHarness({bid:41,filled:327,entryOverrides:{conceptName:'Wave Surfer',ticker:'KXATPCHALLENGERMATCH-26AUG25CREMCD-MCD',entryPriceCents:59,currentPriceCents:59,peakPriceCents:59,stopLossCents:35,count:327,remainingCount:327,entryFeeCents:654,entryConfig:{profitAuthority:'GOLDEN-EYE-V1',profitAuthorityRevision:'GE1-R2'}}});
-  const out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true);
-  assert.equal(h.row().closeReason,'hard_stop_loss');
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.equal(h.row().exitPriceCents,41);
-  assert.ok(Math.abs(h.row().pnlCents)<=7234.875+1e-9,'intended fee-adjusted loss must remain inside 37.5% of the $192.93 original filled notional');
+test('R44 Atomic Thunder policy is profit-only, full-position, fee-adjusted and subordinate to U-SG1',()=>{
+  assert.equal(ATOMIC_THUNDER.version,'ATOMIC-THUNDER-V1');
+  assert.equal(ATOMIC_THUNDER.authority,'PROFIT_EXIT');
+  assert.equal(ATOMIC_THUNDER.fullPositionOnly,true);
+  assert.equal(ATOMIC_THUNDER.minimumNetPerOriginalContractCents,1);
+  assert.equal(ATOMIC_THUNDER.requiredFreshConfirmations,2);
+  assert.equal(ATOMIC_THUNDER.lossAuthority,'U-SG1');
 });
 
-test('R42: $500 original exposure is governed by the absolute $75 ceiling even though legacy 30% SLW1 wake would be $150',async()=>{
-  const h=guardHarness({bid:47,filled:1000,entryOverrides:{entryPriceCents:50,currentPriceCents:50,peakPriceCents:50,stopLossCents:35,count:1000,remainingCount:1000,entryFeeCents:2000}});
-  const out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true);
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.ok(Math.abs(h.row().pnlCents)<=7500+1e-9);
-});
-
-test('R42: small $12.48 original exposure scales the ceiling to $4.68 instead of inheriting a flat $75 budget',async()=>{
-  const h=guardHarness({bid:29,filled:32,entryOverrides:{entryPriceCents:39,currentPriceCents:39,peakPriceCents:39,stopLossCents:35,count:32,remainingCount:32,entryFeeCents:64}});
-  const out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true);
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.ok(Math.abs(h.row().pnlCents)<=468+1e-9);
-});
-
-test('R42: insufficient full depth at the hard ceiling creates a durable hard-stop obligation rather than returning to recovery hold',async()=>{
-  const h=guardHarness({bid:41,full:false,filled:10,entryOverrides:{conceptName:'Wave Surfer',entryPriceCents:59,currentPriceCents:59,peakPriceCents:59,stopLossCents:35,count:327,remainingCount:327,entryFeeCents:654}});
-  const out=await h.guard.protect(h.row());
-  assert.equal(out.pending,true);
-  assert.equal(h.row().status,'exit_pending');
-  assert.equal(h.row().closeReason,'hard_stop_loss');
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-});
-
-test('R42: a position still inside the stake-relative loss budget retains recovery authority',async()=>{
-  const h=guardHarness({bid:42,filled:327,entryOverrides:{conceptName:'Wave Surfer',entryPriceCents:59,currentPriceCents:59,peakPriceCents:59,stopLossCents:35,count:327,remainingCount:327,entryFeeCents:654}});
+test('Atomic Thunder ignores gross-positive but fee-negative/threshold-insufficient price movement',async()=>{
+  const h=guardHarness({bid:84,atomicThunderEnabled:true});
   const out=await h.guard.protect(h.row());
   assert.equal(out.closed??false,false);
   assert.equal(h.row().status,'open');
+  assert.equal(h.row().pnlCents,0);
+  assert.equal(h.guard.atomicThunderStates.get('guard-1'),undefined);
+  assert.ok(h.atomicEvents.some(e=>e.eventType==='invalid_opportunity_blocked'&&e.data.reason==='fee_adjusted_net_below_threshold'));
 });
 
-test('R42 HELC1 persists EXIT_COMMITTED before telemetry and restart cannot cancel the flatten obligation after a price recovery',async()=>{
-  const h=guardHarness({bid:41,filled:327,entryOverrides:{conceptName:'Wave Surfer',ticker:'R42-DURABLE',entryPriceCents:59,currentPriceCents:59,peakPriceCents:59,stopLossCents:35,count:327,remainingCount:327,entryFeeCents:654}});
-  h.guard.audit=async(event)=>{if(event==='hard_economic_loss_ceiling_triggered')throw new Error('simulated_process_crash_after_durable_commit');};
-  await assert.rejects(()=>h.guard.protect(h.row()),/simulated_process_crash_after_durable_commit/);
-  const committed=h.row();
-  assert.equal(committed.status,'open','fault was injected before the execution path could mutate lifecycle status');
-  assert.equal(committed.stopGuardState.phase,'EXIT_COMMITTED');
-  assert.equal(committed.stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.equal(committed.stopGuardState.hardEconomicLossCeiling.durableFlattenRequired,true);
-
-  const restarted=new ProfitGuard({db:h.db,kalshi:{},market:h.guard.market,learning:h.learning,getSettings:()=>({...settings,simFeeCents:2,systemName:'SAGITTARIUS'})});
-  restarted.evaluateApexProfitGuard=async()=>null;
-  h.setBid(80); // Recovery after the crash cannot revoke an already durable capital-safety decision.
-  const out=await restarted.protect(h.row());
-  assert.equal(out.closed,true);
-  assert.equal(h.row().closeReason,'hard_stop_loss');
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-});
-
-test('R42 HELC1 basis remains immutable after a partial exit and aggregate realized PnL is included in the remaining-position ceiling',async()=>{
-  const h=guardHarness({bid:50,filled:40,entryOverrides:{conceptName:'Wave Surfer',entryPriceCents:80,currentPriceCents:80,peakPriceCents:80,stopLossCents:35,count:100,remainingCount:40,pnlCents:-1000,entryFeeCents:200,exitFilledCount:60}});
-  const policy=h.guard.hardEconomicLossCeiling(h.row(),{...settings,simFeeCents:2},40);
-  assert.equal(policy.basisStakeCents,8000,'original 100x80c filled exposure stays frozen after quantity falls to 40');
-  assert.equal(policy.maximumLossCents,3000,'37.5% is applied to original filled notional, not remaining notional');
-  assert.equal(policy.triggerPriceCents,34);
-  let out=await h.guard.protect(h.row());
-  assert.equal(out.closed??false,false,'a partial position cannot inherit an artificially tiny ceiling from remaining notional');
-  h.setBid(34);out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true);
-  assert.equal(h.row().stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.ok(h.row().pnlCents>=-3000-1e-9);
-});
-
-test('R42 lifecycle finality retains absolute precedence over HELC1',async()=>{
-  const h=guardHarness({bid:41,filled:327,entryOverrides:{conceptName:'Wave Surfer',entryPriceCents:59,currentPriceCents:59,peakPriceCents:59,stopLossCents:35,count:327,remainingCount:327,entryFeeCents:654}});
-  h.setFinal('yes');
-  const out=await h.guard.protect(h.row());
-  assert.equal(out.closed,true);
-  assert.equal(h.row().closeReason,'settlement_win');
-  assert.equal(h.row().exitPriceCents,100);
-  assert.equal(h.audits.some(x=>x.event==='hard_economic_loss_ceiling_triggered'),false);
-});
-
-test('R42 stale or invalid book cannot fabricate a new HELC1 breach from display price alone',async()=>{
-  const h=guardHarness({bid:41,filled:327,entryOverrides:{conceptName:'Wave Surfer',entryPriceCents:59,currentPriceCents:59,peakPriceCents:59,stopLossCents:35,count:327,remainingCount:327,entryFeeCents:654}});
-  h.setBookAge(STOP_LOSS_WATCHDOG.maximumBookAgeMs+5000);
-  const out=await h.guard.protect(h.row());
-  assert.equal(out.closed??false,false);
-  assert.equal(h.row().status,'open');
-  assert.equal(h.guard.getState('guard-1').guardState,'SLW1_DATA_HOLD');
-  assert.equal(h.audits.some(x=>x.event==='hard_economic_loss_ceiling_triggered'),false);
-});
-
-test('R42 recovery intelligence remains active inside HELC1 and clears after genuine live rebound structure',async()=>{
-  const strong={totalObservations:30,recoveredCount:25,smoothedRecoveryRate:.8125,avgRecoveryTimeMs:120000,specificity:'exact',evidenceVersion:'SGRL1'};
-  const crash={phase:'CRASHING',lowerLowCount:4,reboundCents:8,stableObservations:4,upwardTicks:3};
-  const h=guardHarness({bid:27,filled:571,lossWatchdogProfile:strong,crashState:crash,entryOverrides:{conceptName:'Crash Recovery Hunter',sourceFeeder:'Dragon',entryPriceCents:35,currentPriceCents:35,peakPriceCents:35,stopLossCents:35,count:571,remainingCount:571,entryFeeCents:1142}});
+test('Atomic Thunder requires two distinct fresh qualifying books and harvests the entire position at exactly +1c net per original contract',async()=>{
+  const h=guardHarness({bid:85,atomicThunderEnabled:true});
   let out=await h.guard.protect(h.row());
   assert.equal(out.closed??false,false);
-  assert.equal(h.row().status,'open');
-  assert.equal(h.row().stopGuardState.watchdog.version,'SLW1');
-  h.setBid(30);out=await h.guard.protect(h.row());
-  assert.equal(out.closed??false,false);
-  assert.equal(h.row().stopGuardState.watchdog.structureStrong,true,'fresh rebound structure remains useful while capital is inside budget');
-  h.setBid(45);out=await h.guard.protect(h.row());
-  assert.equal(out.closed??false,false);
-  assert.equal(h.row().status,'open');
-  assert.equal(h.row().stopGuardState.watchdog,undefined,'material economic recovery clears the early watchdog');
+  assert.equal(h.guard.atomicThunderStates.get('guard-1').confirmations,1);
+  assert.equal(h.atomicEvents.filter(e=>e.eventType==='opportunity_detected').length,1);
+
+  out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false,'same book evidence must not count twice');
+  assert.equal(h.guard.atomicThunderStates.get('guard-1').confirmations,1);
+
+  h.setBid(85);
+  out=await h.guard.protect(h.row());
+  assert.equal(out.closed,true);
+  assert.equal(h.row().status,'closed');
+  assert.equal(h.row().remainingCount,0);
+  assert.equal(h.row().closeReason,'atomic_thunder_cashout');
+  assert.equal(h.row().pnlCents,100,'100 original contracts must realize exactly +1c net per original contract at the threshold');
+  assert.ok(h.atomicEvents.some(e=>e.eventType==='harvest_executed'));
+  assert.ok(h.audits.some(e=>e.event==='atomic_thunder_harvest_committed'));
 });
 
-test('R42 LIVE HELC1 uses the existing full-owned-quantity U-SG1 sell path and persists its client receipt before broker mutation',async()=>{
+test('Atomic Thunder fails closed on partial full-position depth even when best bid is highly profitable',async()=>{
+  const h=guardHarness({bid:95,full:false,filled:40,atomicThunderEnabled:true});
+  const out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false);
+  assert.equal(h.row().status,'open');
+  assert.ok(h.atomicEvents.some(e=>e.eventType==='invalid_opportunity_blocked'&&e.data.reason==='insufficient_full_position_depth'));
+});
+
+test('Atomic Thunder fails closed on stale book evidence and never fabricates a harvest from display price',async()=>{
+  const h=guardHarness({bid:95,atomicThunderEnabled:true});
+  h.setBookAge(2000);
+  const out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false);
+  assert.equal(h.row().status,'open');
+  assert.ok(h.atomicEvents.some(e=>e.eventType==='invalid_opportunity_blocked'&&e.data.reason==='stale_or_invalid_book'));
+});
+
+test('U-SG1 loss protection retains precedence over Atomic Thunder on an Atomic-enabled Hunter',async()=>{
+  const h=guardHarness({bid:30,atomicThunderEnabled:true});
+  const out=await h.guard.protect(h.row());
+  assert.equal(out.closed,true);
+  assert.equal(h.row().closeReason,'hard_stop_loss');
+  assert.equal(h.learning.hardStops,1);
+  assert.equal(h.atomicEvents.some(e=>e.eventType==='harvest_executed'),false);
+});
+
+test('Golden Eye cannot override an enabled Atomic Thunder Hunter',async()=>{
+  const h=guardHarness({bid:90,atomicThunderEnabled:true});
+  const out=await h.guard.manualCashout(h.row(),h.guard.market.getQuote('KXMLBGAME-X-A'),{reason:'golden_eye_cashout'});
+  assert.equal(out.closed,false);
+  assert.equal(out.skipped,'atomic_thunder_has_priority');
+  assert.equal(h.row().status,'open');
+  assert.ok(h.audits.some(e=>e.event==='golden_eye_cashout_skipped_atomic_thunder_priority'));
+});
+
+test('Atomic Thunder persistent stats do not treat null counterfactual fields as zero losses',async()=>{
+  const db=Object.create(Database.prototype);
   const now=Date.now();
-  const row={...base,id:'live-helc1',conceptName:'Wave Surfer',ticker:'LIVE-HELC1',mode:'LIVE',status:'open',entryPriceCents:59,currentPriceCents:59,peakPriceCents:59,stopLossCents:35,count:10,remainingCount:10,pnlCents:0,entryFeeCents:20,exitFeeCents:0,exitFilledCount:0,exitNotionalCents:0,exitClientOrderId:null,exitOrderId:null,stopGuardState:{},profitGuardState:{},apexProfitGuardState:{},openedAtMs:now-60_000,updatedAtMs:now-1000};
-  const updates=[];let submitted=null;let hardStops=0;
-  const db={
-    async updateEntry(_id,p){updates.push(structuredClone(p));Object.assign(row,structuredClone(p));},
-    async entryById(){return structuredClone(row);},
-    async audit(){},
-  };
-  const quote={yesBid:41,yesAsk:42,volume24h:10000,updatedAtMs:now,status:'active',result:'',bookInvalid:false};
-  const market={getQuote:()=>quote,quoteAgeMs:()=>0,refreshTicker:async()=>quote,ensureFreshBook:async()=>({updatedAtMs:now}),getBook:()=>({updatedAtMs:now}),executableBid:(_t,count)=>({filled:count,full:true,avgCents:41,bestCents:41})};
-  const kalshi={
-    buildClientOrderId:()=> 'helc1-live-exit',
-    async placeOrder(o){
-      submitted=structuredClone(o);
-      assert.equal(row.status,'exit_pending','mutation receipt must be durable before broker submit');
-      assert.equal(row.exitClientOrderId,'helc1-live-exit');
-      assert.equal(row.closeReason,'hard_stop_loss');
-      return{orderId:'helc1-order',fillCount:o.count,averageFillPriceCents:41,feePaidCents:20};
+  let call=0;
+  db.pool={async query(){
+    call+=1;
+    if(call===1)return{rows:[{event_type:'observing',count:1,last_at_ms:now},{event_type:'opportunity_detected',count:1,last_at_ms:now}]};
+    if(call===2)return{rows:[{id:'H',pnl_cents:250,opened_at_ms:now-5000,closed_at_ms:now,state:{postExitMinExecutableNetCents:null,postExitMaxExecutableNetCents:null,terminalNetCents:null,trackingComplete:false}}]};
+    return{rows:[]};
+  }};
+  const stats=await db.atomicThunderStats('S');
+  assert.equal(stats.harvestsExecuted,1);
+  assert.equal(stats.realizedPnlCents,250);
+  assert.equal(stats.lossesAvoided,0);
+  assert.equal(stats.avoidedLossCents,0);
+  assert.equal(stats.forgoneUpsideCents,0);
+});
+
+test('Atomic Thunder LIVE persists the exit receipt before broker mutation and submits the full owned quantity at its profit floor',async()=>{
+  const h=guardHarness({bid:85,atomicThunderEnabled:true,entryOverrides:{mode:'LIVE'}});
+  let out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false);
+  const floor=h.guard.atomicThunderExitFloorCents(h.row(),{...settings,simFeeCents:2,atomicThunderEnabled:true});
+  const orders=[];
+  h.guard.kalshi={
+    buildClientOrderId:()=> 'at-live-receipt-1',
+    async placeOrder(order){
+      const persisted=h.row();
+      assert.equal(persisted.status,'exit_pending');
+      assert.equal(persisted.exitClientOrderId,'at-live-receipt-1');
+      assert.equal(persisted.closeReason,'atomic_thunder_cashout');
+      orders.push(structuredClone(order));
+      return {orderId:'at-live-order-1',fillCount:order.count,averageFillPriceCents:85,feePaidCents:2*order.count};
     },
   };
-  const learning={async onHardStop(){hardStops+=1;}};
-  const guard=new ProfitGuard({db,kalshi,market,learning,getSettings:()=>({...settings,simFeeCents:2,ownerId:'r42-live',systemName:'SAGITTARIUS'})});
-  guard.evaluateApexProfitGuard=async()=>null;
-  const out=await guard.protect(structuredClone(row));
+  h.setBid(85);
+  out=await h.guard.protect(h.row());
   assert.equal(out.closed,true);
-  assert.equal(submitted.action,'sell');
-  assert.equal(submitted.count,10);
-  assert.equal(submitted.priceCents,41);
-  assert.equal(row.remainingCount,0);
-  assert.equal(row.closeReason,'hard_stop_loss');
-  assert.equal(row.stopGuardState.exitReason,'hard_economic_loss_ceiling');
-  assert.ok(row.pnlCents>=-221.25-1e-9);
-  assert.equal(hardStops,1);
+  assert.equal(orders.length,1);
+  assert.equal(orders[0].count,100);
+  assert.equal(orders[0].priceCents,floor);
+  assert.equal(h.row().remainingCount,0);
+  assert.equal(h.row().closeReason,'atomic_thunder_cashout');
+});
+
+test('Atomic Thunder LIVE broker partial is durable, reopens only the remainder, and never chases the rest below its profit floor',async()=>{
+  const h=guardHarness({bid:85,atomicThunderEnabled:true,entryOverrides:{mode:'LIVE'}});
+  await h.guard.protect(h.row());
+  h.guard.kalshi={
+    buildClientOrderId:()=> 'at-live-partial-1',
+    async placeOrder(){return {orderId:'at-partial-order',fillCount:40,averageFillPriceCents:85,feePaidCents:80};},
+  };
+  h.setBid(85);
+  const out=await h.guard.protect(h.row());
+  assert.equal(out.closed,false);
+  assert.equal(out.filled,40);
+  assert.equal(out.reopened,true);
+  assert.equal(out.pending,false);
+  assert.equal(h.row().remainingCount,60);
+  assert.equal(h.row().status,'open');
+  assert.equal(h.row().closeReason,null);
+  assert.equal(h.row().exitClientOrderId,null);
+  assert.ok(h.audits.some((x)=>x.event==='atomic_thunder_live_partial_reopened'));
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stableDropEntry,holdToSettlementTrail,isMatchDecisionMarket,computeLiveStatus,MOMENTUM,WAVE,RECOVERY,R43_ENTRY_QUALITY_COVENANT,r43EntryQualityAssessment } from '../src/doctrine.mjs';
+import { stableDropEntry,holdToSettlementTrail,isMatchDecisionMarket,computeLiveStatus,MOMENTUM,WAVE,RECOVERY,ULTIMATE_STOP_GUARD,STOP_LOSS_WATCHDOG,stopLossWatchdogThresholdsForStakeCents,ATOMIC_THUNDER } from '../src/doctrine.mjs';
 
 test('Pegasus and Sagittarius editable feeder bands are inclusive at 80c and 94c',()=>{
   assert.equal(stableDropEntry([{ask:96},{ask:80},{ask:80},{ask:80}],2,80,94),80);
@@ -33,30 +33,30 @@ test('live status uses trade activity before unreliable occurrence time',()=>{
   assert.equal(computeLiveStatus({tradeCount:5,occurrenceTimeMs:Date.now()+3600000,closeTimeMs:Date.now()+7200000}), 'live');
 });
 
-
-test('R43 EQC1 is execution authority with strict <0.30R friction and 30-minute maturity',()=>{
-  assert.equal(R43_ENTRY_QUALITY_COVENANT.version,'EQC1');
-  assert.equal(R43_ENTRY_QUALITY_COVENANT.authority,'EXECUTION');
-  assert.equal(R43_ENTRY_QUALITY_COVENANT.maximumEntryFrictionR,0.30);
-  assert.equal(R43_ENTRY_QUALITY_COVENANT.strictLessThan,true);
-  assert.equal(R43_ENTRY_QUALITY_COVENANT.minimumGameMinutes,30);
+test('R44 restores the pre-R42 R41 loss doctrine with U-SG1 as sole loss authority',()=>{
+  assert.equal(ULTIMATE_STOP_GUARD.version,'U-SG1');
+  assert.equal(STOP_LOSS_WATCHDOG.version,'SLW1');
+  assert.equal(STOP_LOSS_WATCHDOG.policyRevision,'SLW1-R2-STAKE-NORMALIZED');
+  assert.equal(STOP_LOSS_WATCHDOG.stakeBasis,'original_entry_notional');
+  assert.equal(STOP_LOSS_WATCHDOG.wakeLossRatio,0.30);
+  assert.equal(STOP_LOSS_WATCHDOG.resetLossRatio,0.20);
+  assert.equal(STOP_LOSS_WATCHDOG.severeLossRatio,0.45);
+  assert.equal(STOP_LOSS_WATCHDOG.catastrophicLossRatio,0.90);
+  const thresholds=stopLossWatchdogThresholdsForStakeCents(20_000);
+  assert.equal(thresholds.wakeLossCents,6000);
+  assert.equal(thresholds.resetLossCents,4000);
+  assert.equal(thresholds.severeLossCents,9000);
+  assert.equal(thresholds.catastrophicLossCents,18000);
+  assert.equal(Object.hasOwn(thresholds,'hardEconomicLossCeilingCents'),false);
 });
 
-test('R43 EQC1 allows 0.299R but blocks exactly 0.300R',()=>{
-  const pass=r43EntryQualityAssessment({helcEntry:{maximumLossCents:7500,projectedImmediateLossCents:2242.5,fullExitabilityProven:true},gameMinutes:30});
-  const edge=r43EntryQualityAssessment({helcEntry:{maximumLossCents:7500,projectedImmediateLossCents:2250,fullExitabilityProven:true},gameMinutes:30});
-  assert.equal(pass.ok,true); assert.ok(pass.entryFrictionR<0.30);
-  assert.equal(edge.ok,false); assert.equal(edge.reason,'entry_friction_not_below_0_30r');
-});
-
-test('R43 EQC1 fails closed below 30 minutes even when entry economics are excellent',()=>{
-  const early=r43EntryQualityAssessment({helcEntry:{maximumLossCents:7500,projectedImmediateLossCents:1000,fullExitabilityProven:true},gameMinutes:29.999});
-  const mature=r43EntryQualityAssessment({helcEntry:{maximumLossCents:7500,projectedImmediateLossCents:1000,fullExitabilityProven:true},gameMinutes:30});
-  assert.equal(early.ok,false); assert.equal(early.reason,'game_maturity_below_30_minutes');
-  assert.equal(mature.ok,true);
-});
-
-test('R43 EQC1 fails closed when exact full-position exitability is unproven',()=>{
-  const out=r43EntryQualityAssessment({helcEntry:{maximumLossCents:7500,projectedImmediateLossCents:1000,fullExitabilityProven:false},gameMinutes:60});
-  assert.equal(out.ok,false); assert.equal(out.reason,'full_exitability_unproven');
+test('Atomic Thunder doctrine is a profit-only full-position authority with two distinct fresh confirmations',()=>{
+  assert.equal(ATOMIC_THUNDER.version,'ATOMIC-THUNDER-V1');
+  assert.equal(ATOMIC_THUNDER.authority,'PROFIT_EXIT');
+  assert.equal(ATOMIC_THUNDER.fullPositionOnly,true);
+  assert.equal(ATOMIC_THUNDER.minimumNetPerOriginalContractCents,1);
+  assert.equal(ATOMIC_THUNDER.requiredFreshConfirmations,2);
+  assert.equal(ATOMIC_THUNDER.requiresDistinctBookEvidence,true);
+  assert.equal(ATOMIC_THUNDER.lossAuthority,'U-SG1');
+  assert.equal(ATOMIC_THUNDER.goldenEyePrecedence,'ATOMIC_THUNDER_FIRST');
 });

@@ -9,7 +9,7 @@ import { StrategyEngine } from './strategy.mjs';
 import { ProfitGuard } from './profitGuard.mjs';
 import { GoldenEye } from './goldenEye.mjs';
 import { FeederSignalIntel, FEEDER_SIGNAL_INTELLIGENCE } from './feederSignalIntel.mjs';
-import { PORTFOLIO_CONCEPTS, FEEDER_CONCEPTS, computeLiveStatus, MOMENTUM, RECOVERY, GOLDEN_DRAGON, GOLDEN_FEED_BUS, ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, HARD_ECONOMIC_LOSS_CEILING, R43_ENTRY_QUALITY_COVENANT, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE } from './doctrine.mjs';
+import { PORTFOLIO_CONCEPTS, FEEDER_CONCEPTS, computeLiveStatus, MOMENTUM, RECOVERY, GOLDEN_DRAGON, GOLDEN_FEED_BUS, ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE, ATOMIC_THUNDER } from './doctrine.mjs';
 import { GameClockAuthority, GAME_CLOCK_AUTHORITY, isConfirmedGameClockState } from './gameClock.mjs';
 
 const openLike = (s) => ['open', 'entry_pending', 'exit_pending', 'pending_recovery'].includes(s);
@@ -1282,7 +1282,7 @@ export class SagittariusEngine {
     this.recomputeHealth();
     const p = await this.performance();
     const entries = p.active;
-    const [trackers, patterns, sports, snapshots, audit, recoveryTracking, crashEpisodes] = await Promise.all([
+    const [trackers, patterns, sports, snapshots, audit, recoveryTracking, crashEpisodes, atomicThunder] = await Promise.all([
       this.db.trackers(this.settings.systemName, 500),
       this.db.patterns(this.settings.systemName),
       this.db.sportProfiles(),
@@ -1290,6 +1290,7 @@ export class SagittariusEngine {
       this.db.recentAudit(50),
       this.db.recoveryTrackingCount(this.settings.systemName),
       typeof this.db.crashEpisodes === 'function' ? this.db.crashEpisodes(this.settings.systemName, { limit:500 }) : [],
+      typeof this.db.atomicThunderStats === 'function' ? this.db.atomicThunderStats(this.settings.systemName) : { observedHunters:0, opportunitiesDetected:0, harvestsExecuted:0, invalidOpportunitiesBlocked:0, confirmationResets:0, realizedPnlCents:0, averageProfitCents:0, averageTimeToHarvestMs:0, lossesAvoided:0, avoidedLossCents:0, forgoneUpsideCents:0, researchComplete:0, recent:[] },
     ]);
     const crashLearning = this.learning?.crashLearningSummary?.() || { version:'CI1', states:[], totalEpisodes:0, multipleCrashMarkets:0 };
     const profitLearning = this.learning?.profitLearningSummary?.() || { version:PROFIT_LEARNING_INTELLIGENCE.version, tracked:0, complete:0, postExitTracking:0, active:0 };
@@ -1351,7 +1352,7 @@ export class SagittariusEngine {
         entryModeIsolation: 'EMI1',
         referenceFeederEvaluationRequiresLiveReady: false,
         realHunterExecutionRequiresLiveReadyInLiveMode: true,
-        r43FreshInstallMode: 'SIMULATION',
+        freshInstallMode: 'SIMULATION',
         gameClockAuthority: GAME_CLOCK_AUTHORITY.version,
         gameClockActivityOnlyAuthorization: false,
         gameClockStrongSources: ['kalshi_live_data', 'kalshi_game_stats'],
@@ -1388,27 +1389,21 @@ export class SagittariusEngine {
         stopLossWatchdogSevereStallMs: STOP_LOSS_WATCHDOG.severeStallMs,
         stopLossWatchdogReferenceCatastrophicLossCents: STOP_LOSS_WATCHDOG.catastrophicLossCents,
         stopLossWatchdogCatastrophicStallMs: STOP_LOSS_WATCHDOG.catastrophicStallMs,
-        hardEconomicLossCeiling: HARD_ECONOMIC_LOSS_CEILING.version,
-        hardEconomicLossCeilingPolicyRevision: HARD_ECONOMIC_LOSS_CEILING.policyRevision,
-        hardEconomicLossCeilingRole: HARD_ECONOMIC_LOSS_CEILING.role,
-        hardEconomicLossCeilingStakeBasis: HARD_ECONOMIC_LOSS_CEILING.stakeBasis,
-        hardEconomicLossCeilingRatio: HARD_ECONOMIC_LOSS_CEILING.lossRatio,
-        hardEconomicLossCeilingAbsoluteMaximumCents: HARD_ECONOMIC_LOSS_CEILING.absoluteMaximumLossCents,
-        hardEconomicLossCeilingEconomicBasis: HARD_ECONOMIC_LOSS_CEILING.fullPositionEconomicBasis,
-        hardEconomicLossCeilingRecoveryVetoAllowed: HARD_ECONOMIC_LOSS_CEILING.recoveryVetoAllowed,
-        hardEconomicLossCeilingDurableFlattenRequired: HARD_ECONOMIC_LOSS_CEILING.durableFlattenRequired,
-        hardEconomicLossCeilingLossAuthority: HARD_ECONOMIC_LOSS_CEILING.lossAuthority,
-        r43EntryQualityCovenant: R43_ENTRY_QUALITY_COVENANT.version,
-        r43EntryQualityPolicyRevision: R43_ENTRY_QUALITY_COVENANT.policyRevision,
-        r43EntryQualityRole: R43_ENTRY_QUALITY_COVENANT.role,
-        r43EntryQualityAuthority: R43_ENTRY_QUALITY_COVENANT.authority,
-        r43EntryQualityAppliesTo: R43_ENTRY_QUALITY_COVENANT.appliesTo,
-        r43EntryQualityRiskUnit: R43_ENTRY_QUALITY_COVENANT.riskUnit,
-        r43MaximumEntryFrictionR: R43_ENTRY_QUALITY_COVENANT.maximumEntryFrictionR,
-        r43EntryFrictionStrictLessThan: R43_ENTRY_QUALITY_COVENANT.strictLessThan,
-        r43MinimumGameMinutes: R43_ENTRY_QUALITY_COVENANT.minimumGameMinutes,
-        r43EntryEconomicBasis: R43_ENTRY_QUALITY_COVENANT.economicBasis,
-        r43EntryFullExitabilityRequired: R43_ENTRY_QUALITY_COVENANT.fullExitabilityRequired,
+        atomicThunder: ATOMIC_THUNDER.version,
+        atomicThunderPolicyRevision: ATOMIC_THUNDER.policyRevision,
+        atomicThunderRole: ATOMIC_THUNDER.role,
+        atomicThunderAuthority: ATOMIC_THUNDER.authority,
+        atomicThunderEnabled: this.settings.atomicThunderEnabled === true,
+        atomicThunderAppliesTo: ATOMIC_THUNDER.appliesTo,
+        atomicThunderFullPositionOnly: ATOMIC_THUNDER.fullPositionOnly,
+        atomicThunderMinimumNetPerOriginalContractCents: Number(this.settings.atomicThunderMinNetPerOriginalContractCents ?? ATOMIC_THUNDER.minimumNetPerOriginalContractCents),
+        atomicThunderRequiredFreshConfirmations: Number(this.settings.atomicThunderRequiredConfirmations ?? ATOMIC_THUNDER.requiredFreshConfirmations),
+        atomicThunderMaximumBookAgeMs: Number(this.settings.atomicThunderMaximumBookAgeMs ?? ATOMIC_THUNDER.maximumBookAgeMs),
+        atomicThunderConfirmationWindowMs: Number(this.settings.atomicThunderConfirmationWindowMs ?? ATOMIC_THUNDER.confirmationWindowMs),
+        atomicThunderRequiresDistinctBookEvidence: ATOMIC_THUNDER.requiresDistinctBookEvidence,
+        atomicThunderLossAuthority: ATOMIC_THUNDER.lossAuthority,
+        atomicThunderGoldenEyePrecedence: ATOMIC_THUNDER.goldenEyePrecedence,
+        stopDoctrine: 'R41_STYLE_USG1_PLUS_SLW1_R2',
         stopGuardRecoveryLearning: STOP_GUARD_RECOVERY_LEARNING.version,
         stopGuardRecoveryLearningRole: STOP_GUARD_RECOVERY_LEARNING.role,
         stopGuardRecoveryLearningDecisionEvidenceMode: STOP_GUARD_RECOVERY_LEARNING.decisionEvidenceMode,
@@ -1624,7 +1619,7 @@ export class SagittariusEngine {
       },
       conceptStats, feederSummary, goldenPipeline, goldenFeedSummary, entryPipeline, entryPathConfiguration, openHunters, openFeeders, closedHunters,
       trackedMarkets: trackers, trackerSummary, patterns, recoveryTracking, sports,
-      crashLearning, crashEpisodes, profitLearning, stopGuardRecoveryLearning, athena, goldenEye:this.goldenEye?.summary?.() || {version:GOLDEN_EYE.version,ready:false,enabled:false},
+      crashLearning, crashEpisodes, profitLearning, stopGuardRecoveryLearning, athena, atomicThunder:{ version:ATOMIC_THUNDER.version, policyRevision:ATOMIC_THUNDER.policyRevision, enabled:this.settings.atomicThunderEnabled===true, ...atomicThunder }, goldenEye:this.goldenEye?.summary?.() || {version:GOLDEN_EYE.version,ready:false,enabled:false},
       liveMarkets: scanned,
       scanner: { tracked: trackers.length, activeMarkets: scanned.length, lastScanMs: this.lastFullScanMs, ...this.speed },
       snapshots, audit,
