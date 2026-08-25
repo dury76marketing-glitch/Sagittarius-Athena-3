@@ -56,7 +56,7 @@ function runtimeDb(initial = originalSettings()) {
 }
 
 test('R42 retains Athena B1, Golden Eye GE1-R2, FSI1, DX1 and the hardened safety baseline while adding HELC1', () => {
-  assert.equal(RELEASE, 'SAGITTARIUS-R43-ENTRY-QUALITY-COVENANT-2026-08-25');
+  assert.equal(RELEASE, 'SAGITTARIUS-R43-HF1-ENTRY-MODE-ISOLATION-2026-08-25');
   assert.equal(originalSettings().minGameMinutes, 20, 'original Base44 min_game_minutes default must be restored');
 });
 
@@ -280,11 +280,14 @@ test('R21 full-scan ordering gives RH1 first claim, CRH1 second claim, then feed
   const src=await readFile(resolve(root,'src/engine.mjs'),'utf8');
   const full=src.slice(src.indexOf('async fullScan()'),src.indexOf('async fastPhase('));
   const protectAt=full.indexOf("runProtectionSweep('full_scan')");
-  const recoveryAt=full.indexOf('strategy.evaluateRecovery(map)');
-  const crashAt=full.indexOf('strategy.evaluateCrashRecovery(map)');
-  const feedersAt=full.indexOf('strategy.evaluateFeeders(markets, trackerMap)');
-  const momentumAt=full.indexOf('strategy.evaluateMomentumAndWave(map)');
-  assert.ok(protectAt>=0&&recoveryAt>protectAt&&crashAt>recoveryAt&&feedersAt>crashAt&&momentumAt>crashAt);
+  const chainCallAt=full.indexOf('evaluateEntryChain(markets, trackerMap, map)');
+  assert.ok(protectAt>=0&&chainCallAt>protectAt,'full protection sweep must precede the centralized entry chain');
+  const chain=src.slice(src.indexOf('async evaluateEntryChain('),src.indexOf('async fullScan()'));
+  const recoveryAt=chain.indexOf('strategy.evaluateRecovery(marketMap)');
+  const crashAt=chain.indexOf('strategy.evaluateCrashRecovery(marketMap)');
+  const feedersAt=chain.indexOf('strategy.evaluateFeeders(markets, trackerMap)');
+  const momentumAt=chain.indexOf('strategy.evaluateMomentumAndWave(marketMap)');
+  assert.ok(recoveryAt>=0&&crashAt>recoveryAt&&feedersAt>crashAt&&momentumAt>feedersAt);
   assert.ok(src.includes('recoveryPriorityTickers'));
   assert.ok(src.includes('crashPriorityTickers'));
   assert.ok(src.includes('queueRecoveryEvaluation'));

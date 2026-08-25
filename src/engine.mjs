@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from 'node:timers/promises';
-import { env, freshInstallSettings, deploymentConfigRecord, EDITABLE_NUMERIC_SETTINGS, EDITABLE_BOOLEAN_SETTINGS, RELEASE } from './config.mjs';
+import { env, freshInstallSettings, normalizeStartupExecutionMode, deploymentConfigRecord, EDITABLE_NUMERIC_SETTINGS, EDITABLE_BOOLEAN_SETTINGS, RELEASE } from './config.mjs';
 import { Database } from './db.mjs';
 import { KalshiClient } from './kalshi.mjs';
 import { MarketHub } from './market.mjs';
@@ -157,7 +157,16 @@ export class SagittariusEngine {
 
   async init() {
     await this.db.init();
-    this.settings = await this.db.loadSettings(freshInstallSettings());
+    const loadedSettings = await this.db.loadSettings(freshInstallSettings());
+    const startupMode = normalizeStartupExecutionMode(loadedSettings, env.allowLiveTrading);
+    this.settings = startupMode.settings;
+    if (startupMode.recovered) {
+      await this.db.saveSettings(this.settings);
+      await this.db.audit('warning', 'startup_mode_recovered_to_simulation', {
+        release: RELEASE, priorMode:'LIVE', mode:'SIMULATION', reason:startupMode.reason,
+        allowLiveTrading:env.allowLiveTrading, engineActive:this.settings.engineActive === true,
+      }).catch(() => {});
+    }
     await this.db.saveDeploymentConfig(deploymentConfigRecord());
     const stored = await this.db.loadCredentials();
     this.credentials = stored || ((env.kalshiApiKeyId && env.kalshiPrivateKeyPem)
@@ -417,7 +426,7 @@ export class SagittariusEngine {
 
   queueFeederHunterEvaluation(ticker) {
     if (!ticker || !this.running || !this.strategy || !this.feederPriorityTickers.has(ticker)) return;
-    if (!this.settings.engineActive || !(this.settings.mode === 'SIMULATION' || this.isLiveReady())) return;
+    if (!this.entryExecutionGate().allowed) return;
     if (this.settings.momentumHunterEnabled !== true && this.settings.waveSurferEnabled !== true) return;
     if (this.feederHunterEvaluationTimers.has(ticker)) return;
     const timer = setTimeout(async () => {
@@ -445,7 +454,7 @@ export class SagittariusEngine {
 
   queueRecoveryEvaluation(ticker) {
     if (!ticker || !this.running || !this.strategy || !this.recoveryPriorityTickers.has(ticker)) return;
-    if (!this.settings.engineActive || !(this.settings.mode === 'SIMULATION' || this.isLiveReady())) return;
+    if (!this.entryExecutionGate().allowed) return;
     if (this.recoveryEvaluationTimers.has(ticker)) return;
     const timer = setTimeout(async () => {
       this.recoveryEvaluationTimers.delete(ticker);
@@ -480,7 +489,7 @@ export class SagittariusEngine {
     // R25: the crash quote queue stays active when either Dragon V1 or Golden
     // Dragon can materialize an approved CI1 episode for downstream Hunters.
     if (!Boolean(this.settings.dragonEnabled) && !Boolean(this.settings.goldenDragonEnabled)) return;
-    if (!this.settings.engineActive || !(this.settings.mode === 'SIMULATION' || this.isLiveReady())) return;
+    if (!this.referenceSignalGate().allowed) return;
     const hasCandidate=()=>Boolean(
       (this.settings.dragonEnabled === true && this.learning?.crashEntrySignal?.(ticker)) ||
       (this.settings.goldenDragonEnabled === true && (this.learning?.goldenDragonEntrySignal?.(ticker) || this.learning?.crashEntrySignal?.(ticker)))
@@ -499,6 +508,10 @@ export class SagittariusEngine {
         if (this.settings.dragonEnabled === true) await this.strategy.evaluateDragon(map, { onlyTicker:ticker });
         if (this.settings.goldenDragonEnabled === true) await this.strategy.evaluateGoldenDragon?.(map, { onlyTicker:ticker });
         if (this.settings.goldenDragonEnabled === true) await this.strategy.refreshGoldenDragonFeedAuthorities?.(map, { onlyTicker:ticker });
+        // EMI1: reference-only feeder materialization remains active while LIVE
+        // is disarmed, but every real Hunter path remains behind the independent
+        // execution gate. This is the boundary the previous build conflated.
+        if (!this.entryExecutionGate().allowed) return;
         // RH1 always gets first claim if this exact ticker has a still-eligible
         // stopped-source rescue. If RH1 creates exposure, R13 also protects the
         // ticker from a simultaneous CRH1 or feeder-driven Hunter order.
@@ -581,6 +594,24 @@ export class SagittariusEngine {
       this.kalshi.setCredentials(old || {});
       throw e;
     }
+  }
+
+  entryExecutionGate() {
+    const engineActive = this.settings?.engineActive === true;
+    const mode = String(this.settings?.mode || 'SIMULATION').toUpperCase();
+    if (!engineActive) return { version:'EMI1', allowed:false, reason:'engine_disabled', engineActive, mode, liveReady:false };
+    if (mode === 'SIMULATION') return { version:'EMI1', allowed:true, reason:'simulation', engineActive, mode, liveReady:false };
+    if (mode !== 'LIVE') return { version:'EMI1', allowed:false, reason:'invalid_mode', engineActive, mode, liveReady:false };
+    if (!env.allowLiveTrading) return { version:'EMI1', allowed:false, reason:'live_trading_disabled', engineActive, mode, liveReady:false };
+    if (this.settings.liveArmed !== true) return { version:'EMI1', allowed:false, reason:'live_disarmed', engineActive, mode, liveReady:false };
+    this.recomputeHealth();
+    if (this.health.degraded) return { version:'EMI1', allowed:false, reason:'health_degraded', engineActive, mode, liveReady:false };
+    return { version:'EMI1', allowed:true, reason:'live_ready', engineActive, mode, liveReady:true };
+  }
+
+  referenceSignalGate() {
+    const engineActive = this.settings?.engineActive === true;
+    return { version:'EMI1', allowed:engineActive, reason:engineActive ? 'engine_active' : 'engine_disabled' };
   }
 
   isLiveReady() {
@@ -958,6 +989,37 @@ export class SagittariusEngine {
     return { gameClockState: state || {}, gameStartTimeMs, liveStatus: candidate.liveStatus };
   }
 
+  async evaluateEntryChain(markets, trackerMap, marketMap) {
+    const created = [];
+    if (!this.referenceSignalGate().allowed) return created;
+    const exposureGate = this.entryExecutionGate();
+
+    // Recovery has first claim on real-exposure capacity, but only when the
+    // current execution mode is authorized. Reference feeders are evaluated
+    // independently so LIVE-disarmed observation/learning cannot be starved.
+    if (exposureGate.allowed) created.push(...await this.strategy.evaluateRecovery(marketMap));
+
+    // Dragon and Golden Dragon are reference-only. Their creation and feed-bus
+    // maintenance must never depend on LIVE arming or Hunter capacity.
+    created.push(...await this.strategy.evaluateDragon(marketMap));
+    created.push(...await this.strategy.evaluateGoldenDragon(marketMap));
+    await this.strategy.refreshGoldenDragonFeedAuthorities?.(marketMap);
+
+    if (exposureGate.allowed) {
+      created.push(...await this.strategy.evaluateGoldenDragonHunter(marketMap));
+      created.push(...await this.strategy.evaluateDragonRecovery(marketMap));
+      created.push(...await this.strategy.evaluateCrashRecovery(marketMap));
+    }
+
+    // Pegasus and Sagittarius are also reference-only and remain observable
+    // regardless of real-Hunter execution readiness.
+    created.push(...await this.strategy.evaluateFeeders(markets, trackerMap));
+    await this.refreshFeederPriorityTickers();
+
+    if (exposureGate.allowed) created.push(...await this.strategy.evaluateMomentumAndWave(marketMap));
+    return created;
+  }
+
   async fullScan() {
     const start = Date.now();
     this.speed = { ...this.speed, mode: 'fullScan', lastLoopMs: start, checksCompleted: 0, closedThisLoop: 0, fetchFailures: 0 };
@@ -1000,21 +1062,7 @@ export class SagittariusEngine {
       for (const q of map.values()) await this.learning.observeCrashQuote(q, this.settings);
       this.refreshCrashPriorityTickers();
 
-      const newEntries = [];
-      if (this.settings.engineActive && (this.settings.mode === 'SIMULATION' || this.isLiveReady())) {
-        newEntries.push(...await this.strategy.evaluateRecovery(map));
-        // R24 ordering invariant: Dragon must materialize an exact approved
-        // episode before CRH1 can hunt it in the same scan.
-        newEntries.push(...await this.strategy.evaluateDragon(map));
-        newEntries.push(...await this.strategy.evaluateGoldenDragon(map));
-        await this.strategy.refreshGoldenDragonFeedAuthorities?.(map);
-        newEntries.push(...await this.strategy.evaluateGoldenDragonHunter(map));
-        newEntries.push(...await this.strategy.evaluateDragonRecovery(map));
-        newEntries.push(...await this.strategy.evaluateCrashRecovery(map));
-        newEntries.push(...await this.strategy.evaluateFeeders(markets, trackerMap));
-        await this.refreshFeederPriorityTickers();
-        newEntries.push(...await this.strategy.evaluateMomentumAndWave(map));
-      }
+      const newEntries = await this.evaluateEntryChain(markets, trackerMap, map);
 
       await this.profitGuard.trackPostExit();
       const trackers = await this.db.trackers(this.settings.systemName, 2000);
@@ -1075,19 +1123,7 @@ export class SagittariusEngine {
           const map = new Map(marketList.map((x) => [x.ticker, x]));
           for (const q of marketList) await this.learning.observeCrashQuote(q, this.settings);
           this.refreshCrashPriorityTickers();
-          if (this.settings.engineActive && (this.settings.mode === 'SIMULATION' || this.isLiveReady())) {
-            await this.strategy.evaluateRecovery(map);
-            // R24 ordering invariant: Dragon approval precedes CRH1 evaluation.
-            await this.strategy.evaluateDragon(map);
-            await this.strategy.evaluateGoldenDragon(map);
-            await this.strategy.refreshGoldenDragonFeedAuthorities?.(map);
-            await this.strategy.evaluateGoldenDragonHunter(map);
-            await this.strategy.evaluateDragonRecovery(map);
-            await this.strategy.evaluateCrashRecovery(map);
-            await this.strategy.evaluateFeeders(marketList, trackerMap);
-            await this.refreshFeederPriorityTickers();
-            await this.strategy.evaluateMomentumAndWave(map);
-          }
+          await this.evaluateEntryChain(marketList, trackerMap, map);
           first = false;
         }
         const before = (await this.db.openEntries(this.settings.systemName)).length;
@@ -1269,11 +1305,18 @@ export class SagittariusEngine {
       this.settings.dragonRecoveryHunterEnabled === true && this.settings.goldenDragonEnabled === true ? 'Dragon Recovery Hunter' : null,
       this.settings.goldenDragonHunterEnabled === true && this.settings.goldenDragonEnabled === true ? 'Golden Dragon Hunter' : null,
     ].filter(Boolean);
+    const executionGate = this.entryExecutionGate();
+    const referenceGate = this.referenceSignalGate();
     const entryPathWarnings = [];
     if (this.settings.crashRecoveryHunterEnabled === true && this.settings.dragonEnabled !== true && this.settings.goldenDragonEnabled !== true) entryPathWarnings.push('Crash Recovery Hunter enabled but both approved source feeders Dragon and Golden Dragon are disabled');
     if (this.settings.recoveryHunterEnabled === true) entryPathWarnings.push('Recovery Hunter is follow-on only and requires an eligible stopped Hunter source');
     if (!initialExposureEnabled.length) entryPathWarnings.push('No currently enabled configuration can create an initial real Hunter exposure');
-    const entryPathConfiguration = { version:'EPC1', initialExposureEnabled, recoveryFollowOnEnabled:this.settings.recoveryHunterEnabled === true, warnings:entryPathWarnings };
+    if (referenceGate.allowed && !executionGate.allowed) entryPathWarnings.push(`Real Hunter execution blocked by ${executionGate.reason}; reference feeders remain active`);
+    const entryPathConfiguration = {
+      version:'EPC1', initialExposureEnabled, recoveryFollowOnEnabled:this.settings.recoveryHunterEnabled === true, warnings:entryPathWarnings,
+      entryModeIsolation:'EMI1', referenceSignalEvaluationActive:referenceGate.allowed,
+      realHunterExecutionAuthorized:executionGate.allowed, executionGateReason:executionGate.reason,
+    };
     const goldenFeedSummary = summarizeGoldenFeeds(entries);
     const conceptStats = this.buildConceptStats(entries);
     const openHunters = p.open.map((e) => this.decorateEntry(e));
@@ -1305,6 +1348,10 @@ export class SagittariusEngine {
         singleRealHunterPerExactTicker: true,
         exactTickerLockScope: 'owned_hunters_only',
         feederSignalsExempt: true,
+        entryModeIsolation: 'EMI1',
+        referenceFeederEvaluationRequiresLiveReady: false,
+        realHunterExecutionRequiresLiveReadyInLiveMode: true,
+        r43FreshInstallMode: 'SIMULATION',
         gameClockAuthority: GAME_CLOCK_AUTHORITY.version,
         gameClockActivityOnlyAuthorization: false,
         gameClockStrongSources: ['kalshi_live_data', 'kalshi_game_stats'],

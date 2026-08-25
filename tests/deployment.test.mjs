@@ -25,7 +25,7 @@ test('R43 production release promotes only the validated Entry Quality Covenant 
   const doctrine=await readFile(resolve(root,'src/doctrine.mjs'),'utf8');
   const strategy=await readFile(resolve(root,'src/strategy.mjs'),'utf8');
   const engine=await readFile(resolve(root,'src/engine.mjs'),'utf8');
-  assert.ok(config.includes("SAGITTARIUS-R43-ENTRY-QUALITY-COVENANT-2026-08-25"));
+  assert.ok(config.includes("SAGITTARIUS-R43-HF1-ENTRY-MODE-ISOLATION-2026-08-25"));
   assert.ok(doctrine.includes("version: 'EQC1'"));
   assert.ok(doctrine.includes("authority: 'EXECUTION'"));
   assert.ok(doctrine.includes('maximumEntryFrictionR: 0.30'));

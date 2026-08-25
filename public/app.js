@@ -286,9 +286,10 @@ function render(s) {
   $('title').textContent = `Sagittarius - ${s.settings.systemName}`;
   $('portfolioValue').textContent = moneyPlain(p.portfolioValueCents); $('winRate').textContent = pct(p.winRate); setPnl('unrealized', p.unrealizedCents); setPnl('realized', p.realizedCents); $('simFreeCash').textContent = p.simulationCashCents == null ? '-' : moneyPlain(p.simulationCashCents);
   setPnl('todayPnl', periodPnl(s.closedHunters, madridBoundary('day'))); setPnl('weekPnl', periodPnl(s.closedHunters, madridBoundary('week'))); setPnl('monthPnl', periodPnl(s.closedHunters, madridBoundary('month'))); setPnl('yearPnl', periodPnl(s.closedHunters, madridBoundary('year')));
-  const live = s.settings.mode === 'LIVE' && s.settings.liveArmed;
-  $('modeBtn').textContent = live ? 'LIVE ENABLED' : s.settings.mode === 'LIVE' ? 'ENABLE LIVE' : 'SIMULATION'; $('modeBtn').className = `btn ${live ? 'primary' : 'danger'}`;
-  $('modeNote').textContent = live ? 'Real Kalshi orders are armed.' : s.settings.mode === 'LIVE' ? 'LIVE is selected but disarmed after restart.' : 'Paper trading - no real orders. Disable live trading to use simulation.';
+  const liveSelected = s.settings.mode === 'LIVE';
+  const live = liveSelected && s.settings.liveArmed;
+  $('modeBtn').textContent = live ? 'LIVE ENABLED' : liveSelected ? 'LIVE DISARMED' : 'SIMULATION'; $('modeBtn').className = `btn ${live ? 'primary' : 'danger'}`;
+  $('modeNote').textContent = live ? 'Real Kalshi orders are armed. Click to return to SIMULATION.' : liveSelected ? 'LIVE is selected but disarmed. No real orders can be sent; click to return to SIMULATION.' : 'Paper trading - no real orders. Click only if you intend to arm LIVE trading.';
   $('engineBtn').textContent = s.settings.engineActive ? 'Stop Engine' : 'Start Engine'; $('engineStatus').textContent = s.settings.engineActive ? 'Engine running' : 'Entries stopped'; $('engineStatus').className = `pill ${s.settings.engineActive ? 'green' : 'amber'}`;
   const h = s.health; $('systemStatus').textContent = h.degraded ? 'Degraded' : 'Running'; $('systemStatus').className = `pill ${h.degraded ? 'red' : 'green'}`;
   const a = s.athena || {};
@@ -339,7 +340,7 @@ $('conceptBody').onclick = async (e) => {
   } catch (x) { msg(x.message, true); } finally { btn.disabled = false; }
 };
 
-$('modeBtn').onclick = async () => { try { if (STATE.settings.mode === 'LIVE' && STATE.settings.liveArmed) { await post('/api/mode', { mode:'SIMULATION' }); msg('Switched to SIMULATION. Existing owned LIVE positions remain protected.'); } else { const phrase = prompt('Type ENABLE LIVE TRADING to arm real Kalshi orders.'); if (phrase == null) return; await post('/api/mode', { mode:'LIVE', confirmation:phrase }); msg('LIVE trading armed.'); } await load(); } catch (e) { msg(e.message, true); } };
+$('modeBtn').onclick = async () => { try { if (STATE.settings.mode === 'LIVE') { await post('/api/mode', { mode:'SIMULATION' }); msg('Switched to SIMULATION. Existing owned LIVE positions remain protected.'); } else { const phrase = prompt('Type ENABLE LIVE TRADING to arm real Kalshi orders.'); if (phrase == null) return; await post('/api/mode', { mode:'LIVE', confirmation:phrase }); msg('LIVE trading armed.'); } await load(); } catch (e) { msg(e.message, true); } };
 $('engineBtn').onclick = async () => { try { await post('/api/engine', { active:!STATE.settings.engineActive }); await load(); } catch (e) { msg(e.message, true); } };
 $('scanBtn').onclick = $('modelScanBtn').onclick = async () => { try { await post('/api/run-scan'); msg('Scan requested.'); } catch (e) { msg(e.message, true); } };
 $('resetDashboardBtn').onclick = async () => { if (!confirm('Reset dashboard performance period from now? Trades are not deleted.')) return; try { await post('/api/reset-dashboard'); await load(); msg('Dashboard performance baseline reset.'); } catch (e) { msg(e.message, true); } };

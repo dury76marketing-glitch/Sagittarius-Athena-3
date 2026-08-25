@@ -385,8 +385,10 @@ test('RH1 engine keeps Recovery tickers in scanner priority and evaluates Recove
   assert.ok(src.includes('queueRecoveryEvaluation(q?.ticker)'));
   assert.ok(src.includes("evaluateRecovery(new Map([[ticker, q]]), { onlyTicker:ticker })"));
   assert.ok(src.includes("...open.map((x) => x.ticker), ...this.recoveryPriorityTickers"));
-  assert.ok(src.indexOf("await this.runProtectionSweep('full_scan')") < src.indexOf('newEntries.push(...await this.strategy.evaluateRecovery(map))'));
-  assert.ok(src.indexOf('newEntries.push(...await this.strategy.evaluateRecovery(map))') < src.indexOf('newEntries.push(...await this.strategy.evaluateMomentumAndWave(map))'));
+  const full=src.slice(src.indexOf('async fullScan()'),src.indexOf('async fastPhase('));
+  assert.ok(full.indexOf("await this.runProtectionSweep('full_scan')") < full.indexOf('evaluateEntryChain(markets, trackerMap, map)'));
+  const chain=src.slice(src.indexOf('async evaluateEntryChain('),src.indexOf('async fullScan()'));
+  assert.ok(chain.indexOf('strategy.evaluateRecovery(marketMap)') < chain.indexOf('strategy.evaluateMomentumAndWave(marketMap)'));
 });
 
 test('RH1 quote event actually wakes Recovery evaluation for a watched stopped ticker', async () => {

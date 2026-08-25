@@ -439,14 +439,15 @@ test('event-driven crash queue materializes Dragon before Dragon-gated CRH1',asy
 test('full and fast scan paths materialize Dragon before CRH1 and diagnostics expose the new hunting ground',async()=>{
   const { readFile }=await import('node:fs/promises');
   const src=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');
+  const chain=src.slice(src.indexOf('async evaluateEntryChain('),src.indexOf('async fullScan()'));
+  const recoveryAt=chain.indexOf('evaluateRecovery(marketMap)');
+  const dragonAt=chain.indexOf('evaluateDragon(marketMap)');
+  const crhAt=chain.indexOf('evaluateCrashRecovery(marketMap)');
+  assert.ok(recoveryAt>=0&&dragonAt>=0&&crhAt>=0&&recoveryAt<dragonAt&&dragonAt<crhAt,'RH1 real-exposure priority must remain first, then Dragon approval, then CRH1');
   const full=src.slice(src.indexOf('async fullScan()'),src.indexOf('async fastPhase(index)'));
   const fast=src.slice(src.indexOf('async fastPhase(index)'),src.indexOf('async cycleLoop()'));
-  for(const block of [full,fast]){
-    const recoveryAt=block.indexOf('evaluateRecovery(map)');
-    const dragonAt=block.indexOf('evaluateDragon(map)');
-    const crhAt=block.indexOf('evaluateCrashRecovery(map)');
-    assert.ok(recoveryAt>=0&&dragonAt>=0&&crhAt>=0&&recoveryAt<dragonAt&&dragonAt<crhAt,'RH1 priority must remain first, then Dragon approval, then CRH1');
-  }
+  assert.ok(full.includes('evaluateEntryChain(markets, trackerMap, map)'));
+  assert.ok(fast.includes('evaluateEntryChain(marketList, trackerMap, map)'));
   assert.ok(src.includes("crashRecoveryHuntingGround: 'approved_crash_signal_episode'"));
   assert.ok(src.includes('crashRecoveryRequiresApprovedSignal: true'));
   assert.ok(src.includes("crashRecoverySourceFeeders: ['Dragon','Golden Dragon']"));
@@ -621,19 +622,21 @@ test('R25 LIVE reconciliation includes Dragon Recovery Hunter and Profit Guard u
 test('R26 engine ordering preserves protection/rescue priority, then Dragon/Golden/GDH/DRH/CRH before ordinary feeder Hunters',async()=>{
   const {readFile}=await import('node:fs/promises');
   const src=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');
+  const chain=src.slice(src.indexOf('async evaluateEntryChain('),src.indexOf('async fullScan()'));
+  const recoveryAt=chain.indexOf('evaluateRecovery(marketMap)');
+  const dragonAt=chain.indexOf('evaluateDragon(marketMap)');
+  const goldenAt=chain.indexOf('evaluateGoldenDragon(marketMap)');
+  const gdhAt=chain.indexOf('evaluateGoldenDragonHunter(marketMap)');
+  const drhAt=chain.indexOf('evaluateDragonRecovery(marketMap)');
+  const crhAt=chain.indexOf('evaluateCrashRecovery(marketMap)');
+  const feedersAt=chain.indexOf('evaluateFeeders(markets, trackerMap)');
+  const normalAt=chain.indexOf('evaluateMomentumAndWave(marketMap)');
+  assert.ok([recoveryAt,dragonAt,goldenAt,gdhAt,drhAt,crhAt,feedersAt,normalAt].every((x)=>x>=0));
+  assert.ok(recoveryAt<dragonAt&&dragonAt<goldenAt&&goldenAt<gdhAt&&gdhAt<drhAt&&drhAt<crhAt&&crhAt<feedersAt&&feedersAt<normalAt);
   const full=src.slice(src.indexOf('async fullScan()'),src.indexOf('async fastPhase(index)'));
   const fast=src.slice(src.indexOf('async fastPhase(index)'),src.indexOf('async cycleLoop()'));
-  for(const block of [full,fast]){
-    const recoveryAt=block.indexOf('evaluateRecovery(map)');
-    const dragonAt=block.indexOf('evaluateDragon(map)');
-    const goldenAt=block.indexOf('evaluateGoldenDragon(map)');
-    const gdhAt=block.indexOf('evaluateGoldenDragonHunter(map)');
-    const drhAt=block.indexOf('evaluateDragonRecovery(map)');
-    const crhAt=block.indexOf('evaluateCrashRecovery(map)');
-    const normalAt=block.indexOf('evaluateMomentumAndWave(map)');
-    assert.ok([recoveryAt,dragonAt,goldenAt,gdhAt,drhAt,crhAt,normalAt].every((x)=>x>=0));
-    assert.ok(recoveryAt<dragonAt&&dragonAt<goldenAt&&goldenAt<gdhAt&&gdhAt<drhAt&&drhAt<crhAt&&crhAt<normalAt);
-  }
+  assert.ok(full.indexOf("runProtectionSweep('full_scan')") < full.indexOf('evaluateEntryChain(markets, trackerMap, map)'));
+  assert.ok(fast.includes('evaluateEntryChain(marketList, trackerMap, map)'));
 });
 
 test('R25 doctrine fallbacks preserve Golden 240s freshness and DRH 60c ceiling when settings fields are absent',()=>{
@@ -1479,16 +1482,18 @@ test('R31 GFB1 persistence and orchestration contract is durable and runs before
   const engineSrc=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');
   assert.ok(dbSrc.includes("feeder_state jsonb not null default '{}'::jsonb"));
   assert.ok(dbSrc.includes("feederState:'feeder_state'"));
-  for(const block of [
-    engineSrc.slice(engineSrc.indexOf('queueCrashRecoveryEvaluation'),engineSrc.indexOf('async protectionLoop')),
-    engineSrc.slice(engineSrc.indexOf('async fullScan()'),engineSrc.indexOf('async fastPhase(index)')),
-    engineSrc.slice(engineSrc.indexOf('async fastPhase(index)'),engineSrc.indexOf('async cycleLoop()')),
-  ]){
+  const queue=engineSrc.slice(engineSrc.indexOf('queueCrashRecoveryEvaluation'),engineSrc.indexOf('async protectionLoop'));
+  const chain=engineSrc.slice(engineSrc.indexOf('async evaluateEntryChain('),engineSrc.indexOf('async fullScan()'));
+  for(const block of [queue,chain]){
     const golden=block.indexOf('evaluateGoldenDragon');
     const refresh=block.indexOf('refreshGoldenDragonFeedAuthorities');
     const gdh=block.indexOf('evaluateGoldenDragonHunter');
     assert.ok(golden>=0&&refresh>golden&&gdh>refresh,'Golden approval must be persisted/refreshed before GDH and other consumers execute');
   }
+  const full=engineSrc.slice(engineSrc.indexOf('async fullScan()'),engineSrc.indexOf('async fastPhase(index)'));
+  const fast=engineSrc.slice(engineSrc.indexOf('async fastPhase(index)'),engineSrc.indexOf('async cycleLoop()'));
+  assert.ok(full.includes('evaluateEntryChain(markets, trackerMap, map)'));
+  assert.ok(fast.includes('evaluateEntryChain(marketList, trackerMap, map)'));
 });
 
 test('R31 GFB1 terminal superseded and invalid feed states are irreversible and cannot zombie-reactivate', async () => {

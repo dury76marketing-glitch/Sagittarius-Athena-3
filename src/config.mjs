@@ -10,7 +10,7 @@ const bool = (name, fallback) => {
 };
 const pem = (v='') => String(v).replace(/\\n/g, '\n').trim();
 
-export const RELEASE = 'SAGITTARIUS-R43-ENTRY-QUALITY-COVENANT-2026-08-25';
+export const RELEASE = 'SAGITTARIUS-R43-HF1-ENTRY-MODE-ISOLATION-2026-08-25';
 
 export const env = Object.freeze({
   port: num('PORT', 3000),
@@ -295,6 +295,12 @@ export function freshInstallSettings() {
   // clean causal experiment instead of mixing entry models.
   return {
     ...originalSettings(),
+    // R43-HF1: this repository is a prospective SIMULATION experiment. A
+    // deployment-level DEFAULT_ENGINE_MODE=LIVE from another Sagittarius repo
+    // must never silently turn a fresh R43 database into a disarmed LIVE state.
+    // LIVE remains available only through the explicit runtime arm flow.
+    mode:'SIMULATION',
+    liveArmed:false,
     pegasusEnabled:true,
     sagittariusEnabled:false,
     dragonEnabled:false,
@@ -323,6 +329,20 @@ export function freshInstallSettings() {
     waveMinFeederFavorableMoveCents:1,
     waveMaxSpreadCents:3,
   };
+}
+
+export function normalizeStartupExecutionMode(settings = {}, allowLiveTrading = env.allowLiveTrading) {
+  const current = settings && typeof settings === 'object' ? { ...settings } : {};
+  // A persisted LIVE selection is impossible to execute when deployment policy
+  // explicitly disables LIVE trading. Leaving that state in place used to
+  // suppress the entire entry chain. For the R43 simulation repository, recover
+  // deterministically to SIMULATION while preserving engineActive and every
+  // strategy setting. If LIVE is deployment-authorized, remain fail-closed and
+  // disarmed after restart; the operator must explicitly re-arm it.
+  if (String(current.mode || '').toUpperCase() === 'LIVE' && allowLiveTrading !== true) {
+    return { settings: { ...current, mode:'SIMULATION', liveArmed:false }, recovered:true, reason:'live_trading_disabled' };
+  }
+  return { settings: { ...current, liveArmed:false }, recovered:false, reason:null };
 }
 
 export function sanitizeRuntimeSettings(value = {}, defaults = originalSettings()) {

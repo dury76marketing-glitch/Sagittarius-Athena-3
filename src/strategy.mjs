@@ -1177,6 +1177,19 @@ export class StrategyEngine {
     const pipelineAttemptId = `${Date.now()}-${++this.entryPipelineAttemptSequence}`;
     const trace = (stage, status, reason = null, data = {}) => this.recordEntryPipeline(pipelineAttemptId, concept, tickerLockKey, stage, status, reason, data);
     trace('RECEIVED','PASS',null,{eventTicker:String(q?.eventTicker || tickerLockKey),sourceFeeder:sourceFeeder || null});
+    // EMI1 defense-in-depth: Engine scheduling is the primary mode boundary,
+    // but createHunter itself must independently fail closed before any market
+    // refresh, capital work, or broker mutation if LIVE is not currently armed.
+    if (s.mode === 'LIVE' && !this.getLiveReady()) {
+      trace('MODE_AUTHORIZATION','BLOCKED','live_not_ready');
+      await this.audit('hunter_entry_mode_authorization_blocked',{concept,ticker:tickerLockKey,eventTicker:q?.eventTicker || tickerLockKey,mode:s.mode});
+      return null;
+    }
+    if (s.mode !== 'LIVE' && s.mode !== 'SIMULATION') {
+      trace('MODE_AUTHORIZATION','BLOCKED','invalid_mode',{mode:s.mode});
+      return null;
+    }
+    trace('MODE_AUTHORIZATION','PASS',s.mode === 'LIVE' ? 'live_ready' : 'simulation');
     if (this.hunterTickerLocks.has(tickerLockKey)) {
       trace('LOCAL_TICKER_LOCK','BLOCKED','local_ticker_lock_busy');
       await this.audit('hunter_exact_ticker_lock_busy', { concept, ticker: tickerLockKey, eventTicker: q?.eventTicker || tickerLockKey });
@@ -1635,8 +1648,9 @@ export class StrategyEngine {
     const s = this.getSettings();
     const all = await this.db.entries(s.systemName, { limit: 5000 });
     const open = all.filter((e) => openLike(e.status));
-    const left = slotsLeft(open, s);
-    if (left <= 0) return [];
+    // EMI1: Pegasus/Sagittarius are reference-only observers. Hunter capacity
+    // must never suppress feeder learning or signal materialization. Real
+    // Hunters continue to enforce maxPositions independently through slotsLeft.
     const cutoff = Date.now() - (s.eventCooldownMinutes ?? 5) * 60000;
     const recentTickers = new Set(all.filter((e) => e.status !== 'rejected' && e.openedAtMs >= cutoff).map((e) => e.ticker));
     const openTickers = new Set(open.map((e) => e.ticker));
