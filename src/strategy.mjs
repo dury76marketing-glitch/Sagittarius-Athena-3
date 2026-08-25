@@ -18,6 +18,7 @@ import {
   PROFIT_LEARNING_INTELLIGENCE,
   HARD_ECONOMIC_LOSS_CEILING,
   hardEconomicLossCeilingForStakeCents,
+  r43EntryQualityAssessment,
   stableDropEntry,
   estimateTimeLeftMs,
 } from './doctrine.mjs';
@@ -1504,6 +1505,31 @@ export class StrategyEngine {
         fullExitabilityProven:Boolean(helcEntry.fullExitabilityProven),
       });
 
+      // R43/EQC1: R42 only proves that the proposed position can survive inside
+      // HELC. R43 requires the immediate full-position round-trip economics to
+      // consume strictly less than 0.30R and the authoritative game clock to be
+      // at least 30 minutes old. This is a real execution gate, not telemetry.
+      const r43EntryQuality = r43EntryQualityAssessment({ helcEntry, gameMinutes: finalElapsed });
+      if (!r43EntryQuality.ok) {
+        trace('R43_ENTRY_QUALITY','BLOCKED',r43EntryQuality.reason,{
+          entryFrictionR:r43EntryQuality.entryFrictionR,
+          maximumEntryFrictionR:r43EntryQuality.maximumEntryFrictionR,
+          gameMinutes:r43EntryQuality.gameMinutes,
+          minimumGameMinutes:r43EntryQuality.minimumGameMinutes,
+        });
+        await this.audit('hunter_entry_r43_quality_blocked',{
+          concept,ticker:q.ticker,eventTicker:expectedEventTicker,sourceFeeder,
+          ...r43EntryQuality,
+        },'info');
+        return null;
+      }
+      trace('R43_ENTRY_QUALITY','PASS',r43EntryQuality.reason,{
+        entryFrictionR:r43EntryQuality.entryFrictionR,
+        maximumEntryFrictionR:r43EntryQuality.maximumEntryFrictionR,
+        gameMinutes:r43EntryQuality.gameMinutes,
+        minimumGameMinutes:r43EntryQuality.minimumGameMinutes,
+      });
+
       if (s.mode === 'SIMULATION') {
       const available = await this.simulationAvailableCashCents();
       const estimatedEntryFee = Number(s.simFeeCents || 0) * plan.count;
@@ -1569,6 +1595,7 @@ export class StrategyEngine {
       if (goldenFeedAuthority && typeof goldenFeedAuthority === 'object') frozenEntryConfig.goldenFeedAuthority = structuredClone(goldenFeedAuthority);
       if (entryQualificationSnapshot && typeof entryQualificationSnapshot === 'object') frozenEntryConfig.entryQualification = structuredClone(entryQualificationSnapshot);
       if (athenaAssessment && typeof athenaAssessment === 'object') frozenEntryConfig.athena = structuredClone(athenaAssessment);
+      frozenEntryConfig.entryQualityCovenant = structuredClone(r43EntryQuality);
       const e = {
       id, systemName: s.systemName, ownerId: s.ownerId, conceptName: concept,
       sourceFeeder, sourceTradeId, ticker: q.ticker, eventTicker: q.eventTicker || q.ticker,

@@ -183,6 +183,7 @@ test('simulation Hunter entry is capped to real executable depth', async () => {
   const market={
     async refreshTicker(){return q('T',80,82);},
     executableAsk(){return {filled:2,full:false,avgCents:82,bestCents:82};},
+    executableBid(_ticker,count){return {filled:count,full:true,avgCents:80,bestCents:80};},
   };
   const s=new StrategyEngine({db,kalshi:{},market,learning:{},getSettings:()=>settings,getLiveReady:()=>false,refreshGameClock:refreshClock,random:()=>0});
   const e=await s.createHunter('Momentum Hunter',q('T',80,82),20000,10,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:75,feederPeakPriceCents:85}});
@@ -194,7 +195,7 @@ test('simulation Hunter entry is capped to real executable depth', async () => {
 test('simulation IOC rejection probability is honored', async () => {
   const db=fakeDb();
   const settings=baseSettings(); settings.simFillProbability=.75;
-  const market={async refreshTicker(){return q('T',80,82);},executableAsk(){return {filled:2,full:true,avgCents:82,bestCents:82};}};
+  const market={async refreshTicker(){return q('T',80,82);},executableAsk(){return {filled:2,full:true,avgCents:82,bestCents:82};},executableBid(_ticker,count){return {filled:count,full:true,avgCents:80,bestCents:80};}};
   const s=new StrategyEngine({db,kalshi:{},market,learning:{},getSettings:()=>settings,getLiveReady:()=>false,refreshGameClock:refreshClock,random:()=>.9});
   const e=await s.createHunter('Momentum Hunter',q('T',80,82),20000,10,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:75,feederPeakPriceCents:85}});
   assert.equal(e,null);
@@ -204,7 +205,7 @@ test('simulation IOC rejection probability is honored', async () => {
 test('simulation buying power blocks impossible exposure', async () => {
   const db=fakeDb();
   const settings=baseSettings(); settings.simFillProbability=1; settings.startingCapitalCents=100;
-  const market={async refreshTicker(){return q('T',80,82);},executableAsk(){return {filled:2,full:true,avgCents:82,bestCents:82};}};
+  const market={async refreshTicker(){return q('T',80,82);},executableAsk(){return {filled:2,full:true,avgCents:82,bestCents:82};},executableBid(_ticker,count){return {filled:count,full:true,avgCents:80,bestCents:80};}};
   const s=new StrategyEngine({db,kalshi:{},market,learning:{},getSettings:()=>settings,getLiveReady:()=>false,refreshGameClock:refreshClock,random:()=>0});
   const e=await s.createHunter('Momentum Hunter',q('T',80,82),20000,10,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:75,feederPeakPriceCents:85}});
   assert.equal(e,null);
@@ -231,6 +232,7 @@ test('RH1 keeps exact 2x configured Recovery stake and lets the normal buying-po
   const market={
     async refreshTicker(){return q('T',79,80);},
     executableAsk:()=>({filled:1000,full:true,avgCents:80,bestCents:80}),
+    executableBid:(_ticker,count)=>({filled:count,full:true,avgCents:79,bestCents:79}),
   };
   const strategy=new StrategyEngine({db,kalshi:{},market,learning:{},getSettings:()=>settings,getLiveReady:()=>false,refreshGameClock:refreshClock,random:()=>0});
   const made=await strategy.evaluateRecovery(new Map([['T',q('T',79,80)]]));
@@ -250,6 +252,7 @@ test('RH1 does not silently downsize a Recovery when exact 2x stake cannot be fu
   const market={
     async refreshTicker(){return q('T',79,80);},
     executableAsk:()=>({filled:1000,full:true,avgCents:80,bestCents:80}),
+    executableBid:(_ticker,count)=>({filled:count,full:true,avgCents:79,bestCents:79}),
   };
   const strategy=new StrategyEngine({db,kalshi:{},market,learning:{},getSettings:()=>settings,getLiveReady:()=>false,refreshGameClock:refreshClock,random:()=>0});
   const made=await strategy.evaluateRecovery(new Map([['T',q('T',79,80)]]));
@@ -604,7 +607,7 @@ test('CRH1 creates one Dragon-gated episode-attributed Hunter with immutable Cra
   const db=fakeDb([dragon]);
   const settings={...baseSettings(),dragonEnabled:true,crashRecoveryHunterEnabled:true,crashRecoveryStakeCents:20000,crashRecoveryMinEntryCents:70,crashRecoveryMaxEntryCents:89,crashRecoveryStopLossCents:35,crashRecoveryMaxSpreadCents:3,minGameMinutes:0,startingCapitalCents:1_000_000,simFillProbability:1};
   const learning={crashEntrySignal:(ticker)=>ticker==='CRH'?signal:null};
-  const market={async refreshTicker(t){return q(t,79,80);},executableAsk(){return{filled:1000,full:true,avgCents:80,bestCents:80};}};
+  const market={async refreshTicker(t){return q(t,79,80);},executableAsk(){return{filled:1000,full:true,avgCents:80,bestCents:80};},executableBid(_ticker,count){return{filled:count,full:true,avgCents:79,bestCents:79};}};
   const strategy=new StrategyEngine({db,kalshi:{},market,learning,getSettings:()=>settings,getLiveReady:()=>false,refreshGameClock:refreshClock,random:()=>0});
   const made=await strategy.evaluateCrashRecovery(new Map([['CRH',q('CRH',79,80)]]));
   assert.equal(made.length,1);

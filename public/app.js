@@ -272,7 +272,7 @@ const SETTINGS = [
 ];
 function renderSettings(s) {
   if (!$('settingsForm').dataset.built) {
-    $('settingsForm').innerHTML = SETTINGS.map(([k, l]) => `<label>${esc(l)}<input name="${k}" data-general-setting="${k}" type="number" step="any"></label>`).join('') + `<div class="muted"><strong>Exact ticker Hunter lock: ON</strong><br>Maximum one real Hunter on an exact ticker until that Hunter is fully closed. Pegasus/Sagittarius/Dragon/Golden Dragon feeder signals are exempt.</div>`;
+    $('settingsForm').innerHTML = SETTINGS.map(([k, l]) => `<label>${esc(l)}<input name="${k}" data-general-setting="${k}" type="number" step="any"></label>`).join('') + `<div class="muted"><strong>Exact ticker Hunter lock: ON</strong><br>Maximum one real Hunter on an exact ticker until that Hunter is fully closed. Pegasus/Sagittarius/Dragon/Golden Dragon feeder signals are exempt.<br><br><strong>R43 Entry Quality Covenant: ON</strong><br>Real Hunters require fresh full-position exitability, immediate entry friction strictly below 0.30R, and at least 30 verified game minutes before capital can be committed.</div>`;
     $('settingsForm').dataset.built = '1';
   }
   for (const [k] of SETTINGS) {

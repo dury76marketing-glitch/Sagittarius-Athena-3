@@ -1,3 +1,21 @@
+# SAGITTARIUS R43 - Entry Quality Covenant (EQC1)
+
+Release: `SAGITTARIUS-R43-ENTRY-QUALITY-COVENANT-2026-08-25`
+
+R43 is a separate prospective SIMULATION experiment built on the complete R42 capital-protection stack. R42 HELC1 remains the non-negotiable loss authority. R43 adds one pre-capital execution covenant proven most promising by R43-SIM1:
+
+- every real Hunter must have fresh full-position exitability proven;
+- its immediate fee-adjusted round-trip liquidation cost must consume **strictly less than 0.30R**, where `1R = HELC1 maximum loss budget`;
+- the authoritative game clock must show at least **30 minutes** elapsed;
+- accepted entries freeze the exact EQC1 evidence in `entryConfig.entryQualityCovenant`;
+- Athena B1, Golden Eye GE1-R2, SGRL1, U-SG1, R13, GCA2, owner isolation and all R42 protections remain preserved.
+
+Fresh R43 repositories boot into the clean prospective lane used for validation: Pegasus -> Wave Surfer, Pegasus 27-89c, Wave 27-89c, $200 Wave stake, 35c stop, minimum feeder favorable move 1c, $10,000 simulation capital, Golden Eye enabled, all other exposure models off by default. All system models remain available in the dashboard.
+
+R43 is an experimental SIMULATION release. It is not a certification of unattended real-money LIVE trading.
+
+---
+
 # SAGITTARIUS R40 - Feeder Signal Intelligence (FSI1)
 
 

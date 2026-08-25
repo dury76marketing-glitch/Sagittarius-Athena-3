@@ -10,7 +10,7 @@ const bool = (name, fallback) => {
 };
 const pem = (v='') => String(v).replace(/\\n/g, '\n').trim();
 
-export const RELEASE = 'SAGITTARIUS-R42-HARD-ECONOMIC-LOSS-CEILING-2026-08-25';
+export const RELEASE = 'SAGITTARIUS-R43-ENTRY-QUALITY-COVENANT-2026-08-25';
 
 export const env = Object.freeze({
   port: num('PORT', 3000),
@@ -284,50 +284,44 @@ export function originalSettings() {
   };
 }
 
-// R27 fresh-install operating profile requested for the System 6 flood
-// experiment. This is intentionally separate from originalSettings(): older
-// persisted deployments and low-level doctrine fallbacks remain conservative,
-// while a brand-new R27 database boots directly into the experimental lane.
+// R43 fresh-install prospective profile. This is intentionally separate from
+// originalSettings(): older persisted deployments keep their own historical
+// settings, while a brand-new R43 database boots into the clean Pegasus -> Wave
+// broad experiment used by the external R43-SIM1 validation.
 export function freshInstallSettings() {
+  // R43 prospective lane: the strongest externally validated configuration
+  // from R43-SIM1. All other concepts remain available in the code/UI but are
+  // fail-safe OFF on a brand-new database so this repository measures one
+  // clean causal experiment instead of mixing entry models.
   return {
     ...originalSettings(),
-    pegasusEnabled:false,
+    pegasusEnabled:true,
     sagittariusEnabled:false,
     dragonEnabled:false,
-    goldenDragonEnabled:true,
+    goldenDragonEnabled:false,
     momentumHunterEnabled:false,
-    waveSurferEnabled:false,
+    waveSurferEnabled:true,
     recoveryHunterEnabled:false,
     crashRecoveryHunterEnabled:false,
     dragonRecoveryHunterEnabled:false,
-    goldenDragonHunterEnabled:true,
+    goldenDragonHunterEnabled:false,
+    goldenEyeEnabled:true,
+    goldenEyeLiveEnabled:false,
     maxPositions:20,
-    maxEntriesPerTrade:1,
-    hunterCooldownMinutes:700,
-    minGameMinutes:20,
-    startingCapitalCents:1000000,
-    goldenDragonMinSignalPriceCents:27,
-    goldenDragonMaxSignalPriceCents:95,
-    goldenDragonMaxEpisode:10,
-    goldenDragonMinCrashCents:15,
-    goldenDragonMinReboundCents:7,
-    goldenDragonMinReclaimRate:0.40,
-    goldenDragonStableObservations:3,
-    goldenDragonUpwardTicks:2,
-    goldenDragonMinTrustScore:72,
-    goldenDragonMinRecoveryAgeSeconds:3,
-    goldenDragonMaxRecoveryAgeSeconds:420,
-    goldenDragonHunterStakeCents:40000,
-    goldenDragonHunterMinEntryCents:45,
-    goldenDragonHunterMaxEntryCents:89,
-    goldenDragonHunterStopLossCents:35,
-    goldenDragonHunterMaxSpreadCents:3,
-    goldenDragonHunterMinTrustScore:72,
-    goldenDragonHunterMaxEpisode:10,
-    goldenDragonHunterMinReboundCents:7,
-    goldenDragonHunterMinReclaimRate:0.55,
-    goldenDragonHunterStableObservations:3,
-    goldenDragonHunterUpwardTicks:2,
+    maxEntriesPerTrade:3,
+    hunterCooldownMinutes:45,
+    minGameMinutes:30,
+    startingCapitalCents:1_000_000,
+    pegasusReferenceStakeCents:3000,
+    pegasusMinPriceCents:27,
+    pegasusMaxPriceCents:89,
+    pegasusDropCents:1,
+    waveStakeCents:20_000,
+    waveMinEntryCents:27,
+    waveMaxEntryCents:89,
+    waveStopCents:35,
+    waveMinFeederFavorableMoveCents:1,
+    waveMaxSpreadCents:3,
   };
 }
 
@@ -360,6 +354,16 @@ export function sanitizeRuntimeSettings(value = {}, defaults = originalSettings(
   };
   if(hasPersistedRecord&&!looksLikeSystem6Flood){
     for(const [key,value] of Object.entries(legacyGoldenStructure)) if(!Object.hasOwn(src,key)) src[key]=value;
+  }
+  // R43 fresh-install defaults no longer represent the old System 6 flood
+  // experiment. Preserve that persisted cohort explicitly instead of relying
+  // on whichever fresh-install profile happens to be current.
+  if(hasPersistedRecord&&looksLikeSystem6Flood){
+    const system6GoldenStructure={
+      goldenDragonMinCrashCents:15,goldenDragonMinReboundCents:7,goldenDragonMinReclaimRate:.40,
+      goldenDragonStableObservations:3,goldenDragonUpwardTicks:2,
+    };
+    for(const [key,value] of Object.entries(system6GoldenStructure)) if(!Object.hasOwn(src,key)) src[key]=value;
   }
 
   const out = { ...defaults };

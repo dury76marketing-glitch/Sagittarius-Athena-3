@@ -221,15 +221,16 @@ test('R27 GPI2 event-driven queue wakes Golden on a Golden-only candidate when n
   assert.deepEqual(calls,[['golden','G']]);
 });
 
-test('R27 GPI3 fresh install defaults are the System 6 Golden flood experiment while LIVE stays disarmed',()=>{
+test('R43 fresh install defaults are the clean Pegasus -> Wave broad prospective lane while LIVE stays disarmed',()=>{
   const s=freshInstallSettings();
   assert.equal(s.liveArmed,false);
-  assert.equal(s.pegasusEnabled,false); assert.equal(s.sagittariusEnabled,false); assert.equal(s.dragonEnabled,false);
-  assert.equal(s.goldenDragonEnabled,true); assert.equal(s.goldenDragonHunterEnabled,true);
-  assert.equal(s.momentumHunterEnabled,false); assert.equal(s.waveSurferEnabled,false); assert.equal(s.recoveryHunterEnabled,false); assert.equal(s.crashRecoveryHunterEnabled,false); assert.equal(s.dragonRecoveryHunterEnabled,false);
-  assert.equal(s.maxPositions,20); assert.equal(s.maxEntriesPerTrade,1); assert.equal(s.hunterCooldownMinutes,700); assert.equal(s.minGameMinutes,20); assert.equal(s.startingCapitalCents,1_000_000);
-  assert.deepEqual({min:s.goldenDragonMinSignalPriceCents,max:s.goldenDragonMaxSignalPriceCents,episode:s.goldenDragonMaxEpisode,crash:s.goldenDragonMinCrashCents,rebound:s.goldenDragonMinReboundCents,reclaim:s.goldenDragonMinReclaimRate,stable:s.goldenDragonStableObservations,up:s.goldenDragonUpwardTicks,trust:s.goldenDragonMinTrustScore,minAge:s.goldenDragonMinRecoveryAgeSeconds,maxAge:s.goldenDragonMaxRecoveryAgeSeconds},{min:27,max:95,episode:10,crash:15,rebound:7,reclaim:.40,stable:3,up:2,trust:72,minAge:3,maxAge:420});
-  assert.deepEqual({stake:s.goldenDragonHunterStakeCents,min:s.goldenDragonHunterMinEntryCents,max:s.goldenDragonHunterMaxEntryCents,stop:s.goldenDragonHunterStopLossCents,spread:s.goldenDragonHunterMaxSpreadCents,trust:s.goldenDragonHunterMinTrustScore,episode:s.goldenDragonHunterMaxEpisode,rebound:s.goldenDragonHunterMinReboundCents,reclaim:s.goldenDragonHunterMinReclaimRate,stable:s.goldenDragonHunterStableObservations,up:s.goldenDragonHunterUpwardTicks},{stake:40000,min:45,max:89,stop:35,spread:3,trust:72,episode:10,rebound:7,reclaim:.55,stable:3,up:2});
+  assert.equal(s.pegasusEnabled,true); assert.equal(s.waveSurferEnabled,true);
+  assert.equal(s.sagittariusEnabled,false); assert.equal(s.dragonEnabled,false); assert.equal(s.goldenDragonEnabled,false);
+  assert.equal(s.momentumHunterEnabled,false); assert.equal(s.recoveryHunterEnabled,false); assert.equal(s.crashRecoveryHunterEnabled,false); assert.equal(s.dragonRecoveryHunterEnabled,false); assert.equal(s.goldenDragonHunterEnabled,false);
+  assert.equal(s.goldenEyeEnabled,true); assert.equal(s.goldenEyeLiveEnabled,false);
+  assert.equal(s.maxPositions,20); assert.equal(s.maxEntriesPerTrade,3); assert.equal(s.hunterCooldownMinutes,45); assert.equal(s.minGameMinutes,30); assert.equal(s.startingCapitalCents,1_000_000);
+  assert.deepEqual({stake:s.pegasusReferenceStakeCents,min:s.pegasusMinPriceCents,max:s.pegasusMaxPriceCents,drop:s.pegasusDropCents},{stake:3000,min:27,max:89,drop:1});
+  assert.deepEqual({stake:s.waveStakeCents,min:s.waveMinEntryCents,max:s.waveMaxEntryCents,stop:s.waveStopCents,move:s.waveMinFeederFavorableMoveCents,spread:s.waveMaxSpreadCents},{stake:20000,min:27,max:89,stop:35,move:1,spread:3});
 });
 
 test('R27 GPI3 migration keeps older persisted risk concepts fail-safe OFF and preserves legacy Golden structure',()=>{
@@ -1076,13 +1077,13 @@ test('R27 GPI1 migration hardening cannot freeze an impossible R26 clock into an
 });
 
 test('R27 System 6 flood pipeline can produce Golden -> GDH1 simulated exposure end to end when all safety gates are valid', async () => {
-  const s={...freshInstallSettings(),systemName:'SAGITTARIUS',ownerId:'r27-flood-e2e',mode:'SIMULATION',liveArmed:false,engineActive:true,simFillProbability:1,minGameMinutes:20};
+  const s={...freshInstallSettings(),systemName:'SAGITTARIUS',ownerId:'r27-flood-e2e',mode:'SIMULATION',liveArmed:false,engineActive:true,simFillProbability:1,minGameMinutes:20,goldenDragonEnabled:true,goldenDragonHunterEnabled:true,pegasusEnabled:false,waveSurferEnabled:false,goldenDragonHunterStakeCents:40000,goldenDragonHunterMinEntryCents:45,goldenDragonHunterMaxEntryCents:89,goldenDragonHunterMinTrustScore:72,goldenDragonHunterMaxEpisode:10,goldenDragonHunterMinReboundCents:7,goldenDragonHunterMinReclaimRate:.55,goldenDragonHunterStableObservations:3,goldenDragonHunterUpwardTicks:2};
   const sig=r26GoldenSignal({
     episodeId:'CRASH:FLOOD:1:1',ticker:'FLOOD',eventTicker:'FLOOD-E',episodeIndex:1,
     preCrashPeakCents:70,troughCents:40,crashDepthCents:30,reboundCents:25,reclaimRate:25/30,
     stableObservations:12,upwardTicks:5,lowerLowCount:0,reboundLostCount:0,sport:'Test',
   });
-  const q=r26Quote('FLOOD',64,65,'FLOOD-E');
+  const q=r26Quote('FLOOD',88,89,'FLOOD-E');
   const profile={totalObservations:20,smoothedSurvivalRate:.90,specificity:'test'};
   const learning={
     goldenDragonEntrySignal:()=>sig,
@@ -1119,7 +1120,7 @@ test('R27 GPI2 WebSocket wake contract includes Golden-ready active and post-res
 
 test('R27 GPI3 rejects a misleading Golden min-crash setting below the upstream CI1 episode floor', async () => {
   const engine=Object.create(SagittariusEngine.prototype);
-  engine.settings=freshInstallSettings();
+  engine.settings={...freshInstallSettings(),goldenDragonEnabled:true};
   let saved=false; engine.db={async saveSettings(){saved=true;}};
   await assert.rejects(()=>engine.patchSettings({goldenDragonMinCrashCents:14}),/cannot be below CI1/);
   assert.equal(saved,false);
@@ -1226,7 +1227,7 @@ test('R28 production-chain simulation completes Golden -> GDH25 -> GCA2 -> execu
   };
 
   let current={
-    ticker,eventTicker,seriesTicker,title:'R28 end-to-end',yesBid:75,yesAsk:76,volume24h:50_000,
+    ticker,eventTicker,seriesTicker,title:'R28 end-to-end',yesBid:88,yesAsk:89,volume24h:50_000,
     status:'active',result:'',updatedAtMs:Date.now(),liveStatus:'live',recentTrades:12,
     recentTradesObservedAtMs:Date.now(),occurrenceTimeMs:now+60*60_000,closeTimeMs:now+3*60*60_000,
     gameStartTimeMs:null,gameClockState:{version:'GCA2',eventTicker,phase:'UNKNOWN',confirmed:false,entryAuthorized:false},
@@ -1291,19 +1292,19 @@ test('R28 production-chain simulation completes Golden -> GDH25 -> GCA2 -> execu
   const hunter=hunters[0];
   assert.equal(hunter.conceptName,'Golden Dragon Hunter');
   assert.equal(hunter.status,'open');
-  assert.equal(hunter.entryPriceCents,76);
+  assert.equal(hunter.entryPriceCents,89);
   assert.equal(hunter.stopLossCents,35);
   assert.equal(hunter.entryConfig?.model?.minReboundCents ?? hunter.entryConfig?.goldenDragonHunter?.minReboundCents ?? s.goldenDragonHunterMinReboundCents,25);
   assert.equal(hunter.entryConfig?.gameClockAuthority?.version,'GCA2');
   assert.equal(hunter.entryConfig?.gameClockAuthority?.entryAuthorizedAtEntry,true);
   assert.ok(Number(hunter.gameStartTimeMs)>0);
   assert.ok((Date.now()-Number(hunter.gameStartTimeMs))/60_000>=20);
-  assert.ok(executionCalls.some((x)=>x.side==='buy'&&x.count===hunter.count&&x.priceCents===76));
+  assert.ok(executionCalls.some((x)=>x.side==='buy'&&x.count===hunter.count&&x.priceCents===89));
   assert.ok(audits.some((x)=>x.event==='golden_dragon_hunter_created'));
   assert.equal(strategy.goldenPipelineSummary().byReason.hunter_created,1);
 
   // Drive the same persisted Hunter through the real protection machinery.
-  // Entry 76 with a 35c frozen stop gives a 41c danger line. R42's HELC1 capital
+  // Entry 89 with a 35c frozen stop gives a 54c danger line. R42's HELC1 capital
   // covenant sits above that loss budget. This synthetic market then gaps directly
   // to 25c, so U-SG1 must commit immediately even though the realized fill can
   // exceed the decision ceiling because no intermediate executable book existed.
@@ -1657,4 +1658,45 @@ test('R42 HELC1 entry feasibility passes when full immediate liquidation remains
   assert.equal(d.audits.some(x=>x.event==='hunter_entry_helc_feasibility_blocked'),false);
   const summary=st.entryPipelineSummary();
   assert.ok(summary.byStage['HELC_ENTRY_FEASIBILITY:PASS']>=1);
+});
+
+
+test('R43 EQC1 blocks a Hunter whose fresh immediate economics consume 0.32R even though R42 HELC would allow it',async()=>{
+  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2,minGameMinutes:0});
+  const candidate=r26Quote('R43-FRICTION',48,50),fresh=r26Quote('R43-FRICTION',48,50);
+  const {d,st}=r26Strategy({s,candidate,fresh,plan:{filled:400,full:true,avgCents:50,bestCents:50}});
+  const made=await st.createHunter('Momentum Hunter',candidate,20_000,35,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:45,feederPeakPriceCents:52}});
+  assert.equal(made,null);
+  assert.equal(d.audits.some(x=>x.event==='hunter_entry_helc_feasibility_blocked'),false,'R42 must still regard 0.32R as inside its 1R ceiling');
+  const block=d.audits.find(x=>x.event==='hunter_entry_r43_quality_blocked');
+  assert.ok(block); assert.equal(block.data.reason,'entry_friction_not_below_0_30r');
+  assert.ok(block.data.entryFrictionR>0.30); assert.equal(d.inserted.length,0);
+});
+
+test('R43 EQC1 blocks a 29-minute candidate even when the editable legacy min-game setting is lower',async()=>{
+  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2,minGameMinutes:0});
+  const candidate=r26Quote('R43-EARLY',49,50),fresh=r26Quote('R43-EARLY',49,50);
+  const start=Date.now()-29*60_000;
+  candidate.gameStartTimeMs=start; candidate.gameClockState=r26Clock(candidate.eventTicker,start);
+  fresh.gameStartTimeMs=start; fresh.gameClockState=r26Clock(fresh.eventTicker,start);
+  const {d,st}=r26Strategy({s,candidate,fresh,plan:{filled:400,full:true,avgCents:50,bestCents:50}});
+  const made=await st.createHunter('Momentum Hunter',candidate,20_000,35,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:45,feederPeakPriceCents:52}});
+  assert.equal(made,null);
+  const block=d.audits.find(x=>x.event==='hunter_entry_r43_quality_blocked');
+  assert.ok(block); assert.equal(block.data.reason,'game_maturity_below_30_minutes');
+  assert.equal(d.inserted.length,0);
+});
+
+test('R43 EQC1 allows mature low-friction entry and freezes the exact covenant evidence into entryConfig',async()=>{
+  const s=r26Settings({momentumMinEntryCents:27,momentumMaxEntryCents:89,momentumMinRiseCents:2,momentumMinPullbackCents:1,momentumMaxPullbackCents:12,simFeeCents:2,minGameMinutes:0});
+  const candidate=r26Quote('R43-PASS',49,50),fresh=r26Quote('R43-PASS',49,50);
+  const {d,st}=r26Strategy({s,candidate,fresh,plan:{filled:400,full:true,avgCents:50,bestCents:50}});
+  const made=await st.createHunter('Momentum Hunter',candidate,20_000,35,{sourceFeeder:'Pegasus',sourceTradeId:'feed',entryQualificationSnapshot:{version:'MOMENTUM-Q1',feederEntryPriceCents:45,feederPeakPriceCents:52}});
+  assert.ok(made); assert.equal(d.inserted.length,1);
+  assert.equal(made.entryConfig.entryQualityCovenant.version,'EQC1');
+  assert.equal(made.entryConfig.entryQualityCovenant.authority,'EXECUTION');
+  assert.ok(made.entryConfig.entryQualityCovenant.entryFrictionR<0.30);
+  assert.ok(made.entryConfig.entryQualityCovenant.gameMinutes>=30);
+  const summary=st.entryPipelineSummary();
+  assert.ok(summary.byStage['R43_ENTRY_QUALITY:PASS']>=1);
 });

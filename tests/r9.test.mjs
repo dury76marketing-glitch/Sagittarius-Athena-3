@@ -33,6 +33,7 @@ function strategyFor(s,db=memoryDb()){
     getHistory:()=>[],
     async refreshTicker(t){return q(t,89,90,eventByTicker.get(t)||t);},
     executableAsk:()=>({filled:1000,full:true,avgCents:90,bestCents:90}),
+    executableBid:(_ticker,count)=>({filled:count,full:true,avgCents:89,bestCents:89}),
   };
   const refreshGameClock=async(qq)=>{
     const event=qq.eventTicker||qq.ticker;
@@ -55,7 +56,7 @@ function runtimeDb(initial = originalSettings()) {
 }
 
 test('R42 retains Athena B1, Golden Eye GE1-R2, FSI1, DX1 and the hardened safety baseline while adding HELC1', () => {
-  assert.equal(RELEASE, 'SAGITTARIUS-R42-HARD-ECONOMIC-LOSS-CEILING-2026-08-25');
+  assert.equal(RELEASE, 'SAGITTARIUS-R43-ENTRY-QUALITY-COVENANT-2026-08-25');
   assert.equal(originalSettings().minGameMinutes, 20, 'original Base44 min_game_minutes default must be restored');
 });
 
@@ -236,6 +237,7 @@ test('R13 process-local mutex prevents concurrent same-ticker Hunter creation ra
   const market={
     async refreshTicker(){return q('RACE',90,91,'REV');},
     executableAsk:()=>({filled:10,full:true,avgCents:91,bestCents:91}),
+    executableBid:(_ticker,count)=>({filled:count,full:true,avgCents:90,bestCents:90}),
   };
   const refreshGameClock=async(qq)=>{
     clockCalls+=1;
@@ -710,7 +712,7 @@ test('Recovery may reuse only an R17 GCA1 source snapshot while all legacy times
   const start=now-30*60000;
   const r17Loss=row({id:'r17-loss',conceptName:'Momentum Hunter',ticker:'RR',eventTicker:'RREV',status:'closed',closeReason:'hard_stop_loss',exitPriceCents:70,closedAtMs:now-60000,remainingCount:0,gameStartTimeMs:start,entryConfig:{release:RELEASE,sharedHunterLimits:{minGameMinutes:20},gameClockAuthority:confirmedClock('RREV',start)}});
   const db=memoryDb([r17Loss]);
-  const s=settings({minGameMinutes:20,momentumHunterEnabled:false,waveSurferEnabled:false,recoveryHunterEnabled:true,recoveryMinReboundCents:5,recoveryMinEntryCents:76,recoveryMaxEntryCents:94,startingCapitalCents:10_000_000});
+  const s=settings({minGameMinutes:20,momentumHunterEnabled:false,waveSurferEnabled:false,recoveryHunterEnabled:true,recoveryBaseStakeCents:10000,recoveryMinReboundCents:5,recoveryMinEntryCents:76,recoveryMaxEntryCents:94,startingCapitalCents:10_000_000});
   const st=strategyFor(s,db);
   const rq=q('RR',75,76,'RREV'); rq.gameStartTimeMs=null; rq.gameClockState={};
   const made=await st.evaluateRecovery(new Map([['RR',rq]]));
@@ -1076,6 +1078,7 @@ test('R28 unknown scan-time clock cannot deadlock before mandatory force-fresh a
   const market={
     async refreshTicker(){return{...q(candidate.ticker,89,90,candidate.eventTicker),status:'active',result:''};},
     executableAsk(){return{filled:1000,full:true,avgCents:90,bestCents:90};},
+    executableBid(_ticker,count){return{filled:count,full:true,avgCents:89,bestCents:89};},
   };
   const st=new StrategyEngine({db,kalshi:{},market,learning:{},getSettings:()=>s,getLiveReady:()=>false,random:()=>0,
     refreshGameClock:async()=>{refreshCalls+=1;const start=Date.now()-30*60000;const clock=confirmedClock(candidate.eventTicker,start,'kalshi_live_data');return{gameClockState:clock,gameStartTimeMs:start,liveStatus:'live'};}});

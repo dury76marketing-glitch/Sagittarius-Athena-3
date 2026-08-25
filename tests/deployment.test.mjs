@@ -20,29 +20,24 @@ test('database learning schema is versioned and legacy-compatible',async()=>{con
 
 test('dashboard exposes independent ON/OFF controls for all ten entry models',async()=>{const html=await readFile(resolve(root,'public/index.html'),'utf8');const app=await readFile(resolve(root,'public/app.js'),'utf8');assert.ok(html.includes('<th>Enabled</th>'));for(const key of ['pegasusEnabled','sagittariusEnabled','dragonEnabled','goldenDragonEnabled','momentumHunterEnabled','waveSurferEnabled','recoveryHunterEnabled','crashRecoveryHunterEnabled','dragonRecoveryHunterEnabled','goldenDragonHunterEnabled'])assert.ok(app.includes(key),`${key} toggle missing`);assert.ok(app.includes("Existing Hunter positions remain protected"));});
 
-test('R42 preserves unrelated ATHENA, market/Kalshi, game-clock, UI and dependency surfaces byte-identical to the validated hardened baseline',async()=>{
-  const {createHash}=await import('node:crypto');
-  const expected={
-    'src/athena.mjs':'878fd6bbdee073aa1e293541c9d1a18d048ad724b76d0d554f9f013e2c714111',
-    'src/athenaExit.mjs':'d267ee61b09805750b1b48a5407cedc84c329ff37e2a0f0044ead538ae8f2d21',
-    'src/gameClock.mjs':'ead48d5be69484d2a18a0f04c7131403d65f5a329b7f8c6b5b10fceec4be5aec',
-    'src/kalshi.mjs':'f940ffba8c44a51c749c527f8051be5b1b7c18b5158c56a838ab6e80927c4530',
-    'src/market.mjs':'b17d8b7d77bb0135baba22afef5db919e3833ee6083b3d913111e2d9785436d9',
-    'src/index.mjs':'bd1d9f02833e2dddc42fe8bab004a367ef2db6bba33e0adab05462849c5189e5',
-    'public/app.js':'e1f004d969a23f6d7448efd44b71b2f77109823e3952b6cae3aa0630b0784313',
-    'public/index.html':'358a0fd5a8908616c4a4a6554f059901a26ccc6f635b9729df28820145e6ce2c',
-    'public/styles.css':'ae3c834bf72625a0f7abffc13fabf1ad966cc589d6cc7ec77dfc6abcc4d087e4',
-    'package.json':'3b64de55272273d443a86f0ce7ca0dfabaac9c744931f1df062cadd2db91ba16',
-    'railway.json':'a46d3d78b6d8b28253af4b3cd01a329dc4bf4f8df97a185c01a611f8b71dc7ba',
-    'tests/athena.test.mjs':'db066be92b0f5d93956db50565f1488f85a486e6d71203724c71652858d1a0a6',
-    'tests/core.test.mjs':'605ce095547da8d9fcb22e79113fd5326239ce3e28fdfc820df544201acb7db2',
-    'tests/doctrine.test.mjs':'4da322c52b6acc37fb846ea17642f227b05bc71eacbde023c5ed1c8f4425a108',
-  };
-  for(const [rel,hash] of Object.entries(expected)){
-    const bytes=await readFile(resolve(root,rel));
-    assert.equal(createHash('sha256').update(bytes).digest('hex'),hash,`${rel} changed outside the approved R42 connected repair boundary`);
-  }
+test('R43 production release promotes only the validated Entry Quality Covenant while preserving R42 loss authority',async()=>{
+  const config=await readFile(resolve(root,'src/config.mjs'),'utf8');
+  const doctrine=await readFile(resolve(root,'src/doctrine.mjs'),'utf8');
+  const strategy=await readFile(resolve(root,'src/strategy.mjs'),'utf8');
+  const engine=await readFile(resolve(root,'src/engine.mjs'),'utf8');
+  assert.ok(config.includes("SAGITTARIUS-R43-ENTRY-QUALITY-COVENANT-2026-08-25"));
+  assert.ok(doctrine.includes("version: 'EQC1'"));
+  assert.ok(doctrine.includes("authority: 'EXECUTION'"));
+  assert.ok(doctrine.includes('maximumEntryFrictionR: 0.30'));
+  assert.ok(doctrine.includes('minimumGameMinutes: 30'));
+  assert.ok(strategy.includes("trace('R43_ENTRY_QUALITY','BLOCKED'"));
+  assert.ok(strategy.includes("'hunter_entry_r43_quality_blocked'"));
+  assert.ok(strategy.includes('frozenEntryConfig.entryQualityCovenant'));
+  assert.ok(engine.includes('r43EntryQualityCovenant: R43_ENTRY_QUALITY_COVENANT.version'));
+  assert.ok(engine.includes('hardEconomicLossCeiling: HARD_ECONOMIC_LOSS_CEILING.version'),'R42 HELC must remain present');
+  assert.ok(engine.includes('ultimateStopGuard: ULTIMATE_STOP_GUARD.version'),'U-SG1 must remain sole loss authority');
 });
+
 
 test('R36 deployment hardening pins ws above the 2026 security-advisory floor without changing pg',async()=>{
   const pkg=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));

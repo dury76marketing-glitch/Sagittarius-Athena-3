@@ -9,7 +9,7 @@ import { StrategyEngine } from './strategy.mjs';
 import { ProfitGuard } from './profitGuard.mjs';
 import { GoldenEye } from './goldenEye.mjs';
 import { FeederSignalIntel, FEEDER_SIGNAL_INTELLIGENCE } from './feederSignalIntel.mjs';
-import { PORTFOLIO_CONCEPTS, FEEDER_CONCEPTS, computeLiveStatus, MOMENTUM, RECOVERY, GOLDEN_DRAGON, GOLDEN_FEED_BUS, ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, HARD_ECONOMIC_LOSS_CEILING, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE } from './doctrine.mjs';
+import { PORTFOLIO_CONCEPTS, FEEDER_CONCEPTS, computeLiveStatus, MOMENTUM, RECOVERY, GOLDEN_DRAGON, GOLDEN_FEED_BUS, ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, HARD_ECONOMIC_LOSS_CEILING, R43_ENTRY_QUALITY_COVENANT, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE } from './doctrine.mjs';
 import { GameClockAuthority, GAME_CLOCK_AUTHORITY, isConfirmedGameClockState } from './gameClock.mjs';
 
 const openLike = (s) => ['open', 'entry_pending', 'exit_pending', 'pending_recovery'].includes(s);
@@ -1351,6 +1351,17 @@ export class SagittariusEngine {
         hardEconomicLossCeilingRecoveryVetoAllowed: HARD_ECONOMIC_LOSS_CEILING.recoveryVetoAllowed,
         hardEconomicLossCeilingDurableFlattenRequired: HARD_ECONOMIC_LOSS_CEILING.durableFlattenRequired,
         hardEconomicLossCeilingLossAuthority: HARD_ECONOMIC_LOSS_CEILING.lossAuthority,
+        r43EntryQualityCovenant: R43_ENTRY_QUALITY_COVENANT.version,
+        r43EntryQualityPolicyRevision: R43_ENTRY_QUALITY_COVENANT.policyRevision,
+        r43EntryQualityRole: R43_ENTRY_QUALITY_COVENANT.role,
+        r43EntryQualityAuthority: R43_ENTRY_QUALITY_COVENANT.authority,
+        r43EntryQualityAppliesTo: R43_ENTRY_QUALITY_COVENANT.appliesTo,
+        r43EntryQualityRiskUnit: R43_ENTRY_QUALITY_COVENANT.riskUnit,
+        r43MaximumEntryFrictionR: R43_ENTRY_QUALITY_COVENANT.maximumEntryFrictionR,
+        r43EntryFrictionStrictLessThan: R43_ENTRY_QUALITY_COVENANT.strictLessThan,
+        r43MinimumGameMinutes: R43_ENTRY_QUALITY_COVENANT.minimumGameMinutes,
+        r43EntryEconomicBasis: R43_ENTRY_QUALITY_COVENANT.economicBasis,
+        r43EntryFullExitabilityRequired: R43_ENTRY_QUALITY_COVENANT.fullExitabilityRequired,
         stopGuardRecoveryLearning: STOP_GUARD_RECOVERY_LEARNING.version,
         stopGuardRecoveryLearningRole: STOP_GUARD_RECOVERY_LEARNING.role,
         stopGuardRecoveryLearningDecisionEvidenceMode: STOP_GUARD_RECOVERY_LEARNING.decisionEvidenceMode,

@@ -203,6 +203,62 @@ export function hardEconomicLossCeilingForStakeCents(stakeCents = STOP_LOSS_WATC
   });
 }
 
+// R43 EQC1 Entry Quality Covenant. R42 proves that a position can fit
+// inside its maximum loss budget; R43 adds the stricter professional question:
+// is enough of that budget still available AFTER immediate spread + round-trip
+// fee/liquidation economics, and is the game mature enough to justify risk?
+// This is an execution authority for all real Hunters in the R43 repository.
+export const R43_ENTRY_QUALITY_COVENANT = Object.freeze({
+  version: 'EQC1',
+  policyRevision: 'EQC1-R43-FRICTION-LT-0.30R-GAME-30M',
+  role: 'pre_capital_risk_normalized_entry_quality_authority',
+  authority: 'EXECUTION',
+  appliesTo: 'all_real_hunters',
+  riskUnit: 'HELC1_maximum_loss_budget',
+  maximumEntryFrictionR: 0.30,
+  strictLessThan: true,
+  minimumGameMinutes: 30,
+  economicBasis: 'fresh_full_position_fee_adjusted_immediate_liquidation',
+  fullExitabilityRequired: true,
+});
+
+export function r43EntryQualityAssessment({ helcEntry = null, gameMinutes = null } = {}) {
+  const maximumLossCents = Number(helcEntry?.maximumLossCents);
+  const projectedImmediateLossCents = Number(helcEntry?.projectedImmediateLossCents);
+  const fullExitabilityProven = helcEntry?.fullExitabilityProven === true;
+  const game = Number(gameMinutes);
+  const gameKnown = Number.isFinite(game) && game >= 0;
+  const riskValid = Number.isFinite(maximumLossCents) && maximumLossCents > 0;
+  const economicsKnown = Number.isFinite(projectedImmediateLossCents) && projectedImmediateLossCents >= 0;
+  const entryFrictionR = riskValid && economicsKnown ? projectedImmediateLossCents / maximumLossCents : Number.POSITIVE_INFINITY;
+  const frictionPass = fullExitabilityProven && riskValid && economicsKnown
+    && entryFrictionR + 1e-12 < R43_ENTRY_QUALITY_COVENANT.maximumEntryFrictionR;
+  const maturityPass = gameKnown && game + 1e-9 >= R43_ENTRY_QUALITY_COVENANT.minimumGameMinutes;
+  const ok = frictionPass && maturityPass;
+  const reason = !fullExitabilityProven ? 'full_exitability_unproven'
+    : !riskValid || !economicsKnown ? 'entry_economics_unknown'
+      : !frictionPass ? 'entry_friction_not_below_0_30r'
+        : !maturityPass ? 'game_maturity_below_30_minutes'
+          : 'entry_quality_covenant_pass';
+  return Object.freeze({
+    ok,
+    version: R43_ENTRY_QUALITY_COVENANT.version,
+    policyRevision: R43_ENTRY_QUALITY_COVENANT.policyRevision,
+    authority: R43_ENTRY_QUALITY_COVENANT.authority,
+    reason,
+    riskUnit: R43_ENTRY_QUALITY_COVENANT.riskUnit,
+    maximumLossCents: riskValid ? maximumLossCents : null,
+    projectedImmediateLossCents: economicsKnown ? projectedImmediateLossCents : null,
+    entryFrictionR: Number.isFinite(entryFrictionR) ? entryFrictionR : null,
+    maximumEntryFrictionR: R43_ENTRY_QUALITY_COVENANT.maximumEntryFrictionR,
+    strictLessThan: true,
+    gameMinutes: gameKnown ? game : null,
+    minimumGameMinutes: R43_ENTRY_QUALITY_COVENANT.minimumGameMinutes,
+    fullExitabilityProven,
+    economicBasis: R43_ENTRY_QUALITY_COVENANT.economicBasis,
+  });
+}
+
 // R41 SGRL1 Stop Guard Recovery Learning Integrity. Decision evidence is
 // Hunter-only and starts at the exact SLW1/U-SG1 protection trigger. A recovery
 // is positive only when the complete original quantity is executable after

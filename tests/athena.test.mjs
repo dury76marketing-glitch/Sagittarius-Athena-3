@@ -123,13 +123,13 @@ import { StrategyEngine } from '../src/strategy.mjs';
 import { originalSettings } from '../src/config.mjs';
 
 function authorizedQuote(ticker='A'){
-  const now=Date.now(),start=now-60_000;
+  const now=Date.now(),start=now-60*60_000;
   return{ticker,title:ticker,eventTicker:ticker,seriesTicker:ticker,yesBid:80,yesAsk:81,volume24h:1000,status:'active',result:'',updatedAtMs:now,closeTimeMs:now+3600000,gameStartTimeMs:start,liveStatus:'live',gameClockState:{version:'GCA2',eventTicker:ticker,phase:'CONFIRMED',confirmed:true,startTimeMs:start,entryAuthorized:true,evidenceObservedAtMs:now,lastCheckedAtMs:now,source:'kalshi_live_data',sourceStrength:'strong'}};
 }
 function athenaStrategy(concept,{blocked=true}={}){
   const rows=[];const audits=[];const s={...originalSettings(),systemName:'S',ownerId:'O',mode:'SIMULATION',liveArmed:false,minGameMinutes:0,maxPositions:99,maxEntriesPerTrade:99,hunterCooldownMinutes:0,startingCapitalCents:1_000_000,simFillProbability:1,crashRecoveryHunterEnabled:true,dragonRecoveryHunterEnabled:true,goldenDragonHunterEnabled:true};
   const db={async entries(){return rows;},async openEntries(){return rows.filter(x=>x.status==='open');},async openEntriesByTicker(_s,t){return rows.filter(x=>x.ticker===t&&x.status==='open');},async insertEntry(e){rows.push(structuredClone(e));},async audit(level,event,data){audits.push({level,event,data});}};
-  const market={async refreshTicker(ticker){return authorizedQuote(ticker);},executableAsk(){return{filled:100,full:true,avgCents:81,bestCents:81};}};
+  const market={async refreshTicker(ticker){return authorizedQuote(ticker);},executableAsk(){return{filled:100,full:true,avgCents:81,bestCents:81};},executableBid(_ticker,count){return{filled:count,full:true,avgCents:80,bestCents:80};}};
   let calls=0;const athena={assess(c){calls++;return{version:'ATHENA-B1',brainHash:'h',ready:true,allow:!blocked,blocked,score:blocked?20:80,classification:blocked?'STRONG_NEGATIVE':'FAVORABLE',confidence:'HIGH',evidence:[],assessedAtMs:Date.now()};}};
   const st=new StrategyEngine({db,kalshi:{},market,learning:{},athena,getSettings:()=>s,getLiveReady:()=>false,refreshGameClock:async(q)=>({gameClockState:{...q.gameClockState,entryAuthorized:true,evidenceObservedAtMs:Date.now(),lastCheckedAtMs:Date.now()},gameStartTimeMs:q.gameStartTimeMs,liveStatus:'live'}),random:()=>0});
   st.revalidateHunterEntryDoctrine=async()=>({ok:true});
