@@ -785,20 +785,22 @@ export const PROFIT_LEARNING_INTELLIGENCE = Object.freeze({
 });
 
 
-// R36/R2 ATHENA-X1 Pulse Floor. X1 is a full-position profit authority only.
+// R36/R3 ATHENA-X1 Chandelier Stair. X1 is a full-position profit authority only.
 // It never creates exposure, never splits a position, and never enters the
 // loss domain. U-SG1 remains the exclusive loss authority. R1 waited for a
-// 4-9c structural pullback and a triple score AND; that delay harvested peaks
-// after they were already gone. R2 keeps the +1c net activation latch, then
-// trails a shrinking green floor under the executable peak. Scores remain
-// telemetry. Compatible R1 snapshots may continue under R2 rules; unknown
+// 4-9c structural pullback and a triple score AND. R2 trailed a shrinking
+// net floor and sold green dips too early. R3 Chandelier Stair keeps the
+// Infinity Break activation latch, then hangs a ceiling from the executable
+// peak: a new high buys 60s, quiet-at-top for 30s sells, and a 2c (1c at
+// 90+ or fat peak) fade sells immediately while still green. Scores remain
+// telemetry. Compatible R1/R2 snapshots continue under R3 rules; unknown
 // revisions stay fail-closed. Existing PRI1 positions retain their
 // creation-time authority until they close naturally.
-export const ATHENA_EXIT_COMPATIBLE_REVISIONS = Object.freeze(['ATHENA-X1-R1','ATHENA-X1-R2']);
+export const ATHENA_EXIT_COMPATIBLE_REVISIONS = Object.freeze(['ATHENA-X1-R1','ATHENA-X1-R2','ATHENA-X1-R3']);
 export const ATHENA_EXIT_INTELLIGENCE = Object.freeze({
   version:'ATHENA-X1',
-  policyRevision:'ATHENA-X1-R2',
-  role:'pulse_floor_full_position_peak_continuation_profit_authority',
+  policyRevision:'ATHENA-X1-R3',
+  role:'chandelier_stair_full_position_peak_continuation_profit_authority',
   fullPositionOnly:true,
   positionSplitting:false,
   noLookahead:true,
@@ -834,23 +836,16 @@ export const ATHENA_EXIT_INTELLIGENCE = Object.freeze({
   historicalDrawdownMinimumObservations:20,
   historicalDrawdownSupportProbability:0.55,
   historicalDrawdownSupportWilsonLow:0.50,
-  pulseFloor:true,
-  pulseGivebackColdNetCents:1,
-  pulseGivebackWarmNetCents:1.5,
-  pulseGivebackRunnerNetCents:2,
-  pulseGivebackMaximumNetCents:3,
-  pulseGivebackRunnerRatio:0.22,
-  pulseHighPriceBandCents:90,
-  pulseHighPriceGivebackCents:2,
-  pulseExhaustionPriceCents:95,
-  pulseExhaustionGivebackCents:3,
-  pulseTwoTickMinimumPeakNetCents:3,
-  pulseTwoTickMinimumPullbackCents:3,
-  pulseStalePeakMs:25_000,
-  pulseStalePeakPullbackCents:2,
-  pulseGivebackTightenMs:15_000,
-  pulseGivebackTightenFactor:0.7,
-  pulseGivebackForceTightMs:40_000,
+  pulseFloor:false,
+  chandelierStair:true,
+  stairExtensionMs:60_000,
+  stairQuietPeakMs:30_000,
+  stairQuietPeakMaxPullbackCents:1,
+  stairPullbackCents:2,
+  stairHighPriceBandCents:90,
+  stairHighPricePullbackCents:1,
+  stairFatPeakNetPerOriginalCents:10,
+  stairFatPeakPullbackCents:1,
 });
 
 // R37 GOLDEN-EYE global profit-opportunity intelligence. Golden Eye does not

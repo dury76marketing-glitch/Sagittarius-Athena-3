@@ -236,11 +236,12 @@ function scores({state,context,observation,newPeak}){
     && recovery<=ATHENA_EXIT_INTELLIGENCE.maximumExitRecoveryScore
     && continuation<=ATHENA_EXIT_INTELLIGENCE.maximumExitContinuationScore;
   const crashExit=peakMature&&structuralPullback&&severeCrash&&postPeakFresh>=1&&failure>=65&&recovery<=50;
-  const pulse=pulseFloorDecision({
-    newPeak,peakNetPerOriginal,currentNetPerOriginal,peak,bid,pullback,runup,timeSincePeakMs,
-    consecutiveDown:postPeakMetrics.maxConsecutiveDown,executableNetCents:n(observation.executableNetCents),
+  const stair=stairDecision({
+    newPeak,peakNetPerOriginal,currentNetPerOriginal,peak,bid,pullback,timeSincePeakMs,
+    observedAtMs:n(observation.observedAtMs),holdUntilMs:n(state.stairHoldUntilMs),
+    executableNetCents:n(observation.executableNetCents),
   });
-  const exit= n(observation.executableNetCents)>=-1e-9 && (pulse.exit||normalExit||capitalDefense||crashExit);
+  const exit= n(observation.executableNetCents)>=-1e-9 && (stair.exit||normalExit||capitalDefense||crashExit);
 
   return {
     continuationScore:continuation,recoveryScore:recovery,failureScore:failure,
@@ -251,44 +252,39 @@ function scores({state,context,observation,newPeak}){
     profile:{mature:profile.mature,continuationRate:round(profile.continuation,4),collapseRate:round(profile.collapse,4),totalObservations:n(context.profile?.totalObservations),specificity:context.profile?.specificity||'cold_start'},
     crash,historicalDrawdown,peakExhaustion,
     continuationEvidence,recoveryEvidence,failureEvidence,
-    exit,exitReason:pulse.exit?pulse.reason:normalExit?'structural_deterioration':capitalDefense?'capital_defense':crashExit?'severe_crash_deterioration':null,
+    exit,exitReason:stair.exit?stair.reason:normalExit?'structural_deterioration':capitalDefense?'capital_defense':crashExit?'severe_crash_deterioration':null,
     severeCrash,confirmedDeterioration,peakMature,structuralPullback,peakNetPerOriginal:round(peakNetPerOriginal,4),currentNetPerOriginal:round(currentNetPerOriginal,4),
-    pulseGivebackNetCents:pulse.giveback,pulseFloorNetCents:pulse.floor,pulseTrigger:pulse.reason,
+    stairAllowedPullbackCents:stair.allowed,stairHoldUntilMs:stair.holdUntilMs,stairTrigger:stair.reason,
+    stairCeilingBidCents:round(peak,4),
   };
 }
 
-function pulseGivebackNetCents(peakNetPerOriginal,peakPriceCents,timeSincePeakMs){
-  let give=ATHENA_EXIT_INTELLIGENCE.pulseGivebackColdNetCents;
-  if(peakNetPerOriginal>=10)give=Math.min(ATHENA_EXIT_INTELLIGENCE.pulseGivebackMaximumNetCents,peakNetPerOriginal*ATHENA_EXIT_INTELLIGENCE.pulseGivebackRunnerRatio);
-  else if(peakNetPerOriginal>=6)give=ATHENA_EXIT_INTELLIGENCE.pulseGivebackRunnerNetCents;
-  else if(peakNetPerOriginal>=3)give=ATHENA_EXIT_INTELLIGENCE.pulseGivebackWarmNetCents;
-  if(peakPriceCents>=ATHENA_EXIT_INTELLIGENCE.pulseExhaustionPriceCents&&peakNetPerOriginal>=3)give=Math.max(give,ATHENA_EXIT_INTELLIGENCE.pulseExhaustionGivebackCents);
-  else if(peakPriceCents>=ATHENA_EXIT_INTELLIGENCE.pulseHighPriceBandCents&&peakNetPerOriginal>=3)give=Math.max(give,ATHENA_EXIT_INTELLIGENCE.pulseHighPriceGivebackCents);
-  if(timeSincePeakMs>=ATHENA_EXIT_INTELLIGENCE.pulseGivebackForceTightMs)give=Math.min(give,ATHENA_EXIT_INTELLIGENCE.pulseGivebackColdNetCents);
-  else if(timeSincePeakMs>=ATHENA_EXIT_INTELLIGENCE.pulseGivebackTightenMs)give*=ATHENA_EXIT_INTELLIGENCE.pulseGivebackTightenFactor;
-  return Math.max(ATHENA_EXIT_INTELLIGENCE.pulseGivebackColdNetCents,give);
+function stairAllowedPullbackCents(peakPriceCents,peakNetPerOriginal){
+  if(peakPriceCents+1e-9>=ATHENA_EXIT_INTELLIGENCE.stairHighPriceBandCents)return ATHENA_EXIT_INTELLIGENCE.stairHighPricePullbackCents;
+  if(peakNetPerOriginal+1e-9>=ATHENA_EXIT_INTELLIGENCE.stairFatPeakNetPerOriginalCents)return ATHENA_EXIT_INTELLIGENCE.stairFatPeakPullbackCents;
+  return ATHENA_EXIT_INTELLIGENCE.stairPullbackCents;
 }
 
-function pulseFloorDecision({newPeak,peakNetPerOriginal,currentNetPerOriginal,peak,bid,pullback,runup,timeSincePeakMs,consecutiveDown,executableNetCents}){
+function stairDecision({newPeak,peakNetPerOriginal,currentNetPerOriginal,peak,bid,pullback,timeSincePeakMs,observedAtMs,holdUntilMs,executableNetCents}){
   const green=n(executableNetCents)>=-1e-9;
-  const giveback=pulseGivebackNetCents(peakNetPerOriginal,peak,timeSincePeakMs);
-  const floor=Math.max(0.5,peakNetPerOriginal-giveback);
-  if(!green||newPeak)return {exit:false,reason:null,giveback:round(giveback,4),floor:round(floor,4)};
-  const trailArmed=peakNetPerOriginal+1e-9>=ATHENA_EXIT_INTELLIGENCE.pulseTwoTickMinimumPeakNetCents;
-  if(trailArmed&&currentNetPerOriginal<floor-1e-9&&currentNetPerOriginal>=0&&pullback>=1){
-    return {exit:true,reason:'pulse_trail_floor',giveback:round(giveback,4),floor:round(floor,4)};
+  const allowed=stairAllowedPullbackCents(peak,peakNetPerOriginal);
+  const extensionMs=ATHENA_EXIT_INTELLIGENCE.stairExtensionMs;
+  const nextHold=newPeak
+    ? observedAtMs+extensionMs
+    : Math.max(holdUntilMs||0,n(observedAtMs-timeSincePeakMs)+extensionMs);
+  if(!green||newPeak)return {exit:false,reason:null,allowed,holdUntilMs:nextHold};
+  if(pullback+1e-9>=allowed && currentNetPerOriginal>=-1e-9){
+    return {exit:true,reason:'stair_pullback',allowed,holdUntilMs:nextHold};
   }
-  const twoTick=peakNetPerOriginal+1e-9>=ATHENA_EXIT_INTELLIGENCE.pulseTwoTickMinimumPeakNetCents
-    && consecutiveDown>=2
-    && pullback+1e-9>=Math.min(ATHENA_EXIT_INTELLIGENCE.pulseTwoTickMinimumPullbackCents,Math.max(1,0.25*runup))
-    && currentNetPerOriginal+1e-9>=1;
-  if(twoTick)return {exit:true,reason:'pulse_two_tick_fade',giveback:round(giveback,4),floor:round(floor,4)};
-  const stale=timeSincePeakMs>=ATHENA_EXIT_INTELLIGENCE.pulseStalePeakMs
-    && pullback+1e-9>=ATHENA_EXIT_INTELLIGENCE.pulseStalePeakPullbackCents
-    && currentNetPerOriginal+1e-9>=1
-    && consecutiveDown>=1;
-  if(stale)return {exit:true,reason:'pulse_stale_peak',giveback:round(giveback,4),floor:round(floor,4)};
-  return {exit:false,reason:null,giveback:round(giveback,4),floor:round(floor,4)};
+  if(timeSincePeakMs+1e-9>=ATHENA_EXIT_INTELLIGENCE.stairQuietPeakMs
+    && pullback<=ATHENA_EXIT_INTELLIGENCE.stairQuietPeakMaxPullbackCents+1e-9
+    && currentNetPerOriginal>=-1e-9){
+    return {exit:true,reason:'stair_quiet_peak',allowed,holdUntilMs:nextHold};
+  }
+  if(observedAtMs+1e-9>=nextHold && currentNetPerOriginal>=-1e-9){
+    return {exit:true,reason:'stair_extension_expired',allowed,holdUntilMs:nextHold};
+  }
+  return {exit:false,reason:null,allowed,holdUntilMs:nextHold};
 }
 
 function isCommittedPhase(phase){ return String(phase||'')==='X1_EXIT_COMMITTED'; }
@@ -333,6 +329,7 @@ export function advanceAthenaExitState(priorState,{observation,context}={}){
     peakExecutableBidCents:bid,
     peakExecutableNetCents:net,
     peakAtMs:observedAtMs,
+    stairHoldUntilMs:observedAtMs+ATHENA_EXIT_INTELLIGENCE.stairExtensionMs,
     postPeakMinBidCents:bid,
     postPeakMinAtMs:observedAtMs,
     reclaimHighBidCents:bid,
@@ -357,8 +354,13 @@ export function advanceAthenaExitState(priorState,{observation,context}={}){
     state.peakExecutableBidCents=bid;
     state.peakExecutableNetCents=net;
     state.peakAtMs=observedAtMs;
+    state.stairHoldUntilMs=observedAtMs+ATHENA_EXIT_INTELLIGENCE.stairExtensionMs;
     trough=bid;troughAt=observedAtMs;reclaimHigh=bid;lowerLows=0;failedReclaims=0;postPeakFresh=0;pullbackStartedAt=null;
   }else{
+    if(!Number.isFinite(n(state.stairHoldUntilMs))||n(state.stairHoldUntilMs)<=0){
+      state.stairHoldUntilMs=n(state.peakAtMs,observedAtMs)+ATHENA_EXIT_INTELLIGENCE.stairExtensionMs;
+    }
+
     const pullbackActive=Boolean(pullbackStartedAt)||bid<priorPeakBid-1e-9;
     if(bid<priorPeakBid-1e-9&&!pullbackStartedAt)pullbackStartedAt=observedAtMs;
     if(pullbackActive)postPeakFresh+=1;
@@ -427,10 +429,11 @@ export function athenaExitTelemetry(state={}){
     athenaExitHistoricalDrawdownSupportive:Boolean(state.historicalDrawdown?.supportive),
     athenaExitHistoricalDrawdownStrongNegative:Boolean(state.historicalDrawdown?.strongNegative),
     athenaExitPeakExhaustion:Boolean(state.peakExhaustion),
-    athenaExitPulseFloor:true,
-    athenaExitPulseGivebackNetCents:n(state.pulseGivebackNetCents),
-    athenaExitPulseFloorNetCents:n(state.pulseFloorNetCents),
-    athenaExitPulseTrigger:state.pulseTrigger||null,
+    athenaExitChandelierStair:true,
+    athenaExitStairAllowedPullbackCents:n(state.stairAllowedPullbackCents),
+    athenaExitStairHoldUntilMs:n(state.stairHoldUntilMs),
+    athenaExitStairTrigger:state.stairTrigger||null,
+    athenaExitStairCeilingBidCents:n(state.stairCeilingBidCents,state.peakExecutableBidCents),
     athenaExitGameProgress:state.gameProgress==null?null:n(state.gameProgress),
     athenaExitActivationMinimumNetPerOriginalContractCents:n(state.activationMinimumNetPerOriginalContractCents),
     athenaExitActivationTargetAggregateNetCents:n(state.activationTargetAggregateNetCents),

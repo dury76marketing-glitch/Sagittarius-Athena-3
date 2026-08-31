@@ -1798,8 +1798,9 @@ test('R33 Gate 5 the 3c cold-start runner deliberately survives known APG1 two-c
 
 test('R36 Gate 1 ATHENA-X1 doctrine is full-position, no-split, no-lookahead and delegates loss authority to U-SG1',()=>{
   assert.equal(ATHENA_EXIT_INTELLIGENCE.version,'ATHENA-X1');
-  assert.equal(ATHENA_EXIT_INTELLIGENCE.policyRevision,'ATHENA-X1-R2');
-  assert.equal(ATHENA_EXIT_INTELLIGENCE.pulseFloor,true);
+  assert.equal(ATHENA_EXIT_INTELLIGENCE.policyRevision,'ATHENA-X1-R3');
+  assert.equal(ATHENA_EXIT_INTELLIGENCE.chandelierStair,true);
+  assert.equal(ATHENA_EXIT_INTELLIGENCE.pulseFloor,false);
   assert.equal(ATHENA_EXIT_INTELLIGENCE.fullPositionOnly,true);
   assert.equal(ATHENA_EXIT_INTELLIGENCE.positionSplitting,false);
   assert.equal(ATHENA_EXIT_INTELLIGENCE.noLookahead,true);
@@ -1808,24 +1809,24 @@ test('R36 Gate 1 ATHENA-X1 doctrine is full-position, no-split, no-lookahead and
   assert.ok(ATHENA_EXIT_INTELLIGENCE.maximumNoisePullbackCents<ATHENA_EXIT_INTELLIGENCE.minimumStructuralPullbackCents);
 });
 
-test('R36 Gate 2 ATHENA-X1 pure state machine holds a monotonic winner and ordinary peak noise with the full position intact',()=>{
+test('R36 Gate 2 ATHENA-X1 pure state machine holds a monotonic winner while new highs keep resetting the stair clock',()=>{
   let state=null,t=1_000;
-  const path=[90,89,89,91,92,95,98,97,98,99,98,98];
+  const path=[70,71,72,74,76,78,80,81,83,85];
   for(const bid of path){
-    const net=(bid-88)*100-400;
+    const net=(bid-68)*100-400;
     const r=advanceAthenaExitState(state,{
       observation:{observedAtMs:t,executableBidCents:bid,executableNetCents:net,askCents:Math.min(100,bid+1)},
-      context:{entryPriceCents:88,originalCount:100,gameStartTimeMs:0,typicalDurationMs:120*60_000,entryAthenaScore:50,profile:{promoted:false,totalObservations:0,oneTickPullbacks:0,oneTickRecoveries:0,continuationRate:.5,collapseRate:.25},crash:{}},
+      context:{entryPriceCents:68,originalCount:100,gameStartTimeMs:0,typicalDurationMs:120*60_000,entryAthenaScore:50,profile:{promoted:false,totalObservations:0,oneTickPullbacks:0,oneTickRecoveries:0,continuationRate:.5,collapseRate:.25},crash:{}},
     });
     state=r.state;t+=5_000;
     assert.equal(r.decision,'HOLD',`ordinary runner path was exited at ${bid}c`);
   }
-  assert.equal(state.peakExecutableBidCents,99);
-  assert.equal(state.pullbackCents,1);
-  assert.equal(state.phase,'X1_RECOVERY_WATCH');
+  assert.equal(state.peakExecutableBidCents,85);
+  assert.equal(state.pullbackCents,0);
+  assert.equal(state.phase,'X1_PEAK_ADVANCE');
 });
 
-test('R36 Gate 2 ATHENA-X1-R2 Pulse Floor chain: latch-equivalent green peak, 1c noise hold, then trail the floor',()=>{
+test('R36 Gate 2 ATHENA-X1-R3 Chandelier Stair chain: new high holds, 1c noise holds, 2c fade sells green',()=>{
   const ctx={entryPriceCents:70,originalCount:100,gameStartTimeMs:0,typicalDurationMs:120*60_000,entryAthenaScore:50,profile:{promoted:false},crash:{}};
   let state=null,t=1_000;
   const step=(bid)=>{
@@ -1835,17 +1836,36 @@ test('R36 Gate 2 ATHENA-X1-R2 Pulse Floor chain: latch-equivalent green peak, 1c
   assert.equal(step(76).decision,'HOLD');
   assert.equal(step(80).decision,'HOLD');
   assert.equal(state.phase,'X1_PEAK_ADVANCE');
-  assert.equal(step(79).decision,'HOLD','1c peak noise must stay inside the Pulse Floor');
-  const fade=step(77);
+  assert.equal(step(79).decision,'HOLD','1c peak noise must stay inside the stair');
+  const fade=step(78);
   assert.equal(fade.decision,'EXIT');
-  assert.equal(fade.state.exitTrigger,'pulse_trail_floor');
-  assert.ok(fade.state.pulseFloorNetCents>0);
-  assert.ok(((77-70)*100-400)>=0,'Pulse Floor must remain in the profit domain');
+  assert.equal(fade.state.exitTrigger,'stair_pullback');
+  assert.equal(fade.state.stairAllowedPullbackCents,2);
+  assert.ok(((78-70)*100-400)>=0,'Stair must remain in the profit domain');
 });
 
-test('R36 Gate 2 ATHENA-X1-R2 Pulse Floor harvests a green collapse off a real peak instead of waiting for a 4-9c structure',()=>{
+test('R36 Gate 2 ATHENA-X1-R3 quiet-at-top sells after 30s with no new high',()=>{
+  const ctx={entryPriceCents:70,originalCount:100,gameStartTimeMs:0,typicalDurationMs:120*60_000,entryAthenaScore:50,profile:{promoted:false},crash:{}};
+  let r=advanceAthenaExitState(null,{observation:{observedAtMs:1_000,executableBidCents:80,executableNetCents:600,askCents:81},context:ctx});
+  assert.equal(r.decision,'HOLD');
+  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:32_000,executableBidCents:80,executableNetCents:600,askCents:81},context:ctx});
+  assert.equal(r.decision,'EXIT');
+  assert.equal(r.state.exitTrigger,'stair_quiet_peak');
+});
+
+test('R36 Gate 2 ATHENA-X1-R3 extension expiry sells after 60s without a new high even if off the exact ceiling',()=>{
+  const ctx={entryPriceCents:70,originalCount:100,gameStartTimeMs:0,typicalDurationMs:120*60_000,entryAthenaScore:50,profile:{promoted:false},crash:{}};
+  let r=advanceAthenaExitState(null,{observation:{observedAtMs:1_000,executableBidCents:80,executableNetCents:600,askCents:81},context:ctx});
+  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:20_000,executableBidCents:78.8,executableNetCents:480,askCents:80},context:ctx});
+  assert.equal(r.decision,'HOLD');
+  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:62_000,executableBidCents:78.8,executableNetCents:480,askCents:80},context:ctx});
+  assert.equal(r.decision,'EXIT');
+  assert.equal(r.state.exitTrigger,'stair_extension_expired');
+});
+
+test('R36 Gate 2 ATHENA-X1-R3 Chandelier Stair harvests a 2c green fade off a real peak instead of waiting for a 4-9c structure',()=>{
   let state=null,t=1_000,exitAt=null,reason=null;
-  for(const bid of [79,81,86,84,82,70]){
+  for(const bid of [79,81,86,85,84,70]){
     const r=advanceAthenaExitState(state,{
       observation:{observedAtMs:t,executableBidCents:bid,executableNetCents:(bid-60)*100-400,askCents:Math.min(100,bid+1)},
       context:{entryPriceCents:60,originalCount:100,gameStartTimeMs:0,typicalDurationMs:120*60_000,entryAthenaScore:50,profile:{promoted:false,totalObservations:0,oneTickPullbacks:0,oneTickRecoveries:0,continuationRate:.5,collapseRate:.25},crash:{}},
@@ -1853,8 +1873,8 @@ test('R36 Gate 2 ATHENA-X1-R2 Pulse Floor harvests a green collapse off a real p
     state=r.state;t+=5_000;
     if(r.decision==='EXIT'&&exitAt==null){exitAt=bid;reason=r.state.exitTrigger;}
   }
-  assert.ok(exitAt!=null&&exitAt>=82,'Pulse Floor must sell the green fade after 86c');
-  assert.ok(['pulse_trail_floor','pulse_two_tick_fade','pulse_stale_peak','structural_deterioration'].includes(reason),reason);
+  assert.ok(exitAt===85||exitAt===84,'Stair must sell the fade after 86c');
+  assert.equal(reason,'stair_pullback');
   assert.equal(state.phase,'X1_EXIT_COMMITTED');
   assert.ok(((exitAt-60)*100-400)>=0);
 });
@@ -1871,7 +1891,7 @@ test('R36 Gate 2 ATHENA-X1 commits only after confirmed structural deterioration
     if(bid===88)assert.ok(r.decision==='HOLD'||r.decision==='EXIT');
     if(exitAt!=null)break;
   }
-  assert.ok(exitAt===86||exitAt===84,`Pulse Floor / structure should harvest by 86c, got ${exitAt}`);
+  assert.ok(exitAt===88||exitAt===86||exitAt===84,`Stair / structure should harvest the fade, got ${exitAt}`);
   assert.equal(state.phase,'X1_EXIT_COMMITTED');
 });
 
@@ -1885,7 +1905,7 @@ test('R36 Gate 2 ATHENA-X1 can accelerate a profit exit when CI1 independently c
   assert.ok(r.state.failureScore>=65);
 });
 
-test('R2 Pulse Floor adopts an open ATHENA-X1-R1 snapshot instead of throwing policy_revision_mismatch',()=>{
+test('R3 Chandelier Stair adopts an open ATHENA-X1-R1 snapshot instead of throwing policy_revision_mismatch',()=>{
   const r1={
     version:'ATHENA-X1',policyRevision:'ATHENA-X1-R1',phase:'X1_PEAK_ADVANCE',
     armedAtMs:1_000,peakExecutableBidCents:90,peakExecutableNetCents:600,peakAtMs:1_000,
@@ -1897,12 +1917,12 @@ test('R2 Pulse Floor adopts an open ATHENA-X1-R1 snapshot instead of throwing po
     observation:{observedAtMs:6_000,executableBidCents:89,executableNetCents:500,askCents:90},
     context:{nowMs:6_000,entryPriceCents:80,originalCount:100,profile:{promoted:false},crash:{}},
   });
-  assert.equal(r.state.policyRevision,'ATHENA-X1-R2');
+  assert.equal(r.state.policyRevision,'ATHENA-X1-R3');
   assert.equal(r.state.peakExecutableBidCents,90);
   assert.notEqual(r.reason,'athena_x1_policy_revision_mismatch');
 });
 
-test('R2 Pulse Guard migrates an armed R1 position through protect() without evaluation_failed',async()=>{
+test('R3 Chandelier Stair migrates an armed R1 position through protect() without evaluation_failed',async()=>{
   const now=Date.now();
   const r1={
     version:'ATHENA-X1',policyRevision:'ATHENA-X1-R1',phase:'X1_PEAK_ADVANCE',
@@ -1921,17 +1941,18 @@ test('R2 Pulse Guard migrates an armed R1 position through protect() without eva
   assert.equal(out.closed??false,false);
   assert.equal(h.audits.some(x=>x.event==='athena_x1_evaluation_failed'),false);
   assert.equal(h.row().profitGuardState.version,'ATHENA-X1');
-  assert.equal(h.row().profitGuardState.policyRevision,'ATHENA-X1-R2');
+  assert.equal(h.row().profitGuardState.policyRevision,'ATHENA-X1-R3');
   assert.equal(h.row().profitGuardState.peakExecutableBidCents,90);
 });
 
-test('R36 Gate 3 ATHENA-X1-R2 integrated ProfitGuard holds 1-2c peak noise and may harvest a 3c green fade',async()=>{
-  const h=guardHarness({bid:90,x1Enabled:true,entryOverrides:{entryPriceCents:80,currentPriceCents:80,peakPriceCents:80,count:100,remainingCount:100,entryFeeCents:200,stopLossCents:35}});
+test('R36 Gate 3 ATHENA-X1-R3 integrated ProfitGuard holds 1c mid-price noise and sells a 2c green fade',async()=>{
+  const h=guardHarness({bid:80,x1Enabled:true,entryOverrides:{entryPriceCents:70,currentPriceCents:70,peakPriceCents:70,count:100,remainingCount:100,entryFeeCents:200,stopLossCents:35}});
   let out=await h.guard.protect(h.row());assert.equal(out.closed??false,false);
   assert.equal(h.row().profitGuardState.version,'ATHENA-X1');
-  h.setBid(89);out=await h.guard.protect(h.row());assert.equal(out.closed??false,false);
-  h.setBid(88);out=await h.guard.protect(h.row());assert.equal(out.closed??false,false,'2c pullback remains inside the Pulse Floor');
-  assert.equal(h.row().remainingCount,100);
+  h.setBid(79);out=await h.guard.protect(h.row());assert.equal(out.closed??false,false,'1c peak noise stays inside the stair');
+  h.setBid(78);out=await h.guard.protect(h.row());
+  assert.equal(out.closed,true,'2c fade must sell while still green');
+  assert.equal(h.row().closeReason,'athena_x1_exit');
 });
 
 test('R36 Gate 3 ATHENA-X1 integrated ProfitGuard exits exactly 100% after confirmed deterioration and keeps PLI1 research active',async()=>{
@@ -2033,17 +2054,17 @@ test('R36 Gate 2 ATHENA-X1 high-price peak exhaustion protects Kaleido-like matu
   s=r.state;assert.equal(r.decision,'HOLD');
   r=advanceAthenaExitState(s,{observation:{observedAtMs:2_000,executableBidCents:89.11165289256199,executableNetCents:134.51,askCents:90},context:{entryPriceCents:84,originalCount:121,profile,crash:{}}});
   assert.equal(r.decision,'EXIT');
-  assert.ok(['capital_defense','pulse_trail_floor','pulse_two_tick_fade'].includes(r.state.decisionReason),r.state.decisionReason);
+  assert.ok(['capital_defense','stair_pullback'].includes(r.state.decisionReason),r.state.decisionReason);
   assert.ok(r.state.currentNetPerOriginal>1&&r.state.currentNetPerOriginal<1.5);
 });
 
 test('R36 Gate 2 ATHENA-X1 peak exhaustion does not cut Johannus-like healthy retained profit or Alec-like immature peaks',()=>{
   const profile={promoted:false,totalObservations:0,oneTickPullbacks:0,oneTickRecoveries:0,continuationRate:.5,collapseRate:.25};
   let r=advanceAthenaExitState(null,{observation:{observedAtMs:1_000,executableBidCents:99,executableNetCents:273,askCents:100},context:{entryPriceCents:88,originalCount:39,profile,crash:{}}});
-  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:2_000,executableBidCents:96,executableNetCents:156,askCents:97},context:{entryPriceCents:88,originalCount:39,profile,crash:{}}});
+  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:2_000,executableBidCents:98.5,executableNetCents:214.5,askCents:99},context:{entryPriceCents:88,originalCount:39,profile,crash:{}}});
   assert.equal(r.decision,'HOLD');assert.equal(r.state.peakExhaustion,false);
   r=advanceAthenaExitState(null,{observation:{observedAtMs:1_000,executableBidCents:95,executableNetCents:150,askCents:96},context:{entryPriceCents:89,originalCount:75,profile,crash:{}}});
-  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:2_000,executableBidCents:93,executableNetCents:0,askCents:94},context:{entryPriceCents:89,originalCount:75,profile,crash:{}}});
+  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:2_000,executableBidCents:94.6,executableNetCents:120,askCents:95},context:{entryPriceCents:89,originalCount:75,profile,crash:{}}});
   assert.equal(r.decision,'HOLD');assert.equal(r.state.peakExhaustion,false);
 });
 
@@ -2067,12 +2088,12 @@ test('R36 Gate 3 ATHENA-X1 integrated peak exhaustion exits 100% of a Kaleido-li
   let out=await k.guard.protect(k.row());assert.equal(out.closed??false,false);
   k.setBid(89.11165289256199);out=await k.guard.protect(k.row());
   assert.equal(out.closed,true);assert.equal(out.filled,121);assert.equal(k.row().closeReason,'athena_x1_exit');
-  assert.ok(['capital_defense','pulse_trail_floor','pulse_two_tick_fade'].includes(k.row().profitGuardState.exitTrigger));
+  assert.ok(['capital_defense','stair_pullback'].includes(k.row().profitGuardState.exitTrigger));
   assert.ok(k.row().pnlCents>130&&k.row().pnlCents<140);
 
   const j=guardHarness({bid:99,x1Enabled:true,entryOverrides:{entryPriceCents:88,currentPriceCents:88,peakPriceCents:88,count:39,remainingCount:39,entryFeeCents:78,stopLossCents:35}});
   out=await j.guard.protect(j.row());assert.equal(out.closed??false,false);
-  j.setBid(96);out=await j.guard.protect(j.row());assert.equal(out.closed??false,false);assert.equal(j.row().remainingCount,39);
+  j.setBid(98.5);out=await j.guard.protect(j.row());assert.equal(out.closed??false,false);assert.equal(j.row().remainingCount,39);
 });
 
 import { StrategyEngine } from '../src/strategy.mjs';
@@ -2104,7 +2125,7 @@ test('R36 Gate 5 ATHENA-X1 deterministic stress preserves bounded state, monoton
         exits++;
         assert.ok(net>=-1e-9,'X1 emitted profit authority in the loss domain');
         assert.equal(state.phase,'X1_EXIT_COMMITTED');
-        assert.ok(['structural_deterioration','capital_defense','severe_crash_deterioration','pulse_trail_floor','pulse_two_tick_fade','pulse_stale_peak'].includes(state.exitTrigger));
+        assert.ok(['structural_deterioration','capital_defense','severe_crash_deterioration','stair_pullback','stair_quiet_peak','stair_extension_expired'].includes(state.exitTrigger),state.exitTrigger);
         break;
       }
     }
@@ -2114,20 +2135,20 @@ test('R36 Gate 5 ATHENA-X1 deterministic stress preserves bounded state, monoton
 });
 
 test('R36 Gate 5 ATHENA-X1 uncommitted recovery-watch state survives restart without resetting its executable peak or confirmation history',async()=>{
-  const h=guardHarness({bid:90,x1Enabled:true,entryOverrides:{entryPriceCents:80,count:100,remainingCount:100,entryFeeCents:200}});
+  const h=guardHarness({bid:80,x1Enabled:true,entryOverrides:{entryPriceCents:70,count:100,remainingCount:100,entryFeeCents:200}});
   await h.guard.protect(h.row());
-  h.setBid(88);await h.guard.protect(h.row());
+  h.setBid(79.5);await h.guard.protect(h.row());
   const before=h.row().profitGuardState;
   assert.equal(before.phase,'X1_RECOVERY_WATCH');
-  assert.equal(before.peakExecutableBidCents,90);
+  assert.equal(before.peakExecutableBidCents,80);
   assert.ok(before.postPeakFreshObservations>=1);
   const restarted=new ProfitGuard({db:h.db,kalshi:{},market:h.guard.market,learning:h.learning,getSettings:()=>({...settings,simFeeCents:2,systemName:'SAGITTARIUS'})});
-  h.setBid(89);
+  h.setBid(79.2);
   const out=await restarted.protect(h.row());
   assert.equal(out.closed??false,false);
   const after=h.row().profitGuardState;
   assert.equal(after.version,'ATHENA-X1');
-  assert.equal(after.peakExecutableBidCents,90,'restart must not erase the pre-restart economic peak');
+  assert.equal(after.peakExecutableBidCents,80,'restart must not erase the pre-restart economic peak');
   assert.equal(after.postPeakFreshObservations,before.postPeakFreshObservations+1,'restart must continue the same confirmation sequence');
   assert.ok(after.observations.length>=3);
 });
@@ -2160,7 +2181,7 @@ test('R36 Gate 5 missing or corrupt ATHENA-B1 read-only drawdown context is neut
   for(const athena of [null,{brain:{version:'corrupt',brainHash:'bad'}}]){
     const h=guardHarness({bid:90,x1Enabled:true,athena,entryOverrides:{entryPriceCents:80,count:100,remainingCount:100,entryFeeCents:200}});
     let out=await h.guard.protect(h.row());assert.equal(out.closed??false,false);
-    h.setBid(88);out=await h.guard.protect(h.row());assert.equal(out.closed??false,false);
+    h.setBid(89.4);out=await h.guard.protect(h.row());assert.equal(out.closed??false,false);
     const state=h.row().profitGuardState;
     assert.equal(state.version,'ATHENA-X1');
     assert.equal(Boolean(state.historicalDrawdown?.available),false);
@@ -2177,12 +2198,12 @@ test("R37 Gate 5 every real Hunter crosses ATHENA-B1 exactly once, freezes Golde
 
 test('R36 HARDENING ATHENA-X1 flat observations at the peak do not pre-load deterioration confirmation',()=>{
   const context={nowMs:10_000,entryPriceCents:80,originalCount:100,profile:{promoted:false},crash:{}};
-  let r=advanceAthenaExitState(null,{observation:{observedAtMs:1_000,executableBidCents:92,executableNetCents:800,askCents:93},context});
+  let r=advanceAthenaExitState(null,{observation:{observedAtMs:1_000,executableBidCents:82,executableNetCents:0,askCents:83},context:{...context,entryPriceCents:78}});
   for(const t of [2_000,3_000]){
-    r=advanceAthenaExitState(r.state,{observation:{observedAtMs:t,executableBidCents:92,executableNetCents:800,askCents:93},context});
+    r=advanceAthenaExitState(r.state,{observation:{observedAtMs:t,executableBidCents:82,executableNetCents:0,askCents:83},context:{...context,entryPriceCents:78}});
     assert.equal(r.state.postPeakFreshObservations,0,'flat-at-peak observations are not pullback confirmations');
   }
-  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:4_000,executableBidCents:91,executableNetCents:700,askCents:92},context});
+  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:4_000,executableBidCents:81,executableNetCents:-100,askCents:82},context:{...context,entryPriceCents:78}});
   assert.equal(r.state.postPeakFreshObservations,1,'the first actual pullback is confirmation #1');
   assert.equal(r.state.confirmedDeterioration,false,'one actual pullback observation cannot satisfy the two-observation doctrine');
   assert.equal(r.decision,'HOLD');
@@ -2190,13 +2211,13 @@ test('R36 HARDENING ATHENA-X1 flat observations at the peak do not pre-load dete
 
 test('R36 HARDENING ATHENA-X1 failure trajectory is isolated to the current post-peak cycle',()=>{
   const context={nowMs:20_000,entryPriceCents:70,originalCount:100,profile:{promoted:false},crash:{}};
-  let r=advanceAthenaExitState(null,{observation:{observedAtMs:1_000,executableBidCents:90,executableNetCents:1600,askCents:91},context});
-  for(const [t,bid,net] of [[2_000,88,1400],[3_000,94,2000]]){
+  let r=advanceAthenaExitState(null,{observation:{observedAtMs:1_000,executableBidCents:80,executableNetCents:600,askCents:81},context});
+  for(const [t,bid,net] of [[2_000,79.2,520],[3_000,84,900]]){
     r=advanceAthenaExitState(r.state,{observation:{observedAtMs:t,executableBidCents:bid,executableNetCents:net,askCents:bid+1},context});
   }
-  assert.equal(r.state.peakExecutableBidCents,94);
+  assert.equal(r.state.peakExecutableBidCents,84);
   assert.equal(r.state.postPeakFreshObservations,0);
-  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:5_000,executableBidCents:92,executableNetCents:1800,askCents:93},context});
+  r=advanceAthenaExitState(r.state,{observation:{observedAtMs:5_000,executableBidCents:83,executableNetCents:800,askCents:84},context});
   assert.equal(r.state.postPeakRecent.maxConsecutiveDown,1,'pre-peak down streak must not leak into the new peak cycle');
   assert.equal(r.state.postPeakFreshObservations,1);
   assert.equal(r.state.confirmedDeterioration,false);
@@ -2257,11 +2278,11 @@ test('R36 HARDENING ATHENA-X1 does not reinterpret a feeder pre-entry CI1 crash 
   const crashState={phase:'REBOUND_CONFIRMED',crashDepthCents:60,reclaimRate:.7,reboundCents:40,upwardTicks:5};
   const h=guardHarness({bid:90,x1Enabled:true,athena:{brain},crashState,entryOverrides:{entryPriceCents:70,count:100,remainingCount:100,entryFeeCents:200}});
   await h.guard.protect(h.row());
-  h.setBid(88);
+  h.setBid(89.2);
   const out=await h.guard.protect(h.row());
   assert.equal(out.closed??false,false);
   const state=h.row().profitGuardState;
-  assert.equal(state.pullbackCents,2);
+  assert.ok(state.pullbackCents>=0.7&&state.pullbackCents<=1.0);
   assert.equal(Boolean(state.historicalDrawdown?.available),false,'a 60c pre-entry feeder crash cannot manufacture a 60c X1 post-entry drawdown');
   assert.equal(state.crash.depthCents,60,'CI1 crash evidence remains independently visible to X1');
 });
