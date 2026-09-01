@@ -17,6 +17,7 @@ import {
   GALACTIC_EXPLOSION,
   COSMO_ROUTING,
   SCARLET_NEEDLE,
+  CRYSTAL_WALL,
   GEMINI_UNIVERSE,
   ANOTHER_DIMENSION,
   SAGITTARIUS_JUSTICE_ARROW,
@@ -319,10 +320,11 @@ export function entryConfigSnapshot(settings, conceptName, sourceFeeder = null, 
   const attack=attackMap[conceptName]||null;
   const scarletContinuation=conceptName==='Scarlet Needle';
   const justiceContinuation=conceptName==='Sagittarius Justice Arrow';
+  const crystalWallContinuation=conceptName==='Recovery Hunter';
   return {
     release:RELEASE,
-    authorityChain:justiceContinuation?'ANOTHER_DIMENSION_WIN->SAGITTARIUS_JUSTICE_ARROW->HARD_EXECUTION_SAFETY->ATHENA_X1/AURORA':scarletContinuation?'PROFITABLE_CLOSE->SCARLET_NEEDLE->HARD_EXECUTION_SAFETY->INFINITY_BREAK/AURORA':'COSMO_SHADOW->COSMO_GREEN->ATOMIC_THUNDER_BOLT->ATHENA->ATTACK->INFINITY_BREAK/AURORA',
-    strategicEntryAuthority:justiceContinuation?SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority:scarletContinuation?SCARLET_NEEDLE.strategicEntryAuthority:ATHENA_COMMANDER.version,
+    authorityChain:justiceContinuation?'ANOTHER_DIMENSION_WIN->SAGITTARIUS_JUSTICE_ARROW->HARD_EXECUTION_SAFETY->ATHENA_X1/AURORA':scarletContinuation?'PROFITABLE_CLOSE->SCARLET_NEEDLE->HARD_EXECUTION_SAFETY->INFINITY_BREAK/AURORA':crystalWallContinuation?'HARD_STOP_LOSS->CRYSTAL_WALL->REBOUND->HARD_EXECUTION_SAFETY->INFINITY_BREAK/AURORA':'COSMO_SHADOW->COSMO_GREEN->ATOMIC_THUNDER_BOLT->ATHENA->ATTACK->INFINITY_BREAK/AURORA',
+    strategicEntryAuthority:justiceContinuation?SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority:scarletContinuation?SCARLET_NEEDLE.strategicEntryAuthority:crystalWallContinuation?CRYSTAL_WALL.strategicEntryAuthority:ATHENA_COMMANDER.version,
     profitAuthority:justiceContinuation?ATHENA_EXIT_INTELLIGENCE.version:(PORTFOLIO_CONCEPTS.has(conceptName)?INFINITY_BREAK.version:null),
     profitAuthorityRevision:justiceContinuation?ATHENA_EXIT_INTELLIGENCE.policyRevision:(PORTFOLIO_CONCEPTS.has(conceptName)?INFINITY_BREAK.policyRevision:null),
     lossAuthority:PORTFOLIO_CONCEPTS.has(conceptName)?AURORA_EXECUTION.lossAuthority:null,
@@ -813,6 +815,8 @@ export class StrategyEngine {
       .map((e) => String(e.sourceTradeId)));
     return entries.filter((e) => e.status === 'closed'
       && e.closeReason === 'hard_stop_loss'
+      && e.conceptName !== 'Recovery Hunter'
+      && ACTIVE_PORTFOLIO_CONCEPTS.has(String(e.conceptName || ''))
       && Number(e.exitPriceCents) > 0
       && Number(e.closedAtMs || 0) >= cutoff
       && !existingSourceIds.has(String(e.id)));
@@ -1411,6 +1415,18 @@ export class StrategyEngine {
           await this.audit('justice_arrow_continuation_execution_blocked',{concept,ticker:q.ticker,eventTicker:expectedEventTicker,reason:'justice_arrow_authority_attack_mismatch'});
           return null;
         }
+        const crystalAuthorityMode=String(athenaFireCommand?.authorityMode||'')===CRYSTAL_WALL.strategicEntryAuthority;
+        const crystalLineage=athenaFireCommand?.decisionEvidence?.crystalWallContinuation;
+        if(concept==='Recovery Hunter'&&(!crystalAuthorityMode||!crystalLineage?.authorizationId||!crystalLineage?.parentEntryId)){
+          trace('FIRE_EXECUTION_ENVELOPE','BLOCKED','crystal_wall_continuation_authority_required');
+          await this.audit('crystal_wall_continuation_execution_blocked',{concept,ticker:q.ticker,eventTicker:expectedEventTicker,reason:'crystal_wall_continuation_authority_required'});
+          return null;
+        }
+        if(concept!=='Recovery Hunter'&&crystalAuthorityMode){
+          trace('FIRE_EXECUTION_ENVELOPE','BLOCKED','crystal_wall_authority_attack_mismatch');
+          await this.audit('crystal_wall_continuation_execution_blocked',{concept,ticker:q.ticker,eventTicker:expectedEventTicker,reason:'crystal_wall_authority_attack_mismatch'});
+          return null;
+        }
         const freshFire=validateAthenaFireCommand(athenaFireCommand,{concept,q:executionQuote,settings:s,now:Date.now()});
         if(!freshFire.ok){
           trace('FIRE_EXECUTION_ENVELOPE','BLOCKED',freshFire.reason,freshFire);
@@ -1441,9 +1457,10 @@ export class StrategyEngine {
       if(newGenerationEntry){
         const scarletContinuationAuthority=concept==='Scarlet Needle'&&String(athenaFireCommand?.authorityMode||'')==='SCARLET_NEEDLE_POST_PROFIT_CONTINUATION';
         const justiceContinuationAuthority=concept==='Sagittarius Justice Arrow'&&String(athenaFireCommand?.authorityMode||'')===SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority;
-        const dedicatedContinuationAuthority=scarletContinuationAuthority||justiceContinuationAuthority;
-        athenaAssessment={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision:'FIRE',strategicAuthority:!dedicatedContinuationAuthority,executionEnvelopeAuthority:true,authorityMode:scarletContinuationAuthority?SCARLET_NEEDLE.strategicEntryAuthority:justiceContinuationAuthority?SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority:'ATHENA_A3',boltId:athenaFireCommand.boltId,commandHash:athenaFireCommand.commandHash,selectedAttack:concept,ranking:structuredClone(athenaFireCommand.ranking||[]),decisionEvidence:structuredClone(athenaFireCommand.decisionEvidence||{}),survivalCertificate:null,survivalAuthority:null,legacyB2VetoApplied:false,decidedAtMs:Number(athenaFireCommand.decidedAtMs)};
-        trace('ATHENA','PASS',scarletContinuationAuthority?'scarlet_post_profit_continuation_authority':justiceContinuationAuthority?'justice_arrow_post_shadow_victory_authority':'supreme_fire_authority',{boltId:athenaFireCommand.boltId,selectedAttack:concept});
+        const crystalWallContinuationAuthority=concept==='Recovery Hunter'&&String(athenaFireCommand?.authorityMode||'')===CRYSTAL_WALL.strategicEntryAuthority;
+        const dedicatedContinuationAuthority=scarletContinuationAuthority||justiceContinuationAuthority||crystalWallContinuationAuthority;
+        athenaAssessment={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision:'FIRE',strategicAuthority:!dedicatedContinuationAuthority,executionEnvelopeAuthority:true,authorityMode:scarletContinuationAuthority?SCARLET_NEEDLE.strategicEntryAuthority:justiceContinuationAuthority?SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority:crystalWallContinuationAuthority?CRYSTAL_WALL.strategicEntryAuthority:'ATHENA_A3',boltId:athenaFireCommand.boltId,commandHash:athenaFireCommand.commandHash,selectedAttack:concept,ranking:structuredClone(athenaFireCommand.ranking||[]),decisionEvidence:structuredClone(athenaFireCommand.decisionEvidence||{}),survivalCertificate:null,survivalAuthority:null,legacyB2VetoApplied:false,decidedAtMs:Number(athenaFireCommand.decidedAtMs)};
+        trace('ATHENA','PASS',scarletContinuationAuthority?'scarlet_post_profit_continuation_authority':justiceContinuationAuthority?'justice_arrow_post_shadow_victory_authority':crystalWallContinuationAuthority?'crystal_wall_post_stop_continuation_authority':'supreme_fire_authority',{boltId:athenaFireCommand.boltId,selectedAttack:concept});
       }else if(this.athena&&typeof this.athena.assess==='function'){
         athenaAssessment=this.athena.assess({conceptName:concept,sourceFeeder,ticker:q.ticker,title:executionQuote.title||q.title||q.ticker,entryPriceCents:Number(executionQuote.yesAsk||0),bidCents:Number(executionQuote.yesBid||0),askCents:Number(executionQuote.yesAsk||0),gameMinutes:confirmedInGameElapsedMinutes(q,Date.now())||0});
         if(athenaAssessment.blocked){trace('ATHENA','BLOCKED',athenaAssessment.reason||'legacy_athena_veto');return null;}
@@ -1537,6 +1554,7 @@ export class StrategyEngine {
       if (entryQualificationSnapshot && typeof entryQualificationSnapshot === 'object') frozenEntryConfig.entryQualification = structuredClone(entryQualificationSnapshot);
       if (concept==='Scarlet Needle' && entryQualificationSnapshot?.scarletContinuation) frozenEntryConfig.scarletContinuation=structuredClone(entryQualificationSnapshot.scarletContinuation);
       if (concept==='Sagittarius Justice Arrow' && entryQualificationSnapshot?.justiceArrowContinuation) frozenEntryConfig.justiceArrowContinuation=structuredClone(entryQualificationSnapshot.justiceArrowContinuation);
+      if (concept==='Recovery Hunter' && entryQualificationSnapshot?.crystalWallContinuation) frozenEntryConfig.crystalWallContinuation=structuredClone(entryQualificationSnapshot.crystalWallContinuation);
       if (athenaAssessment && typeof athenaAssessment === 'object') frozenEntryConfig.athena = structuredClone(athenaAssessment);
       if (concept==='Athena Exclamation') frozenEntryConfig.athenaExclamation={version:ATHENA_EXCLAMATION.version,policyRevision:ATHENA_EXCLAMATION.policyRevision,candidate:structuredClone(entryQualificationSnapshot?.candidate||null),primeReview:structuredClone(athenaExclamationReview)};
       frozenEntryConfig.strategyIdentity = {
@@ -1737,6 +1755,60 @@ export class StrategyEngine {
     return this.executeAthenaFire(q,bolt,decision,{cosmos:[],scarletContinuation:lineage});
   }
 
+  async executeCrystalWallContinuation(q, parentEntry, { authorizationId, authorizedAtMs=Date.now(), observation=null } = {}) {
+    const s=this.getSettings();
+    if(s.recoveryHunterEnabled!==true)return null;
+    if(!parentEntry?.id||parentEntry.status!=='closed'||String(parentEntry.closeReason||'')!=='hard_stop_loss')return null;
+    if(String(parentEntry.conceptName||'')==='Recovery Hunter')return null;
+    if(!ACTIVE_PORTFOLIO_CONCEPTS.has(String(parentEntry.conceptName||'')))return null;
+    const ticker=String(q?.ticker||''),parentTicker=String(parentEntry?.ticker||'');
+    if(!ticker||ticker!==parentTicker)return null;
+    const parentSide=String(parentEntry?.side||parentEntry?.entryConfig?.side||'YES').toUpperCase();
+    if(parentSide!=='YES')return null;
+    const signal=recoverySignalState(parentEntry,q,observation,s,Number(parentEntry.exitPriceCents||0));
+    if(!signal.qualified)return null;
+    const ask=Math.max(0,Number(signal.askCents||q?.yesAsk||0)),bid=Math.max(0,Number(signal.bidCents||q?.yesBid||0));
+    if(!(ask>0)||!(bid>0)||bid>ask)return null;
+    const minEntryCents=Number(s.recoveryMinEntryCents),maxEntryCents=Number(s.recoveryMaxEntryCents),stakeCents=Number(s.recoveryStakeCents);
+    const target=scarletContinuationEconomicTarget({askCents:ask,stakeCents,settings:s});
+    const at=Math.max(1,Number(authorizedAtMs)||Date.now());
+    const decidedAt=Date.now();
+    const id=String(authorizationId||`CRYSTAL-WALL-CONTINUATION:${parentEntry.id}:1`);
+    const lineage={
+      version:CRYSTAL_WALL.version,policyRevision:CRYSTAL_WALL.policyRevision,authority:CRYSTAL_WALL.strategicEntryAuthority,
+      authorizationId:id,parentEntryId:String(parentEntry.id),rootEntryId:String(parentEntry.id),repeatIndex:1,maxRepeatsAtEntry:1,
+      parentConcept:String(parentEntry.conceptName||''),parentCloseReason:String(parentEntry.closeReason||''),
+      parentClosedAtMs:Number(parentEntry.closedAtMs||0),parentExitPriceCents:Number(parentEntry.exitPriceCents||0),
+      parentRealizedPnlCents:Number(parentEntry.pnlCents||0),parentEntryPriceCents:Number(parentEntry.entryPriceCents||0),
+      troughCents:Number(signal.troughCents||0),reboundCents:Number(signal.reboundCents||0),minReboundCents:Number(signal.minReboundCents||CRYSTAL_WALL.minReboundCents),
+      authorizedAtMs:at,firedAtMs:decidedAt,sameTicker:true,sameSide:true,ordinaryCooldownBypassed:true,fullExecutionSafetyRequired:true,
+      reboundOrigin:CRYSTAL_WALL.reboundOrigin,reboundPrice:CRYSTAL_WALL.reboundPrice,
+    };
+    const recoveryContext={eligible:true,sourceTradeId:String(parentEntry.id),sourceConcept:String(parentEntry.conceptName||''),troughCents:Number(signal.troughCents||0),reboundCents:Number(signal.reboundCents||0),observationId:observation?.id||null};
+    const ranking=[{concept:'Recovery Hunter',displayName:EXECUTION_ATTACK_DISPLAY['Recovery Hunter']?.name||'Crystal Wall',score:100,authorityMode:CRYSTAL_WALL.strategicEntryAuthority,targetFeasible:target.targetFeasible,requiredTargetBidCents:target.requiredTargetBidCents}];
+    const core={
+      version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,
+      authorityMode:CRYSTAL_WALL.strategicEntryAuthority,authoritySource:'HARD_STOP_LOSS_CLOSE',strategicSelectionBypassed:true,
+      boltId:id,boltFingerprint:null,systemName:s.systemName,sourceRelease:RELEASE,
+      decidedAtMs:decidedAt,expiresAtMs:decidedAt+5_000,ticker,eventTicker:String(q?.eventTicker||parentEntry?.eventTicker||ticker),side:'YES',
+      selectedAttack:'Recovery Hunter',selectedAttackDisplay:EXECUTION_ATTACK_DISPLAY['Recovery Hunter']?.name||'Crystal Wall',
+      stakeCents,fieldBudgetCents:null,maxRays:null,operatorMinEntryCents:minEntryCents,operatorMaxEntryCents:maxEntryCents,
+      entryPriceCents:ask,authorizedMaxEntryCents:ask,maxSpreadCents:Number(s.maxSpreadCents??3),auroraDamageControlPercent:Number(s.auroraDamageControlPercent??45),
+      infinityBreakPolicyVersion:INFINITY_BREAK.version,economicTarget:target,survivalCertificate:null,ranking,
+      recoveryContext,
+      decisionEvidence:{
+        crystalWallContinuation:lineage,recoveryContext,
+        parentClose:{entryId:String(parentEntry.id),concept:String(parentEntry.conceptName||''),closeReason:String(parentEntry.closeReason||''),realizedPnlCents:Number(parentEntry.pnlCents||0),exitPriceCents:Number(parentEntry.exitPriceCents||0),closedAtMs:Number(parentEntry.closedAtMs||0)},
+        configuredTargetNetPerOriginalContractCents:target.netPerOriginalContractCents,
+        predictiveReVetoAllowed:false,normalStrategicDiscoveryBypassed:true,hardExecutionSafetyStillRequired:true,
+      },
+    };
+    const fireCommand=sealAthenaFireCommand(core);
+    const decision={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision:'FIRE',reason:'crystal_wall_post_stop_continuation',decidedAtMs:decidedAt,boltId:id,ticker,ranking,selectedAttack:'Recovery Hunter',selectedAttackDisplay:core.selectedAttackDisplay,fireCommand,economicObjective:'POST_STOP_REBOUND_RECOVERY',configuredTargetNetPerOriginalContractCents:target.netPerOriginalContractCents,strategicAuthority:false,crystalWallContinuationAuthority:true,durableFireRequired:true,durableFirePersisted:true};
+    const bolt={id,ticker,eventTicker:core.eventTicker,side:'YES',sport:String(parentEntry?.sport||'Unknown'),detectedAtMs:decidedAt,expiresAtMs:core.expiresAtMs,fingerprint:null,features:{bidCents:bid,askCents:ask,sport:String(parentEntry?.sport||'Unknown'),eligibleAttacks:ranking},greenTrigger:null,preBoltClearance:null,authorityMode:CRYSTAL_WALL.strategicEntryAuthority};
+    return this.executeAthenaFire(q,bolt,decision,{cosmos:[],recoverySource:parentEntry,recoveryContext,crystalWallContinuation:lineage});
+  }
+
   async executeJusticeArrowContinuation(q, parentShadow, { authorizationId, authorizedAtMs=Date.now() } = {}) {
     const s=this.getSettings();
     if(s.justiceArrowEnabled!==true)return null;
@@ -1834,6 +1906,7 @@ export class StrategyEngine {
     }
     const scarletContinuation=concept==='Scarlet Needle'?structuredClone(context?.scarletContinuation||command?.decisionEvidence?.scarletContinuation||null):null;
     const justiceArrowContinuation=concept==='Sagittarius Justice Arrow'?structuredClone(context?.justiceArrowContinuation||command?.decisionEvidence?.justiceArrowContinuation||null):null;
+    const crystalWallContinuation=concept==='Recovery Hunter'?structuredClone(context?.crystalWallContinuation||command?.decisionEvidence?.crystalWallContinuation||null):null;
     const anotherDimensionEntry=concept==='Sagittarius Justice Arrow'?(context?.anotherDimensionEntry||null):null;
     if(concept==='Sagittarius Justice Arrow'){
       if(!anotherDimensionEntry?.id||anotherDimensionEntry.conceptName!=='Another Dimension'||String(anotherDimensionEntry.id)!==String(justiceArrowContinuation?.parentShadowTradeId||'')){
@@ -1843,14 +1916,14 @@ export class StrategyEngine {
       sourceTradeId=anotherDimensionEntry.id;
     }
     const entryQualificationSnapshot = {
-      version:scarletContinuation?'SCARLET-CONTINUATION-Q1':justiceArrowContinuation?'JUSTICE-ARROW-CONTINUATION-Q1':'ATHENA-A3-FIRE-Q1',boltId:bolt?.id||command.boltId,commandHash:command.commandHash,selectedAttack:concept,
+      version:scarletContinuation?'SCARLET-CONTINUATION-Q1':justiceArrowContinuation?'JUSTICE-ARROW-CONTINUATION-Q1':crystalWallContinuation?'CRYSTAL-WALL-CONTINUATION-Q1':'ATHENA-A3-FIRE-Q1',boltId:bolt?.id||command.boltId,commandHash:command.commandHash,selectedAttack:concept,
       operatorBand:{minEntryCents:Number(command.operatorMinEntryCents),maxEntryCents:Number(command.operatorMaxEntryCents)},
       authorizedMaxEntryCents:Number(command.authorizedMaxEntryCents),observedFeatures:structuredClone(command?.decisionEvidence?.features||{}),
       greenTrigger:structuredClone(command?.decisionEvidence?.greenTrigger||bolt?.greenTrigger||null),
       preBoltClearance:structuredClone(command?.decisionEvidence?.preBoltClearance||bolt?.preBoltClearance||null),
       fieldContext:structuredClone(context.fieldContext||command?.decisionEvidence?.fieldContext||null),
       arayashiki:null,
-      scarletNeedle:concept==='Scarlet Needle'?structuredClone(command?.decisionEvidence?.scarletNeedle||null):null,scarletContinuation,justiceArrowContinuation,observedAtMs:Date.now(),
+      scarletNeedle:concept==='Scarlet Needle'?structuredClone(command?.decisionEvidence?.scarletNeedle||null):null,scarletContinuation,justiceArrowContinuation,crystalWallContinuation,observedAtMs:Date.now(),
     };
     const e = await this.createHunter(concept,q,Number(command.stakeCents),0,{
       sourceFeeder:concept==='Sagittarius Justice Arrow'?'Another Dimension':source?.conceptName||null,sourceTradeId,sourceEntryConfig:concept==='Sagittarius Justice Arrow'?anotherDimensionEntry?.entryConfig||null:source?.entryConfig||null,recoverySourceSnapshot,

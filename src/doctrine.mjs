@@ -221,6 +221,37 @@ export const MOMENTUM = Object.freeze({
 export const WAVE = Object.freeze({ maxSpreadCents: 3 });
 export const RECOVERY = Object.freeze({ minReboundCents: 5, minEntryCents: 76, maxEntryCents: 94 });
 
+// R64 Crystal Wall. Loss-side analogue of Scarlet Needle: an owned Attack
+// hard-stop authorizes one same-ticker follow-on. Cosmo GREEN cannot arm it.
+// The stop print is not the entry. Execution waits for a confirmed rebound
+// off the post-stop trough, then reuses the ordinary Hunter safety chain.
+export const CRYSTAL_WALL = Object.freeze({
+  version:'CRYSTAL-WALL-V2',
+  policyRevision:'CW2-R1-POST-STOP-REBOUND-CONTINUATION',
+  role:'post_hard_stop_same_ticker_recovery_attack',
+  conceptName:'Recovery Hunter',
+  displayName:'Crystal Wall',
+  trigger:'POST_HARD_STOP_LOSS',
+  triggerRequiresHardStop:true,
+  sameExactTicker:true,
+  sameSide:true,
+  normalStrategicDiscoveryBypass:true,
+  ordinaryCooldownExempt:true,
+  fullExecutionSafetyRequired:true,
+  defaultMaxRepeats:1,
+  maximumConfigurableRepeats:1,
+  parentCannotBeSelf:true,
+  reboundRequired:true,
+  reboundOrigin:'post_stop_trough',
+  reboundPrice:'best_bid',
+  minReboundCents:RECOVERY.minReboundCents,
+  sourceDoesNotAuthorizeEntry:true,
+  strategicEntryAuthority:'CRYSTAL_WALL_POST_STOP_CONTINUATION',
+  profitAuthority:'INFINITY_BREAK',
+  lossAuthority:'AURORA_EXECUTION',
+  noPostEntryTimeExit:true,
+});
+
 // R46/R55 LP1 Lightning Plasma. A field is formed from a burst of independent
 // active Cosmos (Pegasus/Dragon/Phoenix), but every strike is still an ordinary real Hunter
 // execution that independently re-proves GCA2, executable depth, Athena,

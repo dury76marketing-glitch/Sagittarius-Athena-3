@@ -150,7 +150,6 @@ function enabledAttackBands(settings={},askCents=0,{recoveryContext=null,fieldCo
     ['Momentum Hunter','momentumHunterEnabled','momentumMinEntryCents','momentumMaxEntryCents','momentumStakeCents'],
     ['Wave Surfer','waveSurferEnabled','waveMinEntryCents','waveMaxEntryCents','waveStakeCents'],
     ['Crash Recovery Hunter','crashRecoveryHunterEnabled','crashRecoveryMinEntryCents','crashRecoveryMaxEntryCents','crashRecoveryStakeCents'],
-    ['Recovery Hunter','recoveryHunterEnabled','recoveryMinEntryCents','recoveryMaxEntryCents','recoveryStakeCents'],
     ['Lightning Plasma','lightningPlasmaEnabled','lightningPlasmaMinEntryCents','lightningPlasmaMaxEntryCents','lightningPlasmaFieldStakeCents'],
     ['Athena Exclamation','athenaExclamationEnabled','athenaExclamationMinEntryCents','athenaExclamationMaxEntryCents','athenaExclamationStakeCents'],
   ];
@@ -161,7 +160,6 @@ function enabledAttackBands(settings={},askCents=0,{recoveryContext=null,fieldCo
     // feasible: Crystal Wall needs an eligible recovery source, while Athena
     // Exclamation needs the frozen three-Saint convergence context. These are
     // weapon-shape prerequisites, not restored post-FIRE strategic vetoes.
-    if(concept==='Recovery Hunter'&&recoveryContext?.eligible!==true)return false;
     if(concept==='Lightning Plasma'){
       const independent=finite(fieldContext?.independentEventCount,0),minCosmos=Math.max(2,finite(fieldContext?.minCosmos,LIGHTNING_PLASMA.minCosmos)),minStrikes=Math.max(2,finite(fieldContext?.minStrikes,LIGHTNING_PLASMA.minStrikes));
       if(fieldContext?.lightningPlasmaQualified!==true||fieldContext?.currentTickerEligible!==true||independent<minCosmos||independent<minStrikes)return false;

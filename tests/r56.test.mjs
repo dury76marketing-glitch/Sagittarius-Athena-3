@@ -235,7 +235,7 @@ test('R60 dashboard exposes one unified foldable Cosmos shadow table with ALL/Pe
 
 test('R60 Railway source package remains compact, source-started, and healthcheck-safe',async()=>{
   const root=new URL('../',import.meta.url),pkg=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8')),rail=JSON.parse(await readFile(new URL('../railway.json',import.meta.url),'utf8'));assert.equal(pkg.scripts.start,'node src/index.mjs');assert.equal(rail.build.buildCommand,'npm test && npm run check');assert.equal(rail.deploy.startCommand,'npm start');assert.equal(rail.deploy.healthcheckPath,'/health');
-  async function walk(u){let out=[];for(const ent of await readdir(u,{withFileTypes:true})){if(['node_modules','.git','package-lock.json'].includes(ent.name))continue;const x=new URL(ent.name+(ent.isDirectory()?'/':''),u);if(ent.isDirectory())out.push(...await walk(x));else out.push(x);}return out;}const all=await walk(root);assert.equal(all.length,44);
+  async function walk(u){let out=[];for(const ent of await readdir(u,{withFileTypes:true})){if(['node_modules','.git','package-lock.json'].includes(ent.name))continue;const x=new URL(ent.name+(ent.isDirectory()?'/':''),u);if(ent.isDirectory())out.push(...await walk(x));else out.push(x);}return out;}const all=await walk(root);assert.equal(all.length,45);
 });
 
 // R63 Gemini / Another Dimension / Sagittarius Justice Arrow + live-parity SIM.

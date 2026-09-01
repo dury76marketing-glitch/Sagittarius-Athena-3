@@ -712,6 +712,7 @@ export class Database {
     const r=await this.pool.query(`select e.id,e.concept_name,e.ticker,e.event_ticker,e.market_title,e.entry_price_cents,e.exit_price_cents,e.closed_at_ms,
       jsonb_build_object('gameClockAuthority',coalesce(e.entry_config->'gameClockAuthority','{}'::jsonb)) as entry_config
       from sag_entries e where e.system_name=$1 and e.archived=false and e.status='closed' and e.close_reason='hard_stop_loss'
+      and e.concept_name <> 'Recovery Hunter'
       and e.exit_price_cents>0 and e.closed_at_ms >= $2
       and not exists(select 1 from sag_entries r where r.system_name=e.system_name and r.archived=false and r.concept_name='Recovery Hunter' and r.source_trade_id=e.id)
       order by e.closed_at_ms desc`,[String(systemName),since]);
