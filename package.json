@@ -1,0 +1,19 @@
+{
+  "name": "sagittarius-pdf-parity",
+  "version": "2.5.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "node --check src/index.mjs && node --check src/engine.mjs && node --check src/server.mjs && node --check public/app.js"
+  },
+  "dependencies": {
+    "pg": "8.16.3",
+    "ws": "8.21.3"
+  },
+  "packageManager": "npm@10.9.2"
+}
