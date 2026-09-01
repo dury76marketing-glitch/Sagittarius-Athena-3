@@ -6,7 +6,7 @@ import { KalshiClient } from './kalshi.mjs';
 import { MarketHub } from './market.mjs';
 import { LearningEngine, classifyDeterministic } from './learning.mjs';
 import { Athena, ATHENA_BRAIN, ATHENA_B2, AthenaCommander } from './athena.mjs';
-import { StrategyEngine, activeCosmoSources, lightningPlasmaFieldSelection, anotherDimensionQualification, recoverySignalState } from './strategy.mjs';
+import { StrategyEngine, activeCosmoSources, lightningPlasmaFieldSelection, anotherDimensionQualification, recoverySignalState, plasmaSignalState } from './strategy.mjs';
 import { ProfitGuard } from './profitGuard.mjs';
 import { GoldenEye } from './goldenEye.mjs';
 import { FEEDER_SIGNAL_INTELLIGENCE } from './feederSignalIntel.mjs';
@@ -364,6 +364,13 @@ export class SagittariusEngine {
       onError:async(error,key)=>{await this.db.audit('error','justice_arrow_continuation_queue',{key,message:String(error?.message||error)}).catch(()=>{});},
     });
     this.justiceArrowStats = {version:SAGITTARIUS_JUSTICE_ARROW.version,eligible:0,authorized:0,attempted:0,opened:0,blocked:0,duplicateSuppressed:0,modeMismatchBlocked:0,lastEvent:null};
+    this.lightningPlasmaContinuationInFlight = new Set();
+    this.lightningPlasmaWatches = new Map();
+    this.lightningPlasmaContinuationStats = {version:LIGHTNING_PLASMA.version,eligible:0,authorized:0,attempted:0,opened:0,blocked:0,watching:0,duplicateSuppressed:0,maxRepeatBlocked:0,selfParentBlocked:0,modeMismatchBlocked:0,lastEvent:null};
+    this.lightningPlasmaContinuationQueue = new CoalescingWorkQueue({
+      maxConcurrency:1,
+      onError:async(error,key)=>{await this.db.audit('error','lightning_plasma_continuation_queue',{key,message:String(error?.message||error)}).catch(()=>{});},
+    });
     // R61-HF1: a dashboard settings write is only reported as verified after
     // the persisted PostgreSQL runtime record has been read back and the
     // edited fields match exactly. This telemetry never changes frozen trade
@@ -931,6 +938,154 @@ export class SagittariusEngine {
     finally{if(unlock)await unlock().catch(()=>{});this.justiceArrowInFlight.delete(authorizationId);}
   }
 
+  queueLightningPlasmaContinuation(entry) {
+    const id=String(entry?.id||'');
+    if(!id)return false;
+    if(!(this.lightningPlasmaContinuationQueue instanceof CoalescingWorkQueue)){
+      this.lightningPlasmaContinuationQueue=new CoalescingWorkQueue({maxConcurrency:1,onError:async(error,key)=>{await this.db.audit('error','lightning_plasma_continuation_queue',{key,message:String(error?.message||error)}).catch(()=>{});}});
+    }
+    return this.lightningPlasmaContinuationQueue.enqueue(`close:${id}`,()=>this.handleLightningPlasmaContinuation(entry));
+  }
+
+  queueLightningPlasmaWatch(ticker) {
+    const exact=String(ticker||'');
+    if(!exact||!(this.lightningPlasmaWatches instanceof Map))return false;
+    const watches=[...this.lightningPlasmaWatches.values()].filter((w)=>String(w?.ticker||'')===exact);
+    if(!watches.length)return false;
+    if(!(this.lightningPlasmaContinuationQueue instanceof CoalescingWorkQueue)){
+      this.lightningPlasmaContinuationQueue=new CoalescingWorkQueue({maxConcurrency:1,onError:async(error,key)=>{await this.db.audit('error','lightning_plasma_continuation_queue',{key,message:String(error?.message||error)}).catch(()=>{});}});
+    }
+    for(const watch of watches)this.lightningPlasmaContinuationQueue.enqueue(`close:${String(watch.parentShadow?.id||watch.authorizationId)}`,()=>this.handleLightningPlasmaContinuation(watch.parentShadow));
+    return true;
+  }
+
+  lightningPlasmaContinuationRuntime() {
+    if(!(this.lightningPlasmaContinuationInFlight instanceof Set))this.lightningPlasmaContinuationInFlight=new Set();
+    if(!(this.lightningPlasmaWatches instanceof Map))this.lightningPlasmaWatches=new Map();
+    if(!this.lightningPlasmaContinuationStats||typeof this.lightningPlasmaContinuationStats!=='object')this.lightningPlasmaContinuationStats={version:LIGHTNING_PLASMA.version,eligible:0,authorized:0,attempted:0,opened:0,blocked:0,watching:0,duplicateSuppressed:0,maxRepeatBlocked:0,selfParentBlocked:0,modeMismatchBlocked:0,lastEvent:null};
+    return this.lightningPlasmaContinuationStats;
+  }
+
+  async handleLightningPlasmaContinuation(parentShadow) {
+    const stats=this.lightningPlasmaContinuationRuntime();
+    const s=this.settings||{};
+    const parentId=String(parentShadow?.id||''),ticker=String(parentShadow?.ticker||'');
+    const record=(status,data={})=>{stats.lastEvent={status,atMs:Date.now(),parentShadowTradeId:parentId,ticker,...data};return stats.lastEvent;};
+    if(!parentId||!ticker||parentShadow?.conceptName!=='Another Dimension'||parentShadow?.status!=='closed'||Number(parentShadow?.remainingCount||0)>1e-9)return {status:'IGNORED',reason:'not_completed_another_dimension'};
+    if(String(parentShadow.closeReason||'')!==ANOTHER_DIMENSION.lossCloseReason)return {status:'IGNORED',reason:'not_another_dimension_aurora_loss'};
+    if(s.lightningPlasmaEnabled!==true||s.geminiEnabled!==true)return {status:'IGNORED',reason:'lightning_plasma_disabled'};
+    if(String(parentShadow.conceptName||'')==='Lightning Plasma'){
+      stats.selfParentBlocked+=1;record('IGNORED',{reason:'parent_is_lightning_plasma'});
+      return {status:'IGNORED',reason:'parent_is_lightning_plasma'};
+    }
+    if(String(parentShadow.systemName||'')!==String(s.systemName)||String(parentShadow.ownerId||'')!==String(s.ownerId)){
+      stats.blocked+=1;record('BLOCKED',{reason:'owner_or_system_mismatch'});return {status:'BLOCKED',reason:'owner_or_system_mismatch'};
+    }
+    if(String(parentShadow.mode||'')!==String(s.mode||'')){
+      stats.modeMismatchBlocked+=1;stats.blocked+=1;record('BLOCKED',{reason:'mode_changed_since_shadow_close'});return {status:'BLOCKED',reason:'mode_changed_since_shadow_close'};
+    }
+    const windowMs=Math.max(1,Number(s.recoveryTrackingHours||24))*3600000;
+    if(Number(parentShadow.closedAtMs||0)>0 && Date.now()-Number(parentShadow.closedAtMs)>windowMs)return {status:'IGNORED',reason:'tracking_window_elapsed'};
+    stats.eligible+=1;
+    const authorizationId=`LIGHTNING-PLASMA-CONTINUATION:${parentId}:1`;
+    if(this.lightningPlasmaContinuationInFlight.has(authorizationId)){
+      stats.duplicateSuppressed+=1;record('DUPLICATE_SUPPRESSED',{authorizationId,scope:'local'});return {status:'DUPLICATE_SUPPRESSED',reason:'local_in_flight'};
+    }
+    this.lightningPlasmaContinuationInFlight.add(authorizationId);
+    let unlock=null;
+    const baseEpisode=(decision={})=>({id:authorizationId,systemName:s.systemName,sourceRelease:RELEASE,cohortId:String(s.resetTimestampMs||''),ticker,eventTicker:String(parentShadow.eventTicker||ticker),side:'YES',sport:String(parentShadow.sport||'Unknown'),boltAtMs:Number(parentShadow.closedAtMs||Date.now()),boltSnapshot:{version:LIGHTNING_PLASMA.version,authority:LIGHTNING_PLASMA.strategicEntryAuthority,parentShadowTradeId:parentId},athenaDecision:decision,fireCommand:{},attackSelected:'Lightning Plasma',entryId:null,entryAtMs:null,outcome:{},trackingComplete:false,updatedAtMs:Date.now()});
+    try{
+      if(typeof this.db.acquireHunterTickerLock!=='function')return {status:'BLOCKED',reason:'continuation_lock_unavailable'};
+      unlock=await this.db.acquireHunterTickerLock(s.systemName,`lightning-plasma-continuation:${parentId}`);
+      if(!unlock){stats.duplicateSuppressed+=1;record('DUPLICATE_SUPPRESSED',{authorizationId,scope:'database_lock'});return {status:'DUPLICATE_SUPPRESSED',reason:'database_lock_busy'};}
+      const existing=typeof this.db.opportunityEpisode==='function'?await this.db.opportunityEpisode(authorizationId).catch(()=>null):null;
+      const existingStatus=String(existing?.athenaDecision?.lightningPlasmaContinuation?.status||existing?.athenaDecision?.decision||'');
+      if(existing?.entryId||['OPENED','BLOCKED'].includes(existingStatus)){
+        stats.duplicateSuppressed+=1;record('DUPLICATE_SUPPRESSED',{authorizationId,scope:'durable_episode',existingStatus,entryId:existing?.entryId||null});return {status:'DUPLICATE_SUPPRESSED',reason:'durable_authorization_already_consumed',entryId:existing?.entryId||null};
+      }
+      const authorizedAtMs=Number(existing?.athenaDecision?.lightningPlasmaContinuation?.authorizedAtMs||Date.now());
+      const lineage={version:LIGHTNING_PLASMA.version,status:'AUTHORIZED',terminal:false,authorizationId,parentShadowTradeId:parentId,parentConcept:String(parentShadow.conceptName||''),parentCloseReason:String(parentShadow.closeReason||''),parentRealizedPnlCents:Number(parentShadow.pnlCents||0),parentExitPriceCents:Number(parentShadow.exitPriceCents||0),parentClosedAtMs:Number(parentShadow.closedAtMs||0),sourceCosmo:String(parentShadow.sourceFeeder||''),sourceCosmoTradeId:String(parentShadow.sourceTradeId||''),authorizedAtMs,fullExecutionSafetyRequired:true,normalStrategicDiscoveryBypassed:true,reboundRequired:true};
+      if(existingStatus!=='AUTHORIZED'&&existingStatus!=='WATCHING'){
+        await this.db.upsertOpportunityEpisode(baseEpisode({decision:'AUTHORIZED',reason:'another_dimension_aurora_authorized_lightning_plasma',strategicAuthority:false,lightningPlasmaContinuation:lineage}));
+        stats.authorized+=1;record('AUTHORIZED',{authorizationId});
+      }
+      const watch={authorizationId,parentShadow,authorizedAtMs,ticker,eventTicker:String(parentShadow.eventTicker||ticker)};
+      this.lightningPlasmaWatches.set(authorizationId,watch);
+      return this.attemptLightningPlasmaContinuation(watch);
+    }catch(error){
+      await this.db.audit('error','lightning_plasma_continuation_failed',{authorizationId,parentShadowTradeId:parentId,ticker,message:String(error?.message||error)}).catch(()=>{});
+      stats.blocked+=1;record('BLOCKED',{reason:'continuation_exception',authorizationId});
+      return {status:'BLOCKED',reason:'continuation_exception'};
+    }finally{
+      if(unlock)await unlock().catch(()=>{});
+      this.lightningPlasmaContinuationInFlight.delete(authorizationId);
+    }
+  }
+
+  async attemptLightningPlasmaContinuation(watch) {
+    const stats=this.lightningPlasmaContinuationRuntime();
+    const s=this.settings||{};
+    const authorizationId=String(watch?.authorizationId||'');
+    const parentShadow=watch?.parentShadow;
+    const parentId=String(parentShadow?.id||'');
+    const ticker=String(watch?.ticker||parentShadow?.ticker||'');
+    const record=(status,data={})=>{stats.lastEvent={status,atMs:Date.now(),parentShadowTradeId:parentId,ticker,authorizationId,...data};return stats.lastEvent;};
+    if(!authorizationId||!parentId||!ticker)return {status:'IGNORED',reason:'watch_incomplete'};
+    const windowMs=Math.max(1,Number(s.recoveryTrackingHours||24))*3600000;
+    if(Number(parentShadow.closedAtMs||0)>0 && Date.now()-Number(parentShadow.closedAtMs)>windowMs){
+      this.lightningPlasmaWatches.delete(authorizationId);
+      stats.blocked+=1;record('BLOCKED',{reason:'tracking_window_elapsed'});
+      return {status:'BLOCKED',reason:'tracking_window_elapsed'};
+    }
+    const existing=typeof this.db.opportunityEpisode==='function'?await this.db.opportunityEpisode(authorizationId).catch(()=>null):null;
+    const existingStatus=String(existing?.athenaDecision?.lightningPlasmaContinuation?.status||existing?.athenaDecision?.decision||'');
+    if(existing?.entryId||['OPENED','BLOCKED'].includes(existingStatus)){
+      this.lightningPlasmaWatches.delete(authorizationId);
+      return {status:'DUPLICATE_SUPPRESSED',reason:'durable_authorization_already_consumed',entryId:existing?.entryId||null};
+    }
+    const refreshed=typeof this.market?.refreshTickerVerified==='function'?await this.market.refreshTickerVerified(ticker).catch(()=>null):null;
+    if(!refreshed?.marketFresh||!refreshed?.bookFresh||!refreshed?.quote){
+      stats.watching+=1;record('WATCHING',{reason:'fresh_executable_market_unavailable'});
+      return {status:'WATCHING',reason:'fresh_executable_market_unavailable'};
+    }
+    const q={...refreshed.quote,ticker,eventTicker:String(refreshed.quote.eventTicker||refreshed.quote.ticker||ticker)};
+    const expectedEvent=String(parentShadow.eventTicker||ticker),status=String(q.status||'').toLowerCase();
+    if(String(q.eventTicker||ticker)!==expectedEvent){
+      this.lightningPlasmaWatches.delete(authorizationId);stats.blocked+=1;record('BLOCKED',{reason:'event_identity_mismatch'});
+      await this.db.upsertOpportunityEpisode({...(existing||{}),id:authorizationId,athenaDecision:{decision:'BLOCKED',reason:'event_identity_mismatch',lightningPlasmaContinuation:{status:'BLOCKED',terminal:true,authorizationId}},updatedAtMs:Date.now()}).catch(()=>{});
+      return {status:'BLOCKED',reason:'event_identity_mismatch'};
+    }
+    if(status!=='active'||Boolean(q.result)){
+      this.lightningPlasmaWatches.delete(authorizationId);stats.blocked+=1;record('BLOCKED',{reason:'market_not_active'});
+      await this.db.upsertOpportunityEpisode({...(existing||{}),id:authorizationId,athenaDecision:{decision:'BLOCKED',reason:'market_not_active',lightningPlasmaContinuation:{status:'BLOCKED',terminal:true,authorizationId}},updatedAtMs:Date.now()}).catch(()=>{});
+      return {status:'BLOCKED',reason:'market_not_active'};
+    }
+    const signal=plasmaSignalState(parentShadow,q,null,s,Number(parentShadow.exitPriceCents||0));
+    if(!signal.qualified){
+      stats.watching+=1;record('WATCHING',{reason:signal.reason,bidCents:signal.bidCents,troughCents:signal.troughCents,reboundCents:signal.reboundCents});
+      await this.db.upsertOpportunityEpisode({...(existing||{}),id:authorizationId,athenaDecision:{decision:'WATCHING',reason:signal.reason,lightningPlasmaContinuation:{status:'WATCHING',terminal:false,authorizationId,reboundCents:signal.reboundCents,troughCents:signal.troughCents}},updatedAtMs:Date.now()}).catch(()=>{});
+      return {status:'WATCHING',reason:signal.reason};
+    }
+    stats.attempted+=1;record('ATTEMPTED',{authorizationId,bidCents:signal.bidCents,askCents:signal.askCents,reboundCents:signal.reboundCents});
+    const opened=await this.strategy.executeLightningPlasmaContinuation(q,parentShadow,{authorizationId,authorizedAtMs:Number(watch.authorizedAtMs||Date.now()),recoveryContext:{troughCents:signal.troughCents,reboundCents:signal.reboundCents}});
+    if(!opened){
+      stats.watching+=1;record('WATCHING',{reason:'hard_safety_or_execution_blocked'});
+      return {status:'WATCHING',reason:'hard_safety_or_execution_blocked'};
+    }
+    this.lightningPlasmaWatches.delete(authorizationId);
+    stats.opened+=1;record('OPENED',{authorizationId,entryId:opened.id,entryPriceCents:Number(opened.entryPriceCents||0)});
+    const parentDurable=typeof this.db?.entryById==='function'?await this.db.entryById(parentId).catch(()=>null):parentShadow;
+    if(parentDurable&&typeof this.db?.updateEntry==='function'){
+      const feederState={...(parentDurable.feederState||parentShadow.feederState||{}),universe:'Gemini',lightningPlasmaEntryId:opened.id,lightningPlasmaOpenedAtMs:Number(opened.openedAtMs||Date.now()),lightningPlasmaAuthorizationId:authorizationId};
+      await this.db.updateEntry(parentId,{feederState,updatedAtMs:Date.now()}).catch(()=>{});
+      this.rememberAnotherDimension({...parentDurable,feederState,updatedAtMs:Date.now()});
+    }
+    const openedDecision={decision:'OPENED',reason:'lightning_plasma_continuation_opened',strategicAuthority:false,lightningPlasmaContinuation:{version:LIGHTNING_PLASMA.version,status:'OPENED',terminal:true,authorizationId,parentShadowTradeId:parentId,repeatIndex:1,maxRepeats:1,entryId:opened.id,entryAtMs:Number(opened.openedAtMs||Date.now()),entryPriceCents:Number(opened.entryPriceCents||0)}};
+    await this.db.upsertOpportunityEpisode({id:authorizationId,systemName:s.systemName,sourceRelease:RELEASE,cohortId:String(s.resetTimestampMs||''),ticker,eventTicker:String(parentShadow.eventTicker||ticker),side:'YES',sport:String(parentShadow.sport||'Unknown'),athenaDecision:openedDecision,fireCommand:structuredClone(opened.entryConfig?.athenaFire||{}),attackSelected:'Lightning Plasma',entryId:opened.id,entryAtMs:Number(opened.openedAtMs||Date.now()),updatedAtMs:Date.now()}).catch(()=>{});
+    await this.db.audit('info','lightning_plasma_continuation_opened',{authorizationId,parentShadowTradeId:parentId,ticker,entryId:opened.id,entryPriceCents:Number(opened.entryPriceCents||0),reboundCents:Number(opened.entryConfig?.lightningPlasmaContinuation?.reboundCents||0),closeToEntryLatencyMs:Math.max(0,Number(opened.openedAtMs||Date.now())-Number(parentShadow.closedAtMs||watch.authorizedAtMs||0))}).catch(()=>{});
+    return {status:'OPENED',authorizationId,entry:opened};
+  }
+
   async init() {
     await this.db.init();
     const loadedSettings = await this.db.loadSettings(freshInstallSettings());
@@ -1016,7 +1171,10 @@ export class SagittariusEngine {
           void this.db.audit('error','another_dimension_quote_observer',{ticker:q?.ticker||null,message:String(error?.message||error)}).catch(()=>{});
         }
         this.queueAthenaOpportunityEvaluation(q?.ticker);
-        if(q?.ticker)this.queueCrystalWallWatch(q.ticker);
+        if(q?.ticker){
+          this.queueCrystalWallWatch(q.ticker);
+          this.queueLightningPlasmaWatch(q.ticker);
+        }
       },
       onPrivate: () => this.queueReconcile(),
     });
@@ -1089,7 +1247,10 @@ export class SagittariusEngine {
         this.rememberAnotherDimension(entry);
         this.anotherDimensionRuntime.delete(String(entry?.id||''));
         if(Number(entry?.pnlCents||0)>0&&String(entry?.closeReason||'')===ANOTHER_DIMENSION.profitableCloseReason){this.anotherDimensionStats.profitClosed+=1;this.queueJusticeArrowContinuation(entry);}
-        else if(entry?.status==='closed')this.anotherDimensionStats.lossClosed+=1;
+        else if(entry?.status==='closed'){
+          this.anotherDimensionStats.lossClosed+=1;
+          if(String(entry?.closeReason||'')===ANOTHER_DIMENSION.lossCloseReason)this.queueLightningPlasmaContinuation(entry);
+        }
         if(entry?.status==='closed')this.anotherDimensionStats.realizedPnlCents=Number(this.anotherDimensionStats.realizedPnlCents||0)+Number(entry?.pnlCents||0);
         this.anotherDimensionStats.lastEvent={status:'CLOSED',atMs:Date.now(),entryId:entry?.id||null,ticker:entry?.ticker||null,closeReason:entry?.closeReason||null,pnlCents:Number(entry?.pnlCents||0)};
         this.invalidateStateSnapshot();
@@ -1426,7 +1587,10 @@ export class SagittariusEngine {
         }catch(error){await this.db.audit('warning','athena_gold_saint_vote_failed',{boltId:bolt.id,ticker:q.ticker,concept:decision.selectedAttack,message:String(error?.message||error)}).catch(()=>{});}
       }
       let plasmaReservation=null;
-      if(decision.selectedAttack==='Lightning Plasma'){
+      if(decision.selectedAttack==='Lightning Plasma'&&String(decision.fireCommand?.authorityMode||decision.authorityMode||'')!==LIGHTNING_PLASMA.strategicEntryAuthority){
+        // LP2 continuation never enters this Cosmo GREEN loop. Any ordinary
+        // Athena selection of Plasma is the retired LP1 field path and must
+        // fail closed instead of opening a first-entry strike.
         if(fieldContext.lightningPlasmaQualified!==true||fieldContext.currentTickerEligible!==true||!fieldId||Number(fieldExpiresAtMs)<=Date.now()){
           await this.db.audit('info','athena_fire_execution_aborted',{boltId:bolt.id,ticker:q.ticker,concept:'Lightning Plasma',reason:'lightning_plasma_field_no_longer_executable',fieldId,independentEventCount:fieldContext.independentEventCount}).catch(()=>{});
           this.recordEntryCandidateStage({candidateId,boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'EXECUTION_BLOCKED',status:'BLOCKED',reason:'lightning_plasma_field_no_longer_executable'});
@@ -2705,7 +2869,6 @@ export class SagittariusEngine {
       this.settings.momentumHunterEnabled === true ? 'Momentum Hunter' : null,
       this.settings.waveSurferEnabled === true ? 'Wave Surfer' : null,
       this.settings.crashRecoveryHunterEnabled === true ? 'Crash Recovery Hunter' : null,
-      this.settings.lightningPlasmaEnabled === true ? 'Lightning Plasma' : null,
       this.settings.athenaExclamationEnabled === true ? 'Athena Exclamation' : null,
     ].filter(Boolean);
     const executionGate = this.entryExecutionGate();
@@ -2720,10 +2883,11 @@ export class SagittariusEngine {
     ].filter(Boolean);
     if (this.settings.athenaExclamationEnabled===true && enabledGoldSaints.length<3) entryPathWarnings.push('Athena Exclamation is enabled but fewer than three Gold Saint Attacks are enabled');
     if (this.settings.recoveryHunterEnabled === true) entryPathWarnings.push('Recovery Hunter is follow-on only and requires an eligible stopped Hunter source');
+    if (this.settings.lightningPlasmaEnabled === true) entryPathWarnings.push('Lightning Plasma is follow-on only and requires an Another Dimension aurora loss');
     if (!initialExposureEnabled.length) entryPathWarnings.push('No currently enabled configuration can create an initial real Hunter exposure');
     if (referenceGate.allowed && !executionGate.allowed) entryPathWarnings.push(`Real Hunter execution blocked by ${executionGate.reason}; reference feeders remain active`);
     const entryPathConfiguration = {
-      version:'EPC11-R63', authorityChain:'GAME_CLOCK->COSMO_SHADOW->COSMO_GREEN->ATOMIC_THUNDER_BOLT->ATHENA->ATTACK->INFINITY_BREAK/AURORA + PROFIT_CLOSE->SCARLET_NEEDLE->HARD_SAFETY->INFINITY_BREAK/AURORA + COSMO_SHADOW->GEMINI->ANOTHER_DIMENSION->PLUS_ONE_NET_SHADOW_CLOSE->SAGITTARIUS_JUSTICE_ARROW->HARD_SAFETY->ATHENA_X1/AURORA', noBoltNoAttack:true, noBoltNoAttackExceptions:['SCARLET_NEEDLE_POST_PROFIT_CONTINUATION','SAGITTARIUS_JUSTICE_ARROW_POST_SHADOW_WIN','CRYSTAL_WALL_POST_STOP_CONTINUATION'], cosmoGreenRequired:true, initialExposureEnabled, scarletNeedleContinuationEnabled:this.settings.scarletNeedleEnabled===true&&Number(this.settings.scarletNeedleMaxRepeats||0)>0, geminiEnabled:this.settings.geminiEnabled===true, anotherDimensionAttackEnabled:this.settings.geminiEnabled===true, justiceArrowContinuationEnabled:this.settings.justiceArrowEnabled===true, crystalWallContinuationEnabled:this.settings.recoveryHunterEnabled===true, recoveryFollowOnEnabled:this.settings.recoveryHunterEnabled === true, warnings:entryPathWarnings,
+      version:'EPC11-R63', authorityChain:'GAME_CLOCK->COSMO_SHADOW->COSMO_GREEN->ATOMIC_THUNDER_BOLT->ATHENA->ATTACK->INFINITY_BREAK/AURORA + PROFIT_CLOSE->SCARLET_NEEDLE->HARD_SAFETY->INFINITY_BREAK/AURORA + COSMO_SHADOW->GEMINI->ANOTHER_DIMENSION->PLUS_ONE_NET_SHADOW_CLOSE->SAGITTARIUS_JUSTICE_ARROW->HARD_SAFETY->ATHENA_X1/AURORA + ANOTHER_DIMENSION_AURORA->LIGHTNING_PLASMA->REBOUND->HARD_SAFETY->INFINITY_BREAK/AURORA + HARD_STOP_LOSS->CRYSTAL_WALL->REBOUND->HARD_SAFETY->INFINITY_BREAK/AURORA', noBoltNoAttack:true, noBoltNoAttackExceptions:['SCARLET_NEEDLE_POST_PROFIT_CONTINUATION','SAGITTARIUS_JUSTICE_ARROW_POST_SHADOW_WIN','CRYSTAL_WALL_POST_STOP_CONTINUATION','LIGHTNING_PLASMA_POST_SHADOW_LOSS'], cosmoGreenRequired:true, initialExposureEnabled, scarletNeedleContinuationEnabled:this.settings.scarletNeedleEnabled===true&&Number(this.settings.scarletNeedleMaxRepeats||0)>0, geminiEnabled:this.settings.geminiEnabled===true, anotherDimensionAttackEnabled:this.settings.geminiEnabled===true, justiceArrowContinuationEnabled:this.settings.justiceArrowEnabled===true, crystalWallContinuationEnabled:this.settings.recoveryHunterEnabled===true, lightningPlasmaContinuationEnabled:this.settings.lightningPlasmaEnabled===true, recoveryFollowOnEnabled:this.settings.recoveryHunterEnabled === true, warnings:entryPathWarnings,
       entryModeIsolation:'EMI1', referenceSignalEvaluationActive:referenceGate.allowed,
       realHunterExecutionAuthorized:executionGate.allowed, executionGateReason:executionGate.reason,
     };
@@ -3016,11 +3180,14 @@ export class SagittariusEngine {
         scarletNeedleMaxRepeats:Number(this.settings.scarletNeedleMaxRepeats??SCARLET_NEEDLE.defaultMaxRepeats),
         scarletNeedleRetracementTriggerEnabled:false,
         scarletNeedleContinuation:{...(this.scarletContinuationStats||{})},
-        noBoltNoAttackExceptions:['SCARLET_NEEDLE_POST_PROFIT_CONTINUATION','SAGITTARIUS_JUSTICE_ARROW_POST_SHADOW_WIN','CRYSTAL_WALL_POST_STOP_CONTINUATION'],
+        noBoltNoAttackExceptions:['SCARLET_NEEDLE_POST_PROFIT_CONTINUATION','SAGITTARIUS_JUSTICE_ARROW_POST_SHADOW_WIN','CRYSTAL_WALL_POST_STOP_CONTINUATION','LIGHTNING_PLASMA_POST_SHADOW_LOSS'],
         crystalWall:CRYSTAL_WALL.version,
         crystalWallContinuationAuthority:true,
         crystalWallTrigger:CRYSTAL_WALL.trigger,
         crystalWallContinuation:{...(this.crystalWallContinuationStats||{})},
+        lightningPlasmaContinuationAuthority:true,
+        lightningPlasmaTrigger:LIGHTNING_PLASMA.trigger,
+        lightningPlasmaContinuation:{...(this.lightningPlasmaContinuationStats||{})},
         cosmoRouting: COSMO_ROUTING.version,
         cosmoRoutingRole: COSMO_ROUTING.role,
         cosmoRoutingInitialEntryConsumers: [...COSMO_ROUTING.currentInitialEntryConsumers],

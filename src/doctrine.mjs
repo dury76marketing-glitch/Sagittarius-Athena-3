@@ -150,8 +150,8 @@ export const COSMO_ROUTING = Object.freeze({
   version:'COSMO-ROUTING-V1',
   role:'shared_reference_opportunity_bus',
   activeCosmos:Object.freeze(['Pegasus','Dragon','Phoenix']),
-  currentInitialEntryConsumers:Object.freeze(['Momentum Hunter','Wave Surfer','Crash Recovery Hunter','Lightning Plasma']),
-  followOnOnlyExceptions:Object.freeze(['Recovery Hunter']),
+  currentInitialEntryConsumers:Object.freeze(['Momentum Hunter','Wave Surfer','Crash Recovery Hunter']),
+  followOnOnlyExceptions:Object.freeze(['Recovery Hunter','Lightning Plasma']),
   defaultFutureInitialEntryConsumer:true,
   sourceDoesNotAuthorizeEntry:true,
   attackDoctrineRevalidationRequired:false,
@@ -252,15 +252,35 @@ export const CRYSTAL_WALL = Object.freeze({
   noPostEntryTimeExit:true,
 });
 
-// R46/R55 LP1 Lightning Plasma. A field is formed from a burst of independent
-// active Cosmos (Pegasus/Dragon/Phoenix), but every strike is still an ordinary real Hunter
-// execution that independently re-proves GCA2, executable depth, Athena,
-// ownership, capital and protection doctrine. The field budget is shared
-// across strikes; it is never multiplied per strike.
+// R65 LP2 Lightning Plasma. The vacant Gemini square: after Another Dimension
+// loses (`another_dimension_aurora`), one real same-ticker Plasma may fire.
+// Cosmo GREEN / LP1 field saturation cannot arm it. The AD stop print is not
+// the entry. Execution waits for a confirmed rebound off the post-loss trough.
 export const LIGHTNING_PLASMA = Object.freeze({
-  version:'LIGHTNING-PLASMA-V1',
-  policyRevision:'LP1-R2-INDEPENDENT-COSMO-FIELD-AUTHORITY',
-  role:'multi_market_cosmo_saturation_attack',
+  version:'LIGHTNING-PLASMA-V2',
+  policyRevision:'LP2-R1-POST-AD-LOSS-REBOUND-CONTINUATION',
+  role:'post_another_dimension_loss_same_ticker_continuation_attack',
+  conceptName:'Lightning Plasma',
+  trigger:'POST_LOSS_ANOTHER_DIMENSION_CLOSE',
+  triggerRequiresAuroraLoss:true,
+  sameExactTicker:true,
+  sameSide:true,
+  normalStrategicDiscoveryBypass:true,
+  ordinaryCooldownExempt:true,
+  fullExecutionSafetyRequired:true,
+  defaultMaxRepeats:1,
+  maximumConfigurableRepeats:1,
+  parentCannotBeSelf:true,
+  reboundRequired:true,
+  reboundOrigin:'post_ad_loss_trough',
+  reboundPrice:'best_bid',
+  minReboundCents:RECOVERY.minReboundCents,
+  sourceDoesNotAuthorizeEntry:true,
+  strategicEntryAuthority:'LIGHTNING_PLASMA_POST_SHADOW_LOSS',
+  profitAuthority:'INFINITY_BREAK',
+  lossAuthority:'AURORA_EXECUTION',
+  noPostEntryTimeExit:true,
+  // Retired LP1 field metadata retained for diagnostics/settings compatibility.
   fieldWindowMs:10_000,
   fieldQuietMs:1_000,
   minCosmos:3,
@@ -275,8 +295,7 @@ export const LIGHTNING_PLASMA = Object.freeze({
   maxChaseCents:4,
   oneStrikePerEvent:true,
   sourceCosmos:Object.freeze(['Pegasus','Dragon','Phoenix']),
-  sourceDoesNotAuthorizeEntry:true,
-  liveAuthority:'ATHENA_FIRE_PLUS_HARD_EXECUTION_SAFETY',
+  liveAuthority:'CONTINUATION_FIRE_PLUS_HARD_EXECUTION_SAFETY',
 });
 
 // R45 Aurora Execution. New Hunters receive a position-specific frozen Danger

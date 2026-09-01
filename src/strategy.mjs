@@ -168,7 +168,7 @@ export function validateAthenaFireCommand(command,{concept,q,settings,now=Date.n
   if(!(expires>=decided)||Number(now)>expires)return{ok:false,reason:'athena_fire_expired'};
   const envelope=hunterEntryEnvelope(settings,concept);if(!envelope)return{ok:false,reason:'unknown_attack'};
   const configuredStake=attackConfiguredStakeCents(settings,concept);const commandedStake=Number(command.stakeCents||0);if(!(configuredStake>0)||!(commandedStake>0))return{ok:false,reason:'athena_fire_stake_invalid',expectedStakeCents:configuredStake};
-  if(concept==='Lightning Plasma'){if(Math.abs(Number(command.fieldBudgetCents)-configuredStake)>1e-9||commandedStake-configuredStake>1e-9)return{ok:false,reason:'athena_fire_plasma_budget_mismatch',expectedFieldBudgetCents:configuredStake};const maxRays=Math.max(1,Math.floor(Number(settings?.lightningPlasmaMaxStrikes||1)));if(Number(command.maxRays)!==maxRays)return{ok:false,reason:'athena_fire_plasma_rays_changed',expectedMaxRays:maxRays};}
+  if(concept==='Lightning Plasma'&&String(command.authorityMode||'')!==LIGHTNING_PLASMA.strategicEntryAuthority){if(Math.abs(Number(command.fieldBudgetCents)-configuredStake)>1e-9||commandedStake-configuredStake>1e-9)return{ok:false,reason:'athena_fire_plasma_budget_mismatch',expectedFieldBudgetCents:configuredStake};const maxRays=Math.max(1,Math.floor(Number(settings?.lightningPlasmaMaxStrikes||1)));if(Number(command.maxRays)!==maxRays)return{ok:false,reason:'athena_fire_plasma_rays_changed',expectedMaxRays:maxRays};}
   else if(Math.abs(commandedStake-configuredStake)>1e-9)return{ok:false,reason:'athena_fire_stake_mismatch',expectedStakeCents:configuredStake};
   if(Number(command.operatorMinEntryCents)!==Number(envelope.minEntryCents)||Number(command.operatorMaxEntryCents)!==Number(envelope.maxEntryCents))return{ok:false,reason:'athena_fire_operator_band_changed'};
   const ask=Number(q?.yesAsk||0),bid=Number(q?.yesBid||0),maxAuthorized=Number(command.authorizedMaxEntryCents||0);
@@ -185,6 +185,7 @@ export function validateAthenaFireCommand(command,{concept,q,settings,now=Date.n
   if(Math.abs(commandedTarget-configuredTarget)>1e-9)return{ok:false,reason:'athena_economic_target_changed',commandedTargetNetPerOriginalContractCents:commandedTarget,configuredTargetNetPerOriginalContractCents:configuredTarget};
   if(Number(command?.economicTarget?.requiredTargetBidCents)>99)return{ok:false,reason:'athena_economic_target_unreachable'};
   if(concept==='Recovery Hunter'&&!command?.decisionEvidence?.recoveryContext&&!command?.recoveryContext)return{ok:false,reason:'crystal_wall_recovery_context_missing'};
+  if(concept==='Lightning Plasma'&&String(command.authorityMode||'')===LIGHTNING_PLASMA.strategicEntryAuthority&&!command?.decisionEvidence?.lightningPlasmaContinuation)return{ok:false,reason:'lightning_plasma_continuation_missing'};
   return{ok:true,reason:'athena_fire_valid',envelope,stakeCents:commandedStake,configuredStakeCents:configuredStake,authorizedMaxEntryCents:maxAuthorized,economicTargetNetPerOriginalContractCents:commandedTarget};
 }
 
@@ -200,6 +201,28 @@ export function recoverySignalState(loss, q, observation, settings, runtimeTroug
   const minRebound = Number(settings?.recoveryMinReboundCents ?? RECOVERY.minReboundCents);
   const minEntry = Number(settings?.recoveryMinEntryCents ?? RECOVERY.minEntryCents);
   const maxEntry = Number(settings?.recoveryMaxEntryCents ?? RECOVERY.maxEntryCents);
+  const status = String(q?.status || '').toLowerCase();
+  const final = Boolean(q?.result) || FINAL_MARKET_STATUSES.has(status);
+  let reason = 'qualified';
+  if (!q || bid <= 0 || ask <= 0) reason = 'quote_unavailable';
+  else if (final) reason = 'market_final';
+  else if (ask < minEntry || ask > maxEntry) reason = 'outside_entry_band';
+  else if (rebound + 1e-9 < minRebound) reason = 'rebound_not_confirmed';
+  return { qualified: reason === 'qualified', reason, bidCents:bid, askCents:ask, troughCents:trough, reboundCents:rebound, minReboundCents:minRebound, minEntryCents:minEntry, maxEntryCents:maxEntry };
+}
+
+export function plasmaSignalState(loss, q, observation, settings, runtimeTroughCents = null) {
+  const bid = Number(q?.yesBid || 0);
+  const ask = Number(q?.yesAsk || 0);
+  const exit = Number(loss?.exitPriceCents || 0);
+  const persistedTrough = Number(observation?.trough_cents);
+  const priorRuntimeTrough = Number(runtimeTroughCents);
+  const troughCandidates = [exit, persistedTrough, priorRuntimeTrough, bid].filter((v) => Number.isFinite(v) && v > 0);
+  const trough = troughCandidates.length ? Math.min(...troughCandidates) : 0;
+  const rebound = bid > 0 && trough > 0 ? Math.max(0, bid - trough) : 0;
+  const minRebound = Number(settings?.lightningPlasmaMinReboundCents ?? LIGHTNING_PLASMA.minReboundCents);
+  const minEntry = Number(settings?.lightningPlasmaMinEntryCents ?? LIGHTNING_PLASMA.minEntryCents);
+  const maxEntry = Number(settings?.lightningPlasmaMaxEntryCents ?? LIGHTNING_PLASMA.maxEntryCents);
   const status = String(q?.status || '').toLowerCase();
   const final = Boolean(q?.result) || FINAL_MARKET_STATUSES.has(status);
   let reason = 'qualified';
@@ -315,16 +338,17 @@ export function entryConfigSnapshot(settings, conceptName, sourceFeeder = null, 
     'Scarlet Needle':{stake:Number(settings.scarletNeedleStakeCents),min:Number(settings.scarletNeedleMinEntryCents),max:Number(settings.scarletNeedleMaxEntryCents),structuralRole:'POST_PROFIT_CONTINUATION_ONLY',maxRepeats:Math.max(0,Math.min(SCARLET_NEEDLE.maximumConfigurableRepeats,Math.floor(Number(settings.scarletNeedleMaxRepeats??SCARLET_NEEDLE.defaultMaxRepeats))))},
     'Sagittarius Justice Arrow':{stake:Number(settings.justiceArrowStakeCents),min:Number(settings.justiceArrowMinEntryCents),max:Number(settings.justiceArrowMaxEntryCents),structuralRole:'POST_ANOTHER_DIMENSION_VICTORY_ONLY'},
     'Athena Exclamation':{stake:Number(settings.athenaExclamationStakeCents),min:Number(settings.athenaExclamationMinEntryCents),max:Number(settings.athenaExclamationMaxEntryCents),structuralRole:'ATHENA_SUBORDINATE_META_EXECUTION'},
-    'Lightning Plasma':{stake:Number(settings.lightningPlasmaFieldStakeCents),min:Number(settings.lightningPlasmaMinEntryCents),max:Number(settings.lightningPlasmaMaxEntryCents),maxStrikes:Math.max(1,Math.floor(Number(settings.lightningPlasmaMaxStrikes)||1)),fieldBudgetSharedAcrossStrikes:true,oneStrikePerEvent:true},
+    'Lightning Plasma':{stake:Number(settings.lightningPlasmaFieldStakeCents),min:Number(settings.lightningPlasmaMinEntryCents),max:Number(settings.lightningPlasmaMaxEntryCents),structuralRole:'FOLLOW_ON_GEMINI_LOSS_ONLY'},
   };
   const attack=attackMap[conceptName]||null;
   const scarletContinuation=conceptName==='Scarlet Needle';
   const justiceContinuation=conceptName==='Sagittarius Justice Arrow';
   const crystalWallContinuation=conceptName==='Recovery Hunter';
+  const lightningPlasmaContinuation=conceptName==='Lightning Plasma';
   return {
     release:RELEASE,
-    authorityChain:justiceContinuation?'ANOTHER_DIMENSION_WIN->SAGITTARIUS_JUSTICE_ARROW->HARD_EXECUTION_SAFETY->ATHENA_X1/AURORA':scarletContinuation?'PROFITABLE_CLOSE->SCARLET_NEEDLE->HARD_EXECUTION_SAFETY->INFINITY_BREAK/AURORA':crystalWallContinuation?'HARD_STOP_LOSS->CRYSTAL_WALL->REBOUND->HARD_EXECUTION_SAFETY->INFINITY_BREAK/AURORA':'COSMO_SHADOW->COSMO_GREEN->ATOMIC_THUNDER_BOLT->ATHENA->ATTACK->INFINITY_BREAK/AURORA',
-    strategicEntryAuthority:justiceContinuation?SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority:scarletContinuation?SCARLET_NEEDLE.strategicEntryAuthority:crystalWallContinuation?CRYSTAL_WALL.strategicEntryAuthority:ATHENA_COMMANDER.version,
+    authorityChain:justiceContinuation?'ANOTHER_DIMENSION_WIN->SAGITTARIUS_JUSTICE_ARROW->HARD_EXECUTION_SAFETY->ATHENA_X1/AURORA':scarletContinuation?'PROFITABLE_CLOSE->SCARLET_NEEDLE->HARD_EXECUTION_SAFETY->INFINITY_BREAK/AURORA':crystalWallContinuation?'HARD_STOP_LOSS->CRYSTAL_WALL->REBOUND->HARD_EXECUTION_SAFETY->INFINITY_BREAK/AURORA':lightningPlasmaContinuation?'ANOTHER_DIMENSION_LOSS->LIGHTNING_PLASMA->REBOUND->HARD_EXECUTION_SAFETY->INFINITY_BREAK/AURORA':'COSMO_SHADOW->COSMO_GREEN->ATOMIC_THUNDER_BOLT->ATHENA->ATTACK->INFINITY_BREAK/AURORA',
+    strategicEntryAuthority:justiceContinuation?SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority:scarletContinuation?SCARLET_NEEDLE.strategicEntryAuthority:crystalWallContinuation?CRYSTAL_WALL.strategicEntryAuthority:lightningPlasmaContinuation?LIGHTNING_PLASMA.strategicEntryAuthority:ATHENA_COMMANDER.version,
     profitAuthority:justiceContinuation?ATHENA_EXIT_INTELLIGENCE.version:(PORTFOLIO_CONCEPTS.has(conceptName)?INFINITY_BREAK.version:null),
     profitAuthorityRevision:justiceContinuation?ATHENA_EXIT_INTELLIGENCE.policyRevision:(PORTFOLIO_CONCEPTS.has(conceptName)?INFINITY_BREAK.policyRevision:null),
     lossAuthority:PORTFOLIO_CONCEPTS.has(conceptName)?AURORA_EXECUTION.lossAuthority:null,
@@ -562,6 +586,27 @@ function justiceArrowEconomicTarget({askCents=0,stakeCents=0,settings={}}={}){
   }
   const requiredTargetBidCents=Math.ceil(targetBid-1e-9);
   return{version:'JUSTICE-ARROW-ATHENA-X1-ECONOMIC-TARGET-V1',authorityMode:SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority,profitAuthority:ATHENA_EXIT_INTELLIGENCE.version,netPerOriginalContractCents:target,requiredTargetBidCents,requiredGrossMoveCents:requiredTargetBidCents-ask,estimatedEntryFeePerContractCents:Number(entryFeePerContract.toFixed(6)),estimatedExitFeePerContractCents:Number(exitFeePerContract.toFixed(6)),targetFeasibilityScore:requiredTargetBidCents<=99?100:0,targetFeasible:requiredTargetBidCents<=99};
+}
+
+function lightningPlasmaContinuationEconomicTarget({askCents=0,stakeCents=0,settings={}}={}) {
+  const ask=Math.max(1,Number(askCents)||0),stake=Math.max(1,Number(stakeCents)||0);
+  const target=Math.max(0.01,Number(settings.infinityBreakMinNetPerOriginalContractCents??INFINITY_BREAK.defaultMinimumNetPerOriginalContractCents));
+  const count=Math.max(1,Math.floor(stake/ask));
+  let entryFeePerContract=0,exitFeePerContract=0,targetBid=ask+target;
+  if(String(settings.mode||'SIMULATION').toUpperCase()==='LIVE'){
+    entryFeePerContract=kalshiGeneralTakerFeeEstimateCents({count,priceCents:ask})/count;
+    for(let i=0;i<3;i+=1){
+      const px=Math.max(1,Math.min(99,Math.ceil(targetBid)));
+      exitFeePerContract=kalshiGeneralTakerFeeEstimateCents({count,priceCents:px})/count;
+      targetBid=ask+target+entryFeePerContract+exitFeePerContract;
+    }
+  }else{
+    entryFeePerContract=Math.max(0,Number(settings.simFeeCents||0));
+    exitFeePerContract=entryFeePerContract;
+    targetBid=ask+target+entryFeePerContract+exitFeePerContract;
+  }
+  const requiredTargetBidCents=Math.ceil(targetBid-1e-9);
+  return{version:'LIGHTNING-PLASMA-CONTINUATION-ECONOMIC-TARGET-V1',authorityMode:LIGHTNING_PLASMA.strategicEntryAuthority,netPerOriginalContractCents:target,requiredTargetBidCents,requiredGrossMoveCents:requiredTargetBidCents-ask,estimatedEntryFeePerContractCents:Number(entryFeePerContract.toFixed(6)),estimatedExitFeePerContractCents:Number(exitFeePerContract.toFixed(6)),targetFeasibilityScore:requiredTargetBidCents<=99?100:0,targetFeasible:requiredTargetBidCents<=99};
 }
 
 export class StrategyEngine {
@@ -1427,6 +1472,18 @@ export class StrategyEngine {
           await this.audit('crystal_wall_continuation_execution_blocked',{concept,ticker:q.ticker,eventTicker:expectedEventTicker,reason:'crystal_wall_authority_attack_mismatch'});
           return null;
         }
+        const plasmaAuthorityMode=String(athenaFireCommand?.authorityMode||'')===LIGHTNING_PLASMA.strategicEntryAuthority;
+        const plasmaLineage=athenaFireCommand?.decisionEvidence?.lightningPlasmaContinuation;
+        if(concept==='Lightning Plasma'&&(!plasmaAuthorityMode||!plasmaLineage?.authorizationId||!plasmaLineage?.parentShadowTradeId)){
+          trace('FIRE_EXECUTION_ENVELOPE','BLOCKED','lightning_plasma_continuation_authority_required');
+          await this.audit('lightning_plasma_continuation_execution_blocked',{concept,ticker:q.ticker,eventTicker:expectedEventTicker,reason:'lightning_plasma_continuation_authority_required'});
+          return null;
+        }
+        if(concept!=='Lightning Plasma'&&plasmaAuthorityMode){
+          trace('FIRE_EXECUTION_ENVELOPE','BLOCKED','lightning_plasma_authority_attack_mismatch');
+          await this.audit('lightning_plasma_continuation_execution_blocked',{concept,ticker:q.ticker,eventTicker:expectedEventTicker,reason:'lightning_plasma_authority_attack_mismatch'});
+          return null;
+        }
         const freshFire=validateAthenaFireCommand(athenaFireCommand,{concept,q:executionQuote,settings:s,now:Date.now()});
         if(!freshFire.ok){
           trace('FIRE_EXECUTION_ENVELOPE','BLOCKED',freshFire.reason,freshFire);
@@ -1442,6 +1499,7 @@ export class StrategyEngine {
           return null;
         }
         if(concept==='Recovery Hunter'&&!recoverySourceSnapshot){trace('FIRE_EXECUTION_ENVELOPE','BLOCKED','crystal_wall_recovery_source_missing');return null;}
+        if(concept==='Lightning Plasma'&&!plasmaLineage?.parentShadowTradeId){trace('FIRE_EXECUTION_ENVELOPE','BLOCKED','lightning_plasma_parent_missing');return null;}
         trace('FIRE_EXECUTION_ENVELOPE','PASS','athena_command_still_executable',{boltId:athenaFireCommand.boltId});
       }else{
         const doctrineValidation=await this.revalidateHunterEntryDoctrine(concept,executionQuote,plan,s,{sourceFeeder,sourceTradeId,recoverySourceSnapshot,crashSourceSnapshot,entryQualificationSnapshot});
@@ -1458,9 +1516,10 @@ export class StrategyEngine {
         const scarletContinuationAuthority=concept==='Scarlet Needle'&&String(athenaFireCommand?.authorityMode||'')==='SCARLET_NEEDLE_POST_PROFIT_CONTINUATION';
         const justiceContinuationAuthority=concept==='Sagittarius Justice Arrow'&&String(athenaFireCommand?.authorityMode||'')===SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority;
         const crystalWallContinuationAuthority=concept==='Recovery Hunter'&&String(athenaFireCommand?.authorityMode||'')===CRYSTAL_WALL.strategicEntryAuthority;
-        const dedicatedContinuationAuthority=scarletContinuationAuthority||justiceContinuationAuthority||crystalWallContinuationAuthority;
-        athenaAssessment={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision:'FIRE',strategicAuthority:!dedicatedContinuationAuthority,executionEnvelopeAuthority:true,authorityMode:scarletContinuationAuthority?SCARLET_NEEDLE.strategicEntryAuthority:justiceContinuationAuthority?SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority:crystalWallContinuationAuthority?CRYSTAL_WALL.strategicEntryAuthority:'ATHENA_A3',boltId:athenaFireCommand.boltId,commandHash:athenaFireCommand.commandHash,selectedAttack:concept,ranking:structuredClone(athenaFireCommand.ranking||[]),decisionEvidence:structuredClone(athenaFireCommand.decisionEvidence||{}),survivalCertificate:null,survivalAuthority:null,legacyB2VetoApplied:false,decidedAtMs:Number(athenaFireCommand.decidedAtMs)};
-        trace('ATHENA','PASS',scarletContinuationAuthority?'scarlet_post_profit_continuation_authority':justiceContinuationAuthority?'justice_arrow_post_shadow_victory_authority':crystalWallContinuationAuthority?'crystal_wall_post_stop_continuation_authority':'supreme_fire_authority',{boltId:athenaFireCommand.boltId,selectedAttack:concept});
+        const lightningPlasmaContinuationAuthority=concept==='Lightning Plasma'&&String(athenaFireCommand?.authorityMode||'')===LIGHTNING_PLASMA.strategicEntryAuthority;
+        const dedicatedContinuationAuthority=scarletContinuationAuthority||justiceContinuationAuthority||crystalWallContinuationAuthority||lightningPlasmaContinuationAuthority;
+        athenaAssessment={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision:'FIRE',strategicAuthority:!dedicatedContinuationAuthority,executionEnvelopeAuthority:true,authorityMode:scarletContinuationAuthority?SCARLET_NEEDLE.strategicEntryAuthority:justiceContinuationAuthority?SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority:crystalWallContinuationAuthority?CRYSTAL_WALL.strategicEntryAuthority:lightningPlasmaContinuationAuthority?LIGHTNING_PLASMA.strategicEntryAuthority:'ATHENA_A3',boltId:athenaFireCommand.boltId,commandHash:athenaFireCommand.commandHash,selectedAttack:concept,ranking:structuredClone(athenaFireCommand.ranking||[]),decisionEvidence:structuredClone(athenaFireCommand.decisionEvidence||{}),survivalCertificate:null,survivalAuthority:null,legacyB2VetoApplied:false,decidedAtMs:Number(athenaFireCommand.decidedAtMs)};
+        trace('ATHENA','PASS',scarletContinuationAuthority?'scarlet_post_profit_continuation_authority':justiceContinuationAuthority?'justice_arrow_post_shadow_victory_authority':crystalWallContinuationAuthority?'crystal_wall_post_stop_continuation_authority':lightningPlasmaContinuationAuthority?'lightning_plasma_post_shadow_loss_authority':'supreme_fire_authority',{boltId:athenaFireCommand.boltId,selectedAttack:concept});
       }else if(this.athena&&typeof this.athena.assess==='function'){
         athenaAssessment=this.athena.assess({conceptName:concept,sourceFeeder,ticker:q.ticker,title:executionQuote.title||q.title||q.ticker,entryPriceCents:Number(executionQuote.yesAsk||0),bidCents:Number(executionQuote.yesBid||0),askCents:Number(executionQuote.yesAsk||0),gameMinutes:confirmedInGameElapsedMinutes(q,Date.now())||0});
         if(athenaAssessment.blocked){trace('ATHENA','BLOCKED',athenaAssessment.reason||'legacy_athena_veto');return null;}
@@ -1555,6 +1614,7 @@ export class StrategyEngine {
       if (concept==='Scarlet Needle' && entryQualificationSnapshot?.scarletContinuation) frozenEntryConfig.scarletContinuation=structuredClone(entryQualificationSnapshot.scarletContinuation);
       if (concept==='Sagittarius Justice Arrow' && entryQualificationSnapshot?.justiceArrowContinuation) frozenEntryConfig.justiceArrowContinuation=structuredClone(entryQualificationSnapshot.justiceArrowContinuation);
       if (concept==='Recovery Hunter' && entryQualificationSnapshot?.crystalWallContinuation) frozenEntryConfig.crystalWallContinuation=structuredClone(entryQualificationSnapshot.crystalWallContinuation);
+      if (concept==='Lightning Plasma' && entryQualificationSnapshot?.lightningPlasmaContinuation) frozenEntryConfig.lightningPlasmaContinuation=structuredClone(entryQualificationSnapshot.lightningPlasmaContinuation);
       if (athenaAssessment && typeof athenaAssessment === 'object') frozenEntryConfig.athena = structuredClone(athenaAssessment);
       if (concept==='Athena Exclamation') frozenEntryConfig.athenaExclamation={version:ATHENA_EXCLAMATION.version,policyRevision:ATHENA_EXCLAMATION.policyRevision,candidate:structuredClone(entryQualificationSnapshot?.candidate||null),primeReview:structuredClone(athenaExclamationReview)};
       frozenEntryConfig.strategyIdentity = {
@@ -1866,6 +1926,63 @@ export class StrategyEngine {
     return this.executeAthenaFire(q,bolt,decision,{cosmos:[],justiceArrowContinuation:lineage,anotherDimensionEntry:parentShadow});
   }
 
+  async executeLightningPlasmaContinuation(q, parentShadow, { authorizationId, authorizedAtMs=Date.now(), recoveryContext=null } = {}) {
+    const s=this.getSettings();
+    if(s.lightningPlasmaEnabled!==true||s.geminiEnabled!==true)return null;
+    if(parentShadow?.conceptName!=='Another Dimension'||parentShadow?.status!=='closed'||Number(parentShadow?.remainingCount||0)>1e-9)return null;
+    if(String(parentShadow?.closeReason||'')!==ANOTHER_DIMENSION.lossCloseReason)return null;
+    if(String(parentShadow?.conceptName||'')==='Lightning Plasma')return null;
+    const ticker=String(q?.ticker||''),parentTicker=String(parentShadow?.ticker||'');
+    if(!ticker||ticker!==parentTicker)return null;
+    const parentSide=String(parentShadow?.side||parentShadow?.entryConfig?.side||'YES').toUpperCase();
+    if(parentSide!=='YES')return null;
+    const ask=Math.max(0,Number(q?.yesAsk||0)),bid=Math.max(0,Number(q?.yesBid||0));
+    if(!(ask>0)||!(bid>0)||bid>ask)return null;
+    const signal=plasmaSignalState(parentShadow,q,null,s,Number(recoveryContext?.troughCents||parentShadow.exitPriceCents||0));
+    if(!signal.qualified)return null;
+    const minEntryCents=Number(s.lightningPlasmaMinEntryCents),maxEntryCents=Number(s.lightningPlasmaMaxEntryCents),stakeCents=Number(s.lightningPlasmaFieldStakeCents);
+    const target=lightningPlasmaContinuationEconomicTarget({askCents:ask,stakeCents,settings:s});
+    if(!target.targetFeasible)return null;
+    const at=Math.max(1,Number(authorizedAtMs)||Date.now());
+    const decidedAt=Date.now();
+    const id=String(authorizationId||`LIGHTNING-PLASMA-CONTINUATION:${parentShadow.id}:1`);
+    const lineage={
+      version:LIGHTNING_PLASMA.version,policyRevision:LIGHTNING_PLASMA.policyRevision,
+      authority:LIGHTNING_PLASMA.strategicEntryAuthority,authorizationId:id,
+      parentShadowTradeId:String(parentShadow.id),parentConcept:String(parentShadow.conceptName||''),
+      sourceCosmo:String(parentShadow.sourceFeeder||parentShadow.entryConfig?.sourceFeeder||''),
+      sourceCosmoTradeId:String(parentShadow.sourceTradeId||parentShadow.entryConfig?.sourceTradeId||''),
+      parentClosedAtMs:Number(parentShadow.closedAtMs||0),parentExitPriceCents:Number(parentShadow.exitPriceCents||0),
+      parentRealizedPnlCents:Number(parentShadow.pnlCents||0),parentCloseReason:String(parentShadow.closeReason||''),
+      authorizedAtMs:at,firedAtMs:decidedAt,sameTicker:true,sameSide:true,ordinaryCooldownBypassed:true,fullExecutionSafetyRequired:true,
+      reboundCents:Number(signal.reboundCents||0),troughCents:Number(signal.troughCents||0),
+      reboundOrigin:LIGHTNING_PLASMA.reboundOrigin,reboundPrice:LIGHTNING_PLASMA.reboundPrice,
+      profitAuthority:INFINITY_BREAK.version,lossAuthority:AURORA_EXECUTION.lossAuthority,
+    };
+    const ranking=[{concept:'Lightning Plasma',displayName:EXECUTION_ATTACK_DISPLAY['Lightning Plasma']?.name||'Lightning Plasma',score:100,authorityMode:LIGHTNING_PLASMA.strategicEntryAuthority,targetFeasible:target.targetFeasible,requiredTargetBidCents:target.requiredTargetBidCents}];
+    const core={
+      version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,
+      authorityMode:LIGHTNING_PLASMA.strategicEntryAuthority,authoritySource:'LOSS_ANOTHER_DIMENSION_CLOSE',
+      strategicSelectionBypassed:true,boltId:id,boltFingerprint:null,systemName:s.systemName,sourceRelease:RELEASE,
+      decidedAtMs:decidedAt,expiresAtMs:decidedAt+5_000,ticker,eventTicker:String(q?.eventTicker||parentShadow?.eventTicker||ticker),side:'YES',
+      selectedAttack:'Lightning Plasma',selectedAttackDisplay:EXECUTION_ATTACK_DISPLAY['Lightning Plasma']?.name||'Lightning Plasma',
+      stakeCents,fieldBudgetCents:null,maxRays:null,operatorMinEntryCents:minEntryCents,operatorMaxEntryCents:maxEntryCents,
+      entryPriceCents:ask,authorizedMaxEntryCents:ask,maxSpreadCents:Number(s.maxSpreadCents??3),auroraDamageControlPercent:Number(s.auroraDamageControlPercent??45),
+      infinityBreakPolicyVersion:INFINITY_BREAK.version,economicTarget:target,survivalCertificate:null,ranking,
+      decisionEvidence:{
+        lightningPlasmaContinuation:lineage,
+        anotherDimensionClose:{entryId:String(parentShadow.id),universe:'Gemini',concept:'Another Dimension',sourceCosmo:lineage.sourceCosmo,sourceCosmoTradeId:lineage.sourceCosmoTradeId,closeReason:String(parentShadow.closeReason||''),realizedPnlCents:Number(parentShadow.pnlCents||0),exitPriceCents:Number(parentShadow.exitPriceCents||0),closedAtMs:Number(parentShadow.closedAtMs||0)},
+        recoveryContext:{troughCents:signal.troughCents,reboundCents:signal.reboundCents,observationId:null},
+        configuredTargetNetPerOriginalContractCents:target.netPerOriginalContractCents,
+        predictiveReVetoAllowed:false,normalStrategicDiscoveryBypassed:true,hardExecutionSafetyStillRequired:true,
+      },
+    };
+    const fireCommand=sealAthenaFireCommand(core);
+    const decision={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision:'FIRE',reason:'lightning_plasma_post_shadow_loss',decidedAtMs:decidedAt,boltId:id,ticker,ranking,selectedAttack:'Lightning Plasma',selectedAttackDisplay:core.selectedAttackDisplay,fireCommand,economicObjective:'POST_SHADOW_LOSS_REBOUND_CONTINUATION',configuredTargetNetPerOriginalContractCents:target.netPerOriginalContractCents,strategicAuthority:false,lightningPlasmaContinuationAuthority:true,durableFireRequired:true,durableFirePersisted:true};
+    const bolt={id,ticker,eventTicker:core.eventTicker,side:'YES',sport:String(parentShadow?.sport||'Unknown'),detectedAtMs:decidedAt,expiresAtMs:core.expiresAtMs,fingerprint:null,features:{bidCents:bid,askCents:ask,sport:String(parentShadow?.sport||'Unknown'),eligibleAttacks:ranking},greenTrigger:null,preBoltClearance:null,authorityMode:LIGHTNING_PLASMA.strategicEntryAuthority};
+    return this.executeAthenaFire(q,bolt,decision,{cosmos:[],lightningPlasmaContinuation:lineage,anotherDimensionEntry:parentShadow,recoveryContext:core.decisionEvidence.recoveryContext});
+  }
+
   async executeAthenaFire(q, bolt, decision, context = {}) {
     const s = this.getSettings();
     const command = decision?.fireCommand;
@@ -1907,7 +2024,8 @@ export class StrategyEngine {
     const scarletContinuation=concept==='Scarlet Needle'?structuredClone(context?.scarletContinuation||command?.decisionEvidence?.scarletContinuation||null):null;
     const justiceArrowContinuation=concept==='Sagittarius Justice Arrow'?structuredClone(context?.justiceArrowContinuation||command?.decisionEvidence?.justiceArrowContinuation||null):null;
     const crystalWallContinuation=concept==='Recovery Hunter'?structuredClone(context?.crystalWallContinuation||command?.decisionEvidence?.crystalWallContinuation||null):null;
-    const anotherDimensionEntry=concept==='Sagittarius Justice Arrow'?(context?.anotherDimensionEntry||null):null;
+    const lightningPlasmaContinuation=concept==='Lightning Plasma'?structuredClone(context?.lightningPlasmaContinuation||command?.decisionEvidence?.lightningPlasmaContinuation||null):null;
+    const anotherDimensionEntry=(concept==='Sagittarius Justice Arrow'||concept==='Lightning Plasma')?(context?.anotherDimensionEntry||null):null;
     if(concept==='Sagittarius Justice Arrow'){
       if(!anotherDimensionEntry?.id||anotherDimensionEntry.conceptName!=='Another Dimension'||String(anotherDimensionEntry.id)!==String(justiceArrowContinuation?.parentShadowTradeId||'')){
         await this.audit('athena_fire_execution_aborted',{boltId:bolt?.id||null,ticker:q?.ticker||null,concept,reason:'another_dimension_source_missing',stage:'structural_eligibility'});
@@ -1915,18 +2033,25 @@ export class StrategyEngine {
       }
       sourceTradeId=anotherDimensionEntry.id;
     }
+    if(concept==='Lightning Plasma'){
+      if(!anotherDimensionEntry?.id||anotherDimensionEntry.conceptName!=='Another Dimension'||String(anotherDimensionEntry.id)!==String(lightningPlasmaContinuation?.parentShadowTradeId||'')||String(anotherDimensionEntry.closeReason||'')!==ANOTHER_DIMENSION.lossCloseReason){
+        await this.audit('athena_fire_execution_aborted',{boltId:bolt?.id||null,ticker:q?.ticker||null,concept,reason:'another_dimension_loss_source_missing',stage:'structural_eligibility'});
+        return null;
+      }
+      sourceTradeId=anotherDimensionEntry.id;
+    }
     const entryQualificationSnapshot = {
-      version:scarletContinuation?'SCARLET-CONTINUATION-Q1':justiceArrowContinuation?'JUSTICE-ARROW-CONTINUATION-Q1':crystalWallContinuation?'CRYSTAL-WALL-CONTINUATION-Q1':'ATHENA-A3-FIRE-Q1',boltId:bolt?.id||command.boltId,commandHash:command.commandHash,selectedAttack:concept,
+      version:scarletContinuation?'SCARLET-CONTINUATION-Q1':justiceArrowContinuation?'JUSTICE-ARROW-CONTINUATION-Q1':crystalWallContinuation?'CRYSTAL-WALL-CONTINUATION-Q1':lightningPlasmaContinuation?'LIGHTNING-PLASMA-CONTINUATION-Q1':'ATHENA-A3-FIRE-Q1',boltId:bolt?.id||command.boltId,commandHash:command.commandHash,selectedAttack:concept,
       operatorBand:{minEntryCents:Number(command.operatorMinEntryCents),maxEntryCents:Number(command.operatorMaxEntryCents)},
       authorizedMaxEntryCents:Number(command.authorizedMaxEntryCents),observedFeatures:structuredClone(command?.decisionEvidence?.features||{}),
       greenTrigger:structuredClone(command?.decisionEvidence?.greenTrigger||bolt?.greenTrigger||null),
       preBoltClearance:structuredClone(command?.decisionEvidence?.preBoltClearance||bolt?.preBoltClearance||null),
       fieldContext:structuredClone(context.fieldContext||command?.decisionEvidence?.fieldContext||null),
       arayashiki:null,
-      scarletNeedle:concept==='Scarlet Needle'?structuredClone(command?.decisionEvidence?.scarletNeedle||null):null,scarletContinuation,justiceArrowContinuation,crystalWallContinuation,observedAtMs:Date.now(),
+      scarletNeedle:concept==='Scarlet Needle'?structuredClone(command?.decisionEvidence?.scarletNeedle||null):null,scarletContinuation,justiceArrowContinuation,crystalWallContinuation,lightningPlasmaContinuation,observedAtMs:Date.now(),
     };
     const e = await this.createHunter(concept,q,Number(command.stakeCents),0,{
-      sourceFeeder:concept==='Sagittarius Justice Arrow'?'Another Dimension':source?.conceptName||null,sourceTradeId,sourceEntryConfig:concept==='Sagittarius Justice Arrow'?anotherDimensionEntry?.entryConfig||null:source?.entryConfig||null,recoverySourceSnapshot,
+      sourceFeeder:(concept==='Sagittarius Justice Arrow'||concept==='Lightning Plasma')?'Another Dimension':source?.conceptName||null,sourceTradeId,sourceEntryConfig:(concept==='Sagittarius Justice Arrow'||concept==='Lightning Plasma')?anotherDimensionEntry?.entryConfig||null:source?.entryConfig||null,recoverySourceSnapshot,
       crashSourceSnapshot:context.crashSignal?structuredClone(context.crashSignal):null,entryQualificationSnapshot,athenaFireCommand:command,legacyCompatibility:false,
     });
     if (e && typeof this.db?.upsertOpportunityEpisode === 'function') {

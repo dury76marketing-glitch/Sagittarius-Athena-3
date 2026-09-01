@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { ATOMIC_THUNDER_BOLT, ATOMIC_THUNDER_PATTERN_GUARDIAN, COSMO_SHADOW_TRADING, INFINITY_BREAK, LIGHTNING_PLASMA, ATHENA_EXCLAMATION, EXECUTION_ATTACK_DISPLAY, kalshiGeneralTakerFeeEstimateCents } from './doctrine.mjs';
+import { ATOMIC_THUNDER_BOLT, ATOMIC_THUNDER_PATTERN_GUARDIAN, COSMO_SHADOW_TRADING, INFINITY_BREAK, ATHENA_EXCLAMATION, EXECUTION_ATTACK_DISPLAY, kalshiGeneralTakerFeeEstimateCents } from './doctrine.mjs';
 
 const finite=(v,d=null)=>Number.isFinite(Number(v))?Number(v):d;
 const clamp=(v,lo=0,hi=100)=>Math.max(lo,Math.min(hi,Number(v)||0));
@@ -150,20 +150,12 @@ function enabledAttackBands(settings={},askCents=0,{recoveryContext=null,fieldCo
     ['Momentum Hunter','momentumHunterEnabled','momentumMinEntryCents','momentumMaxEntryCents','momentumStakeCents'],
     ['Wave Surfer','waveSurferEnabled','waveMinEntryCents','waveMaxEntryCents','waveStakeCents'],
     ['Crash Recovery Hunter','crashRecoveryHunterEnabled','crashRecoveryMinEntryCents','crashRecoveryMaxEntryCents','crashRecoveryStakeCents'],
-    ['Lightning Plasma','lightningPlasmaEnabled','lightningPlasmaMinEntryCents','lightningPlasmaMaxEntryCents','lightningPlasmaFieldStakeCents'],
     ['Athena Exclamation','athenaExclamationEnabled','athenaExclamationMinEntryCents','athenaExclamationMaxEntryCents','athenaExclamationStakeCents'],
   ];
   return rows.filter(([concept,flag])=>{
     if(settings?.[flag]!==true)return false;
-    // Structural eligibility belongs upstream of Athena's economic ranking.
-    // Do not let an unavailable specialist make a Bolt appear economically
-    // feasible: Crystal Wall needs an eligible recovery source, while Athena
-    // Exclamation needs the frozen three-Saint convergence context. These are
-    // weapon-shape prerequisites, not restored post-FIRE strategic vetoes.
-    if(concept==='Lightning Plasma'){
-      const independent=finite(fieldContext?.independentEventCount,0),minCosmos=Math.max(2,finite(fieldContext?.minCosmos,LIGHTNING_PLASMA.minCosmos)),minStrikes=Math.max(2,finite(fieldContext?.minStrikes,LIGHTNING_PLASMA.minStrikes));
-      if(fieldContext?.lightningPlasmaQualified!==true||fieldContext?.currentTickerEligible!==true||independent<minCosmos||independent<minStrikes)return false;
-    }
+    // Lightning Plasma is Gemini follow-on only (LP2). Cosmo GREEN must never
+    // rank it. Athena Exclamation still needs the frozen three-Saint context.
     if(concept==='Athena Exclamation'){
       const candidate=fieldContext?.athenaExclamationCandidate||null;
       if(!candidate||finite(candidate?.saintCount,0)<ATHENA_EXCLAMATION.minimumSaints)return false;

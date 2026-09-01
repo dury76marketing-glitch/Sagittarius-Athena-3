@@ -82,7 +82,7 @@ test('R64 Crystal Wall doctrine is a one-shot post-stop rebound continuation',()
   assert.equal(CRYSTAL_WALL.parentCannotBeSelf,true);
   assert.equal(CRYSTAL_WALL.defaultMaxRepeats,1);
   assert.equal(CRYSTAL_WALL.reboundOrigin,'post_stop_trough');
-  assert.deepEqual([...COSMO_ROUTING.followOnOnlyExceptions],['Recovery Hunter']);
+  assert.deepEqual([...COSMO_ROUTING.followOnOnlyExceptions],['Recovery Hunter','Lightning Plasma']);
   const snap=entryConfigSnapshot(settings(),'Recovery Hunter');
   assert.equal(snap.model.structuralRole,'FOLLOW_ON_RECOVERY_ONLY');
   assert.equal(snap.strategicEntryAuthority,CRYSTAL_WALL.strategicEntryAuthority);

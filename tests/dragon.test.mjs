@@ -100,8 +100,8 @@ test('HF2 Starlight Cosmo source selection is deterministic and preserves exact 
 test('HF2 Cosmo routing doctrine makes normal initial-entry Attacks shared-Cosmo consumers and keeps Crystal Wall follow-on only',()=>{
   assert.equal(COSMO_ROUTING.version,'COSMO-ROUTING-V1');
   assert.deepEqual([...COSMO_ROUTING.activeCosmos],['Pegasus','Dragon','Phoenix']);
-  assert.deepEqual([...COSMO_ROUTING.currentInitialEntryConsumers],['Momentum Hunter','Wave Surfer','Crash Recovery Hunter','Lightning Plasma']);
-  assert.deepEqual([...COSMO_ROUTING.followOnOnlyExceptions],['Recovery Hunter']);
+  assert.deepEqual([...COSMO_ROUTING.currentInitialEntryConsumers],['Momentum Hunter','Wave Surfer','Crash Recovery Hunter']);
+  assert.deepEqual([...COSMO_ROUTING.followOnOnlyExceptions],['Recovery Hunter','Lightning Plasma']);
   assert.equal(COSMO_ROUTING.defaultFutureInitialEntryConsumer,true);
   assert.equal(COSMO_ROUTING.sourceDoesNotAuthorizeEntry,true);
 });
