@@ -1,5 +1,5 @@
 import { FEEDER_CONCEPTS, PORTFOLIO_CONCEPTS, ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, stopLossWatchdogThresholdsForStakeCents, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE, ATOMIC_THUNDER, INFINITY_BREAK, AURORA_EXECUTION, POST_EXIT_RESEARCH, LEGACY_STOP_LOSS_CENTS, calculateAuroraSnapshotFromFeeModel, kalshiGeneralTakerFeeEstimateCents } from './doctrine.mjs';
-import { advanceAthenaExitState, athenaExitTelemetry } from './athenaExit.mjs';
+import { advanceAthenaExitState, advanceAthenaExitTwoSpikeState, athenaExitTelemetry } from './athenaExit.mjs';
 import { assessAthenaBrain } from './athena.mjs';
 import { classifyDeterministic } from './learning.mjs';
 
@@ -144,7 +144,9 @@ function athenaExitPolicyRevision(entry) {
 }
 
 function athenaExitPolicyRevisionSupported(entry) {
-  return athenaExitPolicyRevision(entry) === ATHENA_EXIT_INTELLIGENCE.policyRevision;
+  const revision=athenaExitPolicyRevision(entry);
+  return revision===ATHENA_EXIT_INTELLIGENCE.policyRevision
+    || revision===ATHENA_EXIT_INTELLIGENCE.legacyPolicyRevision;
 }
 
 function athenaExitBookTimestampFresh(updatedAtMs, nowMs = Date.now()) {
@@ -1314,7 +1316,10 @@ export class ProfitGuard {
         requiredFreshConfirmations:Math.max(1,Math.floor(n(frozen?.requiredFreshConfirmations,INFINITY_BREAK.defaultRequiredFreshConfirmations))),
         maximumBookAgeMs:Math.max(100,Math.floor(n(frozen?.maximumBookAgeMs,INFINITY_BREAK.defaultMaximumBookAgeMs))),
         confirmationWindowMs:Math.max(250,Math.floor(n(frozen?.confirmationWindowMs,INFINITY_BREAK.defaultConfirmationWindowMs))),
-        authority:INFINITY_BREAK.version,policyRevision:INFINITY_BREAK.policyRevision,
+        authority:INFINITY_BREAK.version,
+        policyRevision:String(frozen?.policyRevision||INFINITY_BREAK.policyRevision),
+        requiredProfitSpikes:INFINITY_BREAK.requiredProfitSpikes,
+        requiresProfitZoneResetBetweenSpikes:INFINITY_BREAK.requiresProfitZoneResetBetweenSpikes,
       };
     }
     const frozen = entry?.entryConfig?.atomicThunder;
@@ -1332,7 +1337,12 @@ export class ProfitGuard {
   }
 
   atomicThunderExitFloorCents(entry, settings = this.getSettings()) {
-    return this.priceForAggregateNetTargetCents(entry, remainingCount(entry), settings, this.atomicThunderTargetNetCents(entry, settings));
+    const policy=this.atomicThunderPolicy(entry,settings);
+    const infinityR2Committed=this.isInfinityBreakTrade(entry)
+      && policy.policyRevision===INFINITY_BREAK.policyRevision
+      && String(this.activeInfinityBreakSpikeState(entry)?.phase||'')==='IB1_EXIT_COMMITTED';
+    const targetNetCents=infinityR2Committed?0:this.atomicThunderTargetNetCents(entry,settings);
+    return this.priceForAggregateNetTargetCents(entry,remainingCount(entry),settings,targetNetCents);
   }
 
   async recordAtomicThunderEvent(entry, eventType, data = {}, eventSuffix = '') {
@@ -1359,11 +1369,96 @@ export class ProfitGuard {
   atomicThunderTelemetry(entry, assessment = null) {
     const state=this.atomicThunderStates.get(entry?.id)||{},a=assessment||{},isInfinity=this.isInfinityBreakTrade(entry);
     const authority=isInfinity?INFINITY_BREAK.version:ATOMIC_THUNDER.version;
-    const revision=isInfinity?INFINITY_BREAK.policyRevision:ATOMIC_THUNDER.policyRevision;
+    const persistedInfinity=isInfinity?this.activeInfinityBreakSpikeState(entry):null;
+    const revision=isInfinity?String(a.policy?.policyRevision||entry?.entryConfig?.infinityBreak?.policyRevision||INFINITY_BREAK.policyRevision):ATOMIC_THUNDER.policyRevision;
     const prefix=isInfinity?'INFINITY_BREAK':'ATOMIC_THUNDER';
-    const out={profitAuthority:authority,profitAuthorityPolicyRevision:revision,profitHarvestState:a.triggered?`${prefix}_READY`:n(state.confirmations)>0?'PROFIT_CONFIRMING':'OBSERVING',profitHarvestConfirmations:n(state.confirmations),profitHarvestRequiredConfirmations:n(a.policy?.requiredFreshConfirmations,n(state.requiredFreshConfirmations,2)),profitHarvestExecutableNetCents:Number.isFinite(Number(a.executableNetCents))?n(a.executableNetCents):null,profitHarvestTargetNetCents:Number.isFinite(Number(a.targetNetCents))?n(a.targetNetCents):null,profitHarvestExitFloorCents:Number.isFinite(Number(a.exitFloorCents))?n(a.exitFloorCents):null,profitHarvestExecutableBidCents:Number.isFinite(Number(a.executableBidCents))?n(a.executableBidCents):null};
+    const spikeState=isInfinity&&revision===INFINITY_BREAK.policyRevision?(a.state||persistedInfinity||{}):null;
+    const out={profitAuthority:authority,profitAuthorityPolicyRevision:revision,profitHarvestState:spikeState?String(spikeState.phase||'IB1_WAITING_FOR_SPIKE_1'):(a.triggered?`${prefix}_READY`:n(state.confirmations)>0?'PROFIT_CONFIRMING':'OBSERVING'),profitHarvestConfirmations:spikeState?n(spikeState.spikeCount):n(state.confirmations),profitHarvestRequiredConfirmations:spikeState?n(spikeState.requiredProfitSpikes,INFINITY_BREAK.requiredProfitSpikes):n(a.policy?.requiredFreshConfirmations,n(state.requiredFreshConfirmations,2)),profitHarvestExecutableNetCents:Number.isFinite(Number(a.executableNetCents))?n(a.executableNetCents):null,profitHarvestTargetNetCents:Number.isFinite(Number(a.targetNetCents))?n(a.targetNetCents):null,profitHarvestExitFloorCents:Number.isFinite(Number(a.exitFloorCents))?n(a.exitFloorCents):null,profitHarvestExecutableBidCents:Number.isFinite(Number(a.executableBidCents))?n(a.executableBidCents):null,profitHarvestSpikeCount:spikeState?n(spikeState.spikeCount):null,profitHarvestRequiredProfitSpikes:spikeState?n(spikeState.requiredProfitSpikes,INFINITY_BREAK.requiredProfitSpikes):null,profitHarvestSpikeZoneActive:spikeState?Boolean(spikeState.spikeZoneActive):null};
     if(isInfinity)return{...out,infinityBreak:INFINITY_BREAK.version,infinityBreakPolicyRevision:INFINITY_BREAK.policyRevision,infinityBreakState:out.profitHarvestState,infinityBreakConfirmations:out.profitHarvestConfirmations,infinityBreakRequiredConfirmations:out.profitHarvestRequiredConfirmations,infinityBreakExecutableNetCents:out.profitHarvestExecutableNetCents,infinityBreakTargetNetCents:out.profitHarvestTargetNetCents,infinityBreakExitFloorCents:out.profitHarvestExitFloorCents,infinityBreakExecutableBidCents:out.profitHarvestExecutableBidCents};
     return{...out,atomicThunder:ATOMIC_THUNDER.version,atomicThunderPolicyRevision:ATOMIC_THUNDER.policyRevision,atomicThunderState:out.profitHarvestState,atomicThunderConfirmations:out.profitHarvestConfirmations,atomicThunderRequiredConfirmations:out.profitHarvestRequiredConfirmations,atomicThunderExecutableNetCents:out.profitHarvestExecutableNetCents,atomicThunderTargetNetCents:out.profitHarvestTargetNetCents,atomicThunderExitFloorCents:out.profitHarvestExitFloorCents,atomicThunderExecutableBidCents:out.profitHarvestExecutableBidCents};
+  }
+
+  activeInfinityBreakSpikeState(entry) {
+    const state=entry?.profitGuardState;
+    if(!state||typeof state!=='object'||state.version!==INFINITY_BREAK.version)return null;
+    return state;
+  }
+
+  async persistInfinityBreakSpikeState(entry,state){
+    const now=Date.now();
+    const persisted={...state,version:INFINITY_BREAK.version,policyRevision:INFINITY_BREAK.policyRevision,updatedAtMs:now};
+    await this.db.updateEntry(entry.id,{profitGuardState:persisted,updatedAtMs:now});
+    entry.profitGuardState=persisted;
+    return persisted;
+  }
+
+  async evaluateInfinityBreakSecondSpike(entry,q,settings,policy){
+    const remain=remainingCount(entry);
+    if(remain<=1e-9)return{eligible:true,triggered:false,policy,q,reason:'no_remaining_position'};
+    await this.market.ensureFreshBook(entry.ticker,policy.maximumBookAgeMs).catch(()=>null);
+    const freshQ=this.market.getQuote(entry.ticker)||q;
+    const book=this.market.getBook?.(entry.ticker);
+    const bookMs=n(book?.updatedAtMs);
+    const quoteMs=n(freshQ?.updatedAtMs,bookMs);
+    const now=Date.now();
+    const bookAgeMs=bookMs>0?now-bookMs:Infinity;
+    const quoteAgeMs=quoteMs>0?now-quoteMs:Infinity;
+    const bid=n(freshQ?.yesBid),ask=n(freshQ?.yesAsk);
+    const validFresh=Boolean(book&&bookMs>0&&bookAgeMs>=-STOP_LOSS_WATCHDOG.maximumFutureBookSkewMs&&bookAgeMs<=policy.maximumBookAgeMs
+      &&quoteMs>0&&quoteAgeMs>=-STOP_LOSS_WATCHDOG.maximumFutureBookSkewMs&&quoteAgeMs<=Math.max(1000,policy.maximumBookAgeMs)
+      &&!freshQ?.bookInvalid&&bid>0&&(ask<=0||bid<=ask));
+    let state=this.activeInfinityBreakSpikeState(entry);
+    if(!validFresh)return{eligible:true,triggered:false,policy,q:freshQ,state,reason:'stale_or_invalid_book'};
+    if(state&&bookMs<=n(state.lastObservedBookMs)){
+      return{eligible:true,triggered:String(state.phase||'')==='IB1_EXIT_COMMITTED',policy,q:freshQ,state,reason:'duplicate_or_old_book'};
+    }
+    if(state&&String(state.phase||'')==='IB1_EXIT_COMMITTED'){
+      const exec=this.market.executableBid?.(entry.ticker,remain,1)||null;
+      const full=Boolean(exec?.full&&n(exec?.filled)+1e-9>=remain&&n(exec?.avgCents)>0);
+      const executableBidCents=full?n(exec.avgCents):null;
+      const executableNetCents=full?this.aggregateExecutableNetCents(entry,remain,executableBidCents,settings):null;
+      const executable=full&&n(executableNetCents,-Infinity)>=-1e-9;
+      return{eligible:true,triggered:executable,committed:true,executable,policy,q:freshQ,state,executableBidCents,executableNetCents,fullExecutable:full};
+    }
+
+    const targetNetCents=this.atomicThunderTargetNetCents(entry,settings);
+    const exitFloorCents=this.atomicThunderExitFloorCents(entry,settings);
+    const exec=this.market.executableBid?.(entry.ticker,remain,1)||null;
+    const fullExecutable=Boolean(exec?.full&&n(exec?.filled)+1e-9>=remain&&n(exec?.avgCents)>0);
+    if(!fullExecutable){
+      return{eligible:true,triggered:false,policy,q:freshQ,state,reason:'insufficient_full_position_depth',targetNetCents,exitFloorCents,fullExecutable:false};
+    }
+    const executableBidCents=n(exec.avgCents);
+    const executableNetCents=this.aggregateExecutableNetCents(entry,remain,executableBidCents,settings);
+    const qualifies=n(executableNetCents,-Infinity)+1e-9>=targetNetCents;
+    const spikeCount=Math.max(0,Math.floor(n(state?.spikeCount)));
+    const wasActive=Boolean(state?.spikeZoneActive);
+    let nextCount=spikeCount;
+    let phase=String(state?.phase||'IB1_WAITING_FOR_SPIKE_1');
+    let newSpike=false,resetObserved=false;
+    if(qualifies){
+      if(!wasActive){
+        nextCount+=1;newSpike=true;
+        phase=nextCount>=INFINITY_BREAK.requiredProfitSpikes?'IB1_EXIT_COMMITTED':'IB1_SPIKE_1_LATCHED';
+      }else phase='IB1_SPIKE_1_ACTIVE';
+    }else if(wasActive&&spikeCount>=1){
+      resetObserved=true;phase='IB1_REARMED_FOR_SPIKE_2';
+    }else phase=spikeCount>=1?'IB1_REARMED_FOR_SPIKE_2':'IB1_WAITING_FOR_SPIKE_1';
+    const committed=phase==='IB1_EXIT_COMMITTED';
+    state=await this.persistInfinityBreakSpikeState(entry,{
+      ...(state||{}),phase,spikeCount:nextCount,spikeZoneActive:qualifies,
+      requiredProfitSpikes:INFINITY_BREAK.requiredProfitSpikes,
+      targetNetCents,exitFloorCents,lastObservedBookMs:bookMs,lastExecutableBidCents:executableBidCents,lastExecutableNetCents:executableNetCents,
+      ...(newSpike&&nextCount===1?{firstSpikeAtMs:bookMs,firstSpikeBidCents:executableBidCents,firstSpikeNetCents:executableNetCents}:{}),
+      ...(resetObserved?{resetAfterFirstSpikeAtMs:bookMs}:{}),
+      ...(committed?{exitCommittedAtMs:bookMs,exitTrigger:'second_distinct_profit_spike',secondSpikeAtMs:bookMs,secondSpikeBidCents:executableBidCents,secondSpikeNetCents:executableNetCents}:{}),
+    });
+    if(newSpike){
+      await this.audit(nextCount>=2?'infinity_break_second_profit_spike':'infinity_break_first_profit_spike_latched',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,spikeCount:nextCount,requiredProfitSpikes:INFINITY_BREAK.requiredProfitSpikes,executableBidCents,executableNetCents,targetNetCents});
+    }else if(resetObserved){
+      await this.audit('infinity_break_profit_spike_rearmed',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,spikeCount:nextCount,executableBidCents,executableNetCents,targetNetCents});
+    }
+    return{eligible:true,triggered:committed,committed,executable:committed,policy,q:freshQ,state,targetNetCents,exitFloorCents,executableNetCents,executableBidCents,fullExecutable:true,confirmations:nextCount,spikeCount:nextCount,newSpike,resetObserved,bookMs};
   }
 
   async evaluateAtomicThunder(entry, q, settings) {
@@ -1378,6 +1473,15 @@ export class ProfitGuard {
       minimumNetPerOriginalContractCents:policy.minimumNetPerOriginalContractCents,
       requiredFreshConfirmations:policy.requiredFreshConfirmations,
     });
+
+    if(this.isInfinityBreakTrade(entry)){
+      const revision=String(policy.policyRevision||'');
+      if(revision===INFINITY_BREAK.policyRevision)return this.evaluateInfinityBreakSecondSpike(entry,q,settings,policy);
+      if(revision!==INFINITY_BREAK.legacyPolicyRevision){
+        await this.audit('infinity_break_policy_revision_mismatch',{id:entry.id,ticker:entry.ticker,frozenRevision:revision,runtimeRevision:INFINITY_BREAK.policyRevision},'error');
+        return{eligible:true,triggered:false,policy,q,policyMismatch:true,reason:'policy_revision_mismatch'};
+      }
+    }
 
     const remain = remainingCount(entry);
     if (remain <= 1e-9) return { eligible:true, triggered:false, policy, q, reason:'no_remaining_position' };
@@ -1473,12 +1577,14 @@ export class ProfitGuard {
   async persistAthenaExitState(entry, state) {
     const frozenRevision=athenaExitPolicyRevision(entry);
     const stateRevision=String(state?.policyRevision || frozenRevision || '');
-    if((frozenRevision&&frozenRevision!==ATHENA_EXIT_INTELLIGENCE.policyRevision)
-      || (stateRevision&&stateRevision!==ATHENA_EXIT_INTELLIGENCE.policyRevision)){
+    const supported=new Set([ATHENA_EXIT_INTELLIGENCE.policyRevision,ATHENA_EXIT_INTELLIGENCE.legacyPolicyRevision]);
+    if((frozenRevision&&!supported.has(frozenRevision))||(stateRevision&&!supported.has(stateRevision))
+      || (frozenRevision&&stateRevision&&frozenRevision!==stateRevision)){
       throw new Error('athena_x1_policy_revision_mismatch');
     }
+    const revision=stateRevision||frozenRevision||ATHENA_EXIT_INTELLIGENCE.policyRevision;
     const now=Date.now();
-    const persisted={...state,version:ATHENA_EXIT_INTELLIGENCE.version,policyRevision:ATHENA_EXIT_INTELLIGENCE.policyRevision,updatedAtMs:now};
+    const persisted={...state,version:ATHENA_EXIT_INTELLIGENCE.version,policyRevision:revision,updatedAtMs:now};
     await this.db.updateEntry(entry.id,{profitGuardState:persisted,updatedAtMs:now});
     entry.profitGuardState=persisted;
     return persisted;
@@ -1650,7 +1756,11 @@ export class ProfitGuard {
     const entryAthena=entry?.entryConfig?.athena||{};
     let advanced;
     try{
-      advanced=advanceAthenaExitState(state,{
+      const frozenRevision=athenaExitPolicyRevision(entry);
+      const advance=frozenRevision===ATHENA_EXIT_INTELLIGENCE.policyRevision
+        ? advanceAthenaExitTwoSpikeState
+        : advanceAthenaExitState;
+      advanced=advance(state,{
         observation:{observedAtMs:observedBookMs,executableBidCents,executableNetCents,askCents:ask},
         context:{
           entryPriceCents:n(entry.entryPriceCents),originalCount:Math.max(count,n(entry.count,count)),
@@ -1665,7 +1775,11 @@ export class ProfitGuard {
     }
     const priorPhase=String(state?.phase||'');
     state=await this.persistAthenaExitState(entry,{...advanced.state,executableFull:true,dataHoldReason:null,breakEvenPriceCents});
-    if(advanced.newPeak){
+    if(advanced.newSpike){
+      await this.audit(state.spikeCount>=2?'athena_x1_second_profit_spike':'athena_x1_first_profit_spike_latched',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,executableBidCents,executableNetCents,spikeCount:n(state.spikeCount),requiredProfitSpikes:n(state.requiredProfitSpikes)});
+    }else if(advanced.resetObserved){
+      await this.audit('athena_x1_profit_spike_rearmed',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,executableBidCents,executableNetCents,spikeCount:n(state.spikeCount)});
+    }else if(advanced.newPeak){
       await this.audit('athena_x1_peak_advanced',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,executableBidCents,executableNetCents,continuationScore:state.continuationScore,recoveryScore:state.recoveryScore,failureScore:state.failureScore});
     }else if(priorPhase!==state.phase&&state.phase==='X1_RECOVERY_WATCH'){
       await this.audit('athena_x1_recovery_watch',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,pullbackCents:state.pullbackCents,adaptivePullbackCents:state.adaptivePullbackCents,continuationScore:state.continuationScore,recoveryScore:state.recoveryScore,failureScore:state.failureScore});

@@ -421,12 +421,15 @@ export const POST_EXIT_RESEARCH = Object.freeze({
 
 export const INFINITY_BREAK = Object.freeze({
   version:'INFINITY-BREAK-V1',
-  policyRevision:'IB1-R1-FIRST-FULL-EXECUTABLE-NET-PROFIT',
-  role:'new_generation_first_full_executable_net_profit_authority',
+  policyRevision:'IB1-R2-SECOND-DISTINCT-PROFIT-SPIKE-EXIT',
+  legacyPolicyRevision:'IB1-R1-FIRST-FULL-EXECUTABLE-NET-PROFIT',
+  role:'second_distinct_full_executable_net_profit_spike_authority',
   authority:'PROFIT_EXIT',
-  appliesTo:'R51_plus_entries_with_INFINITY_BREAK_snapshot',
+  appliesTo:'new_entries_R2_creation_time_R1_preserved',
   fullPositionOnly:true,
   defaultMinimumNetPerOriginalContractCents:1,
+  requiredProfitSpikes:2,
+  requiresProfitZoneResetBetweenSpikes:true,
   defaultRequiredFreshConfirmations:2,
   defaultMaximumBookAgeMs:1000,
   defaultConfirmationWindowMs:3000,
@@ -841,8 +844,11 @@ export const PROFIT_LEARNING_INTELLIGENCE = Object.freeze({
 // authority until they close naturally.
 export const ATHENA_EXIT_INTELLIGENCE = Object.freeze({
   version:'ATHENA-X1',
-  policyRevision:'ATHENA-X1-R1',
-  role:'adaptive_full_position_peak_continuation_profit_authority',
+  policyRevision:'ATHENA-X1-R2-SECOND-DISTINCT-PROFIT-SPIKE-EXIT',
+  legacyPolicyRevision:'ATHENA-X1-R1',
+  role:'second_distinct_full_position_profit_spike_authority',
+  requiredProfitSpikes:2,
+  requiresProfitZoneResetBetweenSpikes:true,
   fullPositionOnly:true,
   positionSplitting:false,
   noLookahead:true,

@@ -5,7 +5,7 @@ import { LearningEngine, advanceProfitLearningState, recommendProfitRetentionRat
 import { ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, stopLossWatchdogThresholdsForStakeCents, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE, ATOMIC_THUNDER, INFINITY_BREAK, AURORA_EXECUTION } from '../src/doctrine.mjs';
 import { Database } from '../src/db.mjs';
 import { entryConfigSnapshot } from '../src/strategy.mjs';
-import { advanceAthenaExitState } from '../src/athenaExit.mjs';
+import { advanceAthenaExitState, advanceAthenaExitTwoSpikeState } from '../src/athenaExit.mjs';
 import { compileAthenaBrain } from '../src/athena.mjs';
 
 const settings={simFeeCents:2,stopLossCents:10,momentumHunterStopLossCents:10,recoveryHunterStopLossCents:10};
@@ -194,6 +194,9 @@ test('R61 Aurora gate: Infinity Break remains independent and can close profitab
   let out=await h.guard.protect(h.row());
   assert.equal(out.closed??false,false);
   assert.equal(h.row().status,'open');
+  h.setBid(48);
+  out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false,'first spike must reset before spike two can exist');
   h.setBid(49);
   out=await h.guard.protect(h.row());
   assert.equal(out.closed,true);
@@ -1793,7 +1796,8 @@ test('R33 Gate 5 the 3c cold-start runner deliberately survives known APG1 two-c
 
 test('R36 Gate 1 ATHENA-X1 doctrine is full-position, no-split, no-lookahead and delegates loss authority to U-SG1',()=>{
   assert.equal(ATHENA_EXIT_INTELLIGENCE.version,'ATHENA-X1');
-  assert.equal(ATHENA_EXIT_INTELLIGENCE.policyRevision,'ATHENA-X1-R1');
+  assert.equal(ATHENA_EXIT_INTELLIGENCE.policyRevision,'ATHENA-X1-R2-SECOND-DISTINCT-PROFIT-SPIKE-EXIT');
+  assert.equal(ATHENA_EXIT_INTELLIGENCE.legacyPolicyRevision,'ATHENA-X1-R1');
   assert.equal(ATHENA_EXIT_INTELLIGENCE.fullPositionOnly,true);
   assert.equal(ATHENA_EXIT_INTELLIGENCE.positionSplitting,false);
   assert.equal(ATHENA_EXIT_INTELLIGENCE.noLookahead,true);
@@ -3111,4 +3115,102 @@ test('Atomic Thunder LIVE broker partial is durable, reopens only the remainder,
   assert.equal(h.row().closeReason,null);
   assert.equal(h.row().exitClientOrderId,null);
   assert.ok(h.audits.some((x)=>x.event==='atomic_thunder_live_partial_reopened'));
+});
+
+
+test('SP2 ATHENA-X1-R2 first qualifying spike latches, same spike cannot double-count, reset then second spike exits',()=>{
+  const context={nowMs:10_000,entryPriceCents:80,originalCount:100};
+  let r=advanceAthenaExitTwoSpikeState(null,{observation:{observedAtMs:1_000,executableBidCents:86,executableNetCents:250,askCents:87},context});
+  assert.equal(r.decision,'HOLD');
+  assert.equal(r.state.spikeCount,1);
+  assert.equal(r.state.phase,'X1_SPIKE_1_LATCHED');
+  r=advanceAthenaExitTwoSpikeState(r.state,{observation:{observedAtMs:2_000,executableBidCents:88,executableNetCents:450,askCents:89},context});
+  assert.equal(r.decision,'HOLD');
+  assert.equal(r.state.spikeCount,1,'adjacent profitable books are one spike');
+  r=advanceAthenaExitTwoSpikeState(r.state,{observation:{observedAtMs:3_000,executableBidCents:83,executableNetCents:100,askCents:84},context});
+  assert.equal(r.state.phase,'X1_REARMED_FOR_SPIKE_2');
+  assert.equal(r.state.spikeZoneActive,false);
+  r=advanceAthenaExitTwoSpikeState(r.state,{observation:{observedAtMs:4_000,executableBidCents:87,executableNetCents:300,askCents:88},context});
+  assert.equal(r.decision,'EXIT');
+  assert.equal(r.state.spikeCount,2);
+  assert.equal(r.state.exitTrigger,'second_distinct_profit_spike');
+});
+
+test('SP2 ATHENA-X1-R2 committed second-spike exit is sticky and never invents a third-spike requirement',()=>{
+  const context={nowMs:10_000,entryPriceCents:80,originalCount:100};
+  let r=advanceAthenaExitTwoSpikeState(null,{observation:{observedAtMs:1_000,executableBidCents:86,executableNetCents:250,askCents:87},context});
+  r=advanceAthenaExitTwoSpikeState(r.state,{observation:{observedAtMs:2_000,executableBidCents:82,executableNetCents:0,askCents:83},context});
+  r=advanceAthenaExitTwoSpikeState(r.state,{observation:{observedAtMs:3_000,executableBidCents:87,executableNetCents:300,askCents:88},context});
+  assert.equal(r.state.phase,'X1_EXIT_COMMITTED');
+  const again=advanceAthenaExitTwoSpikeState(r.state,{observation:{observedAtMs:4_000,executableBidCents:90,executableNetCents:600,askCents:91},context});
+  assert.equal(again.decision,'EXIT');
+  assert.equal(again.reason,'exit_commit_sticky');
+  assert.equal(again.state.spikeCount,2);
+});
+
+test('SP2 ATHENA-X1 creation-era R1 remains legacy while current doctrine is R2',()=>{
+  const context={nowMs:10_000,entryPriceCents:80,originalCount:100,profile:{promoted:false},crash:{}};
+  const r=advanceAthenaExitState(null,{observation:{observedAtMs:1_000,executableBidCents:86,executableNetCents:250,askCents:87},context});
+  assert.equal(r.state.policyRevision,ATHENA_EXIT_INTELLIGENCE.legacyPolicyRevision);
+  assert.equal(ATHENA_EXIT_INTELLIGENCE.policyRevision,'ATHENA-X1-R2-SECOND-DISTINCT-PROFIT-SPIKE-EXIT');
+});
+
+test('SP2 INFINITY BREAK R2 requires two distinct full-depth target spikes and exits on spike two',async()=>{
+  const entry=r61FrozenAuroraEntry({entryPriceCents:80,dangerPriceCents:35,count:100,infinity:true});
+  entry.entryConfig.infinityBreak={...entry.entryConfig.infinityBreak,policyRevision:INFINITY_BREAK.policyRevision,minimumNetPerOriginalContractCents:1};
+  const h=guardHarness({bid:86,entryOverrides:entry});
+  let out=await h.guard.protect(h.row());
+  assert.equal(out.action,'hold');
+  assert.equal(h.row().profitGuardState?.spikeCount,1);
+  h.setBid(88);
+  out=await h.guard.protect(h.row());
+  assert.equal(out.action,'hold','same profitable excursion must not count twice');
+  assert.equal(h.row().profitGuardState?.spikeCount,1);
+  h.setBid(83);
+  out=await h.guard.protect(h.row());
+  assert.equal(out.action,'hold');
+  assert.equal(h.row().profitGuardState?.phase,'IB1_REARMED_FOR_SPIKE_2');
+  h.setBid(87);
+  out=await h.guard.protect(h.row());
+  assert.equal(out.closed,true);
+  assert.equal(h.row().closeReason,'infinity_break');
+  assert.equal(h.row().profitGuardState?.spikeCount,2);
+  assert.equal(h.row().profitGuardState?.exitTrigger,'second_distinct_profit_spike');
+});
+
+test('SP2 INFINITY BREAK R2 partial depth cannot create, reset, or complete a spike',async()=>{
+  const entry=r61FrozenAuroraEntry({entryPriceCents:80,dangerPriceCents:35,count:100,infinity:true});
+  entry.entryConfig.infinityBreak={...entry.entryConfig.infinityBreak,policyRevision:INFINITY_BREAK.policyRevision,minimumNetPerOriginalContractCents:1};
+  const h=guardHarness({bid:86,full:false,filled:50,entryOverrides:entry});
+  let out=await h.guard.protect(h.row());
+  assert.equal(out.action,'hold');
+  assert.equal(h.row().profitGuardState?.spikeCount,undefined);
+  h.setDepth({full:true,filled:100});
+  out=await h.guard.protect(h.row());
+  assert.equal(h.row().profitGuardState?.spikeCount,1);
+  h.setDepth({full:false,filled:50});h.setBid(82);
+  await h.guard.protect(h.row());
+  assert.equal(h.row().profitGuardState?.spikeZoneActive,true,'thin depth cannot rearm a spike');
+});
+
+test('SP2 INFINITY BREAK creation-era R1 retains the legacy confirmation path',async()=>{
+  const entry=r61FrozenAuroraEntry({entryPriceCents:80,dangerPriceCents:35,count:100,infinity:true});
+  entry.entryConfig.infinityBreak={...entry.entryConfig.infinityBreak,policyRevision:INFINITY_BREAK.legacyPolicyRevision,minimumNetPerOriginalContractCents:1,requiredFreshConfirmations:2};
+  const h=guardHarness({bid:86,entryOverrides:entry});
+  let out=await h.guard.protect(h.row());
+  assert.equal(out.action,'hold');
+  h.setBid(87);
+  out=await h.guard.protect(h.row());
+  assert.equal(out.closed,true,'R1 still exits after its two fresh confirmations inside the first profit window');
+});
+
+
+test('SP2 INFINITY BREAK R2 second-spike commitment retries at non-negative full-depth economics instead of requiring the old target again',async()=>{
+  const entry=r61FrozenAuroraEntry({entryPriceCents:80,dangerPriceCents:35,count:100,infinity:true});
+  entry.entryConfig.infinityBreak={...entry.entryConfig.infinityBreak,policyRevision:INFINITY_BREAK.policyRevision,minimumNetPerOriginalContractCents:1};
+  entry.profitGuardState={version:INFINITY_BREAK.version,policyRevision:INFINITY_BREAK.policyRevision,phase:'IB1_EXIT_COMMITTED',spikeCount:2,spikeZoneActive:true,requiredProfitSpikes:2,exitTrigger:'second_distinct_profit_spike',lastObservedBookMs:Date.now()-1000};
+  const h=guardHarness({bid:84,entryOverrides:entry}); // +0c net/original after 2c entry + 2c exit fees
+  const policy=h.guard.atomicThunderPolicy(h.row(),settings);
+  assert.equal(policy.policyRevision,INFINITY_BREAK.policyRevision);
+  assert.equal(h.guard.atomicThunderExitFloorCents(h.row(),settings),84,'committed R2 retry floor must be aggregate break-even, not the original +1c target');
 });

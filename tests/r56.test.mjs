@@ -201,6 +201,8 @@ test('R60 full deterministic chain runs Cosmos GREEN -> Bolt -> Athena FIRE -> r
   const guard=new ProfitGuard({db,kalshi:{},market:m,learning,getSettings:()=>s});
   m.setQuote({yesBid:61,yesAsk:62});
   let first=await guard.protect(await db.entryById(real.id));assert.equal(first.closed===true,false);
+  await new Promise(r=>setTimeout(r,2));m.setQuote({yesBid:59,yesAsk:60});
+  const reset=await guard.protect(await db.entryById(real.id));assert.equal(reset.closed===true,false);
   await new Promise(r=>setTimeout(r,2));m.setQuote({yesBid:61,yesAsk:62});
   const second=await guard.protect(await db.entryById(real.id));assert.equal(second.closed,true);
   const closed=await db.entryById(real.id);assert.equal(closed.status,'closed');assert.equal(closed.closeReason,'infinity_break');assert.ok(Number(closed.pnlCents)>0);
@@ -351,8 +353,8 @@ test('R63 Justice Arrow ignores the one-cent Infinity opportunity, runs ATHENA-X
   const guard=new ProfitGuard({db,kalshi:{},market:m,learning,getSettings:()=>s});
   m.setQuote({yesBid:75,yesAsk:76});let out=await guard.protect(await db.entryById(arrow.id));assert.equal(out.closed??false,false,'Justice Arrow must not use current Infinity +1 net harvest');let row=await db.entryById(arrow.id);assert.equal(row.status,'open');assert.equal(row.profitGuardState.version,'ATHENA-X1');
   let closedAt=null;
-  for(const bid of [90,88,86,84,82,80]){await new Promise(r=>setTimeout(r,2));m.setQuote({yesBid:bid,yesAsk:Math.min(100,bid+1)});out=await guard.protect(await db.entryById(arrow.id));if(out.closed===true){closedAt=bid;break;}}
-  assert.ok(closedAt!=null,'ATHENA-X1 must eventually harvest the deteriorating positive runner');const closed=await db.entryById(arrow.id);assert.equal(closed.closeReason,'athena_x1_exit');assert.equal(closed.remainingCount,0);assert.ok(closed.pnlCents>0);assert.ok(closedAt>=80);
+  for(const bid of [90,75,89]){await new Promise(r=>setTimeout(r,2));m.setQuote({yesBid:bid,yesAsk:Math.min(100,bid+1)});out=await guard.protect(await db.entryById(arrow.id));if(out.closed===true){closedAt=bid;break;}}
+  assert.equal(closedAt,89,'ATHENA-X1 must close the full position on the second distinct qualifying profit spike');const closed=await db.entryById(arrow.id);assert.equal(closed.closeReason,'athena_x1_exit');assert.equal(closed.remainingCount,0);assert.ok(closed.pnlCents>0);
 });
 test('R63 complete Gemini chain runs Cosmos -> Another Dimension -> durable +1c win callback -> Justice Arrow -> ATHENA-X1 profit exit',async()=>{
   const s=settings({geminiEnabled:true,geminiReferenceStakeCents:20_000,geminiMinPriceCents:35,geminiMaxPriceCents:89,justiceArrowEnabled:true,justiceArrowStakeCents:20_000,justiceArrowMinEntryCents:70,justiceArrowMaxEntryCents:89,simFillProbability:0,galacticExplosionEnabled:true,auroraDamageControlPercent:45});
@@ -373,8 +375,8 @@ test('R63 complete Gemini chain runs Cosmos -> Another Dimension -> durable +1c 
   const learning={async onHardStop(){},async stopGuardProfile(){return null;},async lossWatchdogProfile(){return null;},profitLearningState(){return null;},async observeProfitOpportunity(){return null;},profitRetentionProfileCached(){return{retentionRatio:.92,specificity:'cold_start',promoted:false,totalObservations:0,oneTickPullbacks:0,oneTickRecoveries:0,continuationRate:.5,collapseRate:.25,confidence:'low'};},async profitRetentionProfile(){return this.profitRetentionProfileCached();},async markProfitExit(){}};
   const guard=new ProfitGuard({db,kalshi:{},market:m,learning,getSettings:()=>s});
   m.setQuote({yesBid:86,yesAsk:87});let out=await guard.protect(await db.entryById(arrow.id));assert.equal(out.closed??false,false,'Justice Arrow must ignore first +1c-net Infinity-style opportunity');
-  let closedAt=null;for(const bid of [96,94,92,90,88,86]){await new Promise(r=>setTimeout(r,2));m.setQuote({yesBid:bid,yesAsk:Math.min(100,bid+1)});out=await guard.protect(await db.entryById(arrow.id));if(out.closed===true){closedAt=bid;break;}}
-  assert.ok(closedAt!=null,'ATHENA-X1 must finish the complete Gemini-to-Justice-Arrow chain');const finalArrow=await db.entryById(arrow.id);assert.equal(finalArrow.status,'closed');assert.equal(finalArrow.closeReason,'athena_x1_exit');assert.ok(finalArrow.pnlCents>0);assert.equal(finalArrow.remainingCount,0);
+  let closedAt=null;for(const bid of [96,86,95]){await new Promise(r=>setTimeout(r,2));m.setQuote({yesBid:bid,yesAsk:Math.min(100,bid+1)});out=await guard.protect(await db.entryById(arrow.id));if(out.closed===true){closedAt=bid;break;}}
+  assert.equal(closedAt,95,'ATHENA-X1 must finish the Gemini-to-Justice chain on the second distinct profit spike');const finalArrow=await db.entryById(arrow.id);assert.equal(finalArrow.status,'closed');assert.equal(finalArrow.closeReason,'athena_x1_exit');assert.ok(finalArrow.pnlCents>0);assert.equal(finalArrow.remainingCount,0);
 });
 
 test('R63 shared SIM execution uses visible IOC depth deterministically, so Scarlet is not randomly rejected after hard safety passes',async()=>{
@@ -398,12 +400,12 @@ test('R63 complete Scarlet continuation chain runs profitable real Infinity pare
   const handoff=await engine.handleScarletContinuation(parent);assert.equal(handoff.status,'OPENED');const scarlet=handoff.entry;assert.ok(scarlet);assert.equal(scarlet.conceptName,'Scarlet Needle');assert.equal(scarlet.entryConfig.profitAuthority,INFINITY_BREAK.version);assert.equal(scarlet.entryConfig.aurora.frozen,true);
   const learning={async onHardStop(){},async stopGuardProfile(){return null;},async lossWatchdogProfile(){return null;},profitLearningState(){return null;},async observeProfitOpportunity(){return null;},profitRetentionProfileCached(){return{retentionRatio:.92,specificity:'cold_start',promoted:false,totalObservations:0,oneTickPullbacks:0,oneTickRecoveries:0,continuationRate:.5,collapseRate:.25,confidence:'low'};},async profitRetentionProfile(){return this.profitRetentionProfileCached();},async markProfitExit(){}};
   const guard=new ProfitGuard({db,kalshi:{},market:m,learning,getSettings:()=>s});
-  m.setQuote({yesBid:90,yesAsk:91});let out=await guard.protect(await db.entryById(scarlet.id));assert.equal(out.closed??false,false);await new Promise(r=>setTimeout(r,2));m.setQuote({yesBid:90,yesAsk:91});out=await guard.protect(await db.entryById(scarlet.id));assert.equal(out.closed,true);const closed=await db.entryById(scarlet.id);assert.equal(closed.status,'closed');assert.equal(closed.closeReason,'infinity_break');assert.ok(closed.pnlCents>0);assert.equal(closed.remainingCount,0);
+  m.setQuote({yesBid:90,yesAsk:91});let out=await guard.protect(await db.entryById(scarlet.id));assert.equal(out.closed??false,false);await new Promise(r=>setTimeout(r,2));m.setQuote({yesBid:89,yesAsk:90});out=await guard.protect(await db.entryById(scarlet.id));assert.equal(out.closed??false,false);await new Promise(r=>setTimeout(r,2));m.setQuote({yesBid:90,yesAsk:91});out=await guard.protect(await db.entryById(scarlet.id));assert.equal(out.closed,true);const closed=await db.entryById(scarlet.id);assert.equal(closed.status,'closed');assert.equal(closed.closeReason,'infinity_break');assert.ok(closed.pnlCents>0);assert.equal(closed.remainingCount,0);
 });
 
 test('R63 dashboard exposes Gemini as the shadow universe, Another Dimension as its full virtual Attack, and Justice Arrow as an Execution Attack',async()=>{
   const [html,app]=await Promise.all([readFile(new URL('../public/index.html',import.meta.url),'utf8'),readFile(new URL('../public/app.js',import.meta.url),'utf8')]);
-  assert.ok(app.includes("legacy:'Sagittarius Justice Arrow'"));assert.ok(app.includes("legacy:'Gemini'"));assert.equal(html.includes('data-cosmo-filter="Another Dimension"'),false);assert.ok(html.includes('/app.js?v=R63GEMINI1'));assert.equal(html.includes('/app.js?v=R62ADJA1'),false);assert.ok(html.includes('GEMINI — ANOTHER DIMENSION TRADES'));assert.ok(html.includes('Virtual +1c Profit Authority'));assert.ok(html.includes('<th>Profit Authority</th>'));assert.ok(html.includes('ATHENA-X1 smart peak-runner authority'));assert.ok(app.includes('GEMINI / ANOTHER DIMENSION COMPLETED +1c NET WIN'));assert.ok(app.includes("e.entryConfig?.profitAuthority||e.entryConfig?.infinityBreak?.version"));
+  assert.ok(app.includes("legacy:'Sagittarius Justice Arrow'"));assert.ok(app.includes("legacy:'Gemini'"));assert.equal(html.includes('data-cosmo-filter="Another Dimension"'),false);assert.ok(html.includes('/app.js?v=R63GEMINI1'));assert.equal(html.includes('/app.js?v=R62ADJA1'),false);assert.ok(html.includes('GEMINI — ANOTHER DIMENSION TRADES'));assert.ok(html.includes('Virtual +1c Profit Authority'));assert.ok(html.includes('<th>Profit Authority</th>'));assert.ok(html.includes('ATHENA-X1 with the same two-distinct-spike close doctrine'));assert.ok(app.includes('GEMINI / ANOTHER DIMENSION COMPLETED +1c NET WIN'));assert.ok(app.includes("e.entryConfig?.profitAuthority||e.entryConfig?.infinityBreak?.version"));
 });
 
 test('R63 Gemini and Justice Arrow settings migrate safely and PostgreSQL readback verifies the independent controls',async()=>{

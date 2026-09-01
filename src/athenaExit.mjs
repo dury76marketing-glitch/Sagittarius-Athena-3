@@ -270,7 +270,7 @@ export function advanceAthenaExitState(priorState,{observation,context}={}){
   }
   const obs={t:observedAtMs,bidCents:bid,netCents:net,askCents:n(observation?.askCents,bid)};
   const priorX1=priorState&&typeof priorState==='object'&&priorState.version===ATHENA_EXIT_INTELLIGENCE.version?structuredClone(priorState):null;
-  if(priorX1&&String(priorX1.policyRevision||'')!==ATHENA_EXIT_INTELLIGENCE.policyRevision){
+  if(priorX1&&String(priorX1.policyRevision||'')!==ATHENA_EXIT_INTELLIGENCE.legacyPolicyRevision){
     throw new Error('athena_x1_policy_revision_mismatch');
   }
   const validPrior=priorX1;
@@ -286,7 +286,7 @@ export function advanceAthenaExitState(priorState,{observation,context}={}){
 
   let state=validPrior||{
     version:ATHENA_EXIT_INTELLIGENCE.version,
-    policyRevision:ATHENA_EXIT_INTELLIGENCE.policyRevision,
+    policyRevision:ATHENA_EXIT_INTELLIGENCE.legacyPolicyRevision,
     phase:'X1_TRACKING',
     armedAtMs:observedAtMs,
     observations:[],
@@ -332,7 +332,7 @@ export function advanceAthenaExitState(priorState,{observation,context}={}){
 
   state={
     ...state,
-    policyRevision:ATHENA_EXIT_INTELLIGENCE.policyRevision,
+    policyRevision:ATHENA_EXIT_INTELLIGENCE.legacyPolicyRevision,
     lastObservedBookMs:observedAtMs,
     lastExecutableBidCents:bid,
     lastExecutableNetCents:net,
@@ -356,6 +356,141 @@ export function advanceAthenaExitState(priorState,{observation,context}={}){
   return {state,decision:scored.exit?'EXIT':'HOLD',fresh:true,newPeak,reason:state.decisionReason,scores:scored};
 }
 
+
+// ATHENA-X1-R2 Two-Spike Profit Exit. A "spike" is a distinct excursion into
+// the full-position executable profit zone. Adjacent books inside the same
+// profitable excursion count as one spike. The first fresh full-depth book
+// below the qualifying threshold rearms the detector; the next fresh full-depth
+// qualifying excursion is spike #2 and commits the whole-position profit exit.
+// The detector never authorizes a negative-net sale; U-SG1 remains the sole
+// loss-domain authority.
+export function advanceAthenaExitTwoSpikeState(priorState,{observation,context}={}){
+  const rawObservedAtMs=Number(observation?.observedAtMs);
+  const rawBid=Number(observation?.executableBidCents);
+  const rawNet=Number(observation?.executableNetCents);
+  if(!Number.isFinite(rawObservedAtMs)||rawObservedAtMs<=0||!Number.isFinite(rawBid)||!Number.isFinite(rawNet)){
+    throw new Error('athena_x1_invalid_observation');
+  }
+  const observedAtMs=rawObservedAtMs;
+  const bid=rawBid;
+  const net=rawNet;
+  const nowMs=Math.max(1,n(context?.nowMs,Date.now()));
+  if(observedAtMs-nowMs>ATHENA_EXIT_INTELLIGENCE.maximumFutureBookSkewMs){
+    throw new Error('athena_x1_future_observation');
+  }
+  const revision=ATHENA_EXIT_INTELLIGENCE.policyRevision;
+  const priorX1=priorState&&typeof priorState==='object'&&priorState.version===ATHENA_EXIT_INTELLIGENCE.version?structuredClone(priorState):null;
+  if(priorX1&&String(priorX1.policyRevision||'')!==revision){
+    throw new Error('athena_x1_policy_revision_mismatch');
+  }
+  if(priorX1&&isCommittedPhase(priorX1.phase)){
+    return {state:priorX1,decision:'EXIT',fresh:false,reason:'exit_commit_sticky'};
+  }
+  if(priorX1&&['X1_EXIT_FILLED','X1_SETTLED'].includes(String(priorX1.phase||''))){
+    return {state:priorX1,decision:'HOLD',fresh:false,reason:'terminal_state'};
+  }
+  if(priorX1&&observedAtMs<=n(priorX1.lastObservedBookMs)){
+    return {state:priorX1,decision:'HOLD',fresh:false,reason:'duplicate_or_old_book'};
+  }
+
+  const originalCount=Math.max(1,n(context?.originalCount,1));
+  const thresholdPerOriginal=Math.max(0.01,n(ATHENA_EXIT_INTELLIGENCE.minimumPeakNetPerOriginalContractCents,2));
+  const thresholdNetCents=thresholdPerOriginal*originalCount;
+  const qualifies=net+1e-9>=thresholdNetCents;
+  let state=priorX1||{
+    version:ATHENA_EXIT_INTELLIGENCE.version,
+    policyRevision:revision,
+    phase:'X1_WAITING_FOR_SPIKE_1',
+    armedAtMs:observedAtMs,
+    spikeCount:0,
+    spikeZoneActive:false,
+    firstSpikeAtMs:null,
+    firstSpikeBidCents:null,
+    firstSpikeNetCents:null,
+    resetAfterFirstSpikeAtMs:null,
+    peakExecutableBidCents:bid,
+    peakExecutableNetCents:net,
+    peakAtMs:observedAtMs,
+  };
+
+  const wasActive=Boolean(state.spikeZoneActive);
+  let spikeCount=Math.max(0,Math.floor(n(state.spikeCount)));
+  let spikeZoneActive=wasActive;
+  let phase=String(state.phase||'X1_WAITING_FOR_SPIKE_1');
+  let decision='HOLD';
+  let decisionReason='waiting_for_distinct_profit_spike';
+  let newSpike=false;
+  let resetObserved=false;
+
+  const priorPeakNet=n(state.peakExecutableNetCents,net);
+  const priorPeakBid=n(state.peakExecutableBidCents,bid);
+  const newPeak=net>priorPeakNet+1e-9||(Math.abs(net-priorPeakNet)<=1e-9&&bid>priorPeakBid+1e-9);
+  if(newPeak){
+    state.peakExecutableBidCents=bid;
+    state.peakExecutableNetCents=net;
+    state.peakAtMs=observedAtMs;
+  }
+
+  if(qualifies){
+    if(!wasActive){
+      spikeCount+=1;
+      newSpike=true;
+      spikeZoneActive=true;
+      if(spikeCount===1){
+        phase='X1_SPIKE_1_LATCHED';
+        decisionReason='first_profit_spike_latched';
+        state.firstSpikeAtMs=observedAtMs;
+        state.firstSpikeBidCents=bid;
+        state.firstSpikeNetCents=net;
+      }else if(spikeCount>=ATHENA_EXIT_INTELLIGENCE.requiredProfitSpikes){
+        phase='X1_EXIT_COMMITTED';
+        decision='EXIT';
+        decisionReason='second_distinct_profit_spike';
+      }
+    }else{
+      phase=spikeCount>=1?'X1_SPIKE_1_ACTIVE':'X1_TRACKING';
+      decisionReason='same_profit_spike_continues';
+    }
+  }else{
+    if(wasActive&&spikeCount>=1){
+      resetObserved=true;
+      spikeZoneActive=false;
+      state.resetAfterFirstSpikeAtMs=observedAtMs;
+      phase='X1_REARMED_FOR_SPIKE_2';
+      decisionReason='profit_zone_reset_after_first_spike';
+    }else{
+      spikeZoneActive=false;
+      phase=spikeCount>=1?'X1_REARMED_FOR_SPIKE_2':'X1_WAITING_FOR_SPIKE_1';
+      decisionReason=spikeCount>=1?'waiting_for_second_profit_spike':'waiting_for_first_profit_spike';
+    }
+  }
+
+  state={
+    ...state,
+    version:ATHENA_EXIT_INTELLIGENCE.version,
+    policyRevision:revision,
+    phase,decision,decisionReason,
+    spikeCount,spikeZoneActive,
+    requiredProfitSpikes:ATHENA_EXIT_INTELLIGENCE.requiredProfitSpikes,
+    spikeThresholdNetPerOriginalContractCents:thresholdPerOriginal,
+    spikeThresholdNetCents:thresholdNetCents,
+    lastObservedBookMs:observedAtMs,
+    lastExecutableBidCents:bid,
+    lastExecutableNetCents:net,
+    updatedAtMs:observedAtMs,
+    ...(decision==='EXIT'?{
+      exitCommittedAtMs:observedAtMs,
+      exitTrigger:'second_distinct_profit_spike',
+      triggerExecutableBidCents:bid,
+      triggerExecutableNetCents:net,
+      secondSpikeAtMs:observedAtMs,
+      secondSpikeBidCents:bid,
+      secondSpikeNetCents:net,
+    }:{}),
+  };
+  return {state,decision,fresh:true,newPeak,newSpike,resetObserved,reason:decisionReason};
+}
+
 export function athenaExitTelemetry(state={}){
   if(!state||state.version!==ATHENA_EXIT_INTELLIGENCE.version)return{};
   return {
@@ -364,6 +499,9 @@ export function athenaExitTelemetry(state={}){
     athenaExitPhase:state.phase||'X1_TRACKING',
     athenaExitDecision:state.decision||'HOLD',
     athenaExitDecisionReason:state.decisionReason||null,
+    athenaExitProfitSpikeCount:Math.max(0,n(state.spikeCount)),
+    athenaExitRequiredProfitSpikes:Math.max(0,n(state.requiredProfitSpikes,ATHENA_EXIT_INTELLIGENCE.requiredProfitSpikes)),
+    athenaExitProfitSpikeZoneActive:Boolean(state.spikeZoneActive),
     athenaExitContinuationScore:n(state.continuationScore,50),
     athenaExitRecoveryScore:n(state.recoveryScore,50),
     athenaExitFailureScore:n(state.failureScore,0),

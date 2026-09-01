@@ -242,8 +242,11 @@ test('R51 full SIM chain executes Athena FIRE then Infinity Break closes the ent
   const learning={async onHardStop(){},async stopGuardProfile(){return null;},async lossWatchdogProfile(){return null;}};
   const guard=new ProfitGuard({db:f.db,kalshi:{},market:f.market,learning,getSettings:()=>settings});
   let out=await guard.protect(await f.db.entryById(entry.id));
-  assert.equal(out.closed??false,false,'Infinity Break requires a second distinct fresh confirmation');
-  const secondBookMs=Number(f.market.quote.updatedAtMs)+1;f.market.history.push({t:secondBookMs,bid:70,ask:71});f.market.quote.updatedAtMs=secondBookMs;
+  assert.equal(out.closed??false,false,'Infinity Break spike #1 must latch without selling');
+  let secondBookMs=Number(f.market.quote.updatedAtMs)+1;f.market.history.push({t:secondBookMs,bid:60,ask:61});f.market.quote.yesBid=60;f.market.quote.yesAsk=61;f.market.quote.updatedAtMs=secondBookMs;
+  out=await guard.protect(await f.db.entryById(entry.id));
+  assert.equal(out.closed??false,false,'profit zone reset rearms spike #2');
+  secondBookMs+=1;f.market.history.push({t:secondBookMs,bid:70,ask:71});f.market.quote.yesBid=70;f.market.quote.yesAsk=71;f.market.quote.updatedAtMs=secondBookMs;
   out=await guard.protect(await f.db.entryById(entry.id));
   assert.equal(out.closed,true);
   const closed=await f.db.entryById(entry.id);assert.equal(closed.status,'closed');assert.equal(closed.remainingCount,0);assert.equal(closed.closeReason,'infinity_break');assert.ok(closed.pnlCents>0);
@@ -554,6 +557,6 @@ test('R60-HF1 immediate post-reset A-to-Z chain: Pegasus shadow GREEN -> Atomic 
   const entry=await strategy.executeAthenaFire(market.quote,bolt,decision,{cosmos:[shadow]});assert.ok(entry);assert.equal(entry.conceptName,'Momentum Hunter');assert.equal(entry.sourceTradeId,shadow.id);
   market.quote.yesBid=65;market.quote.yesAsk=66;market.quote.updatedAtMs=Date.now();
   const learning={async onHardStop(){},async stopGuardProfile(){return null;},async lossWatchdogProfile(){return null;}};const guard=new ProfitGuard({db,kalshi:{},market,learning,getSettings:()=>settings});
-  let out=await guard.protect(await db.entryById(entry.id));assert.equal(out.closed??false,false);market.quote.updatedAtMs+=1;market.history.push({t:market.quote.updatedAtMs,bid:65,ask:66});out=await guard.protect(await db.entryById(entry.id));assert.equal(out.closed,true);
+  let out=await guard.protect(await db.entryById(entry.id));assert.equal(out.closed??false,false);market.quote.yesBid=58;market.quote.yesAsk=59;market.quote.updatedAtMs+=1;market.history.push({t:market.quote.updatedAtMs,bid:58,ask:59});out=await guard.protect(await db.entryById(entry.id));assert.equal(out.closed??false,false);market.quote.yesBid=65;market.quote.yesAsk=66;market.quote.updatedAtMs+=1;market.history.push({t:market.quote.updatedAtMs,bid:65,ask:66});out=await guard.protect(await db.entryById(entry.id));assert.equal(out.closed,true);
   const closed=await db.entryById(entry.id);assert.equal(closed.closeReason,'infinity_break');assert.ok(closed.pnlCents>0);
 });
