@@ -3,7 +3,7 @@ const root=resolve(dirname(fileURLToPath(import.meta.url)),'..');
 async function files(dir){const out=[];for(const name of await readdir(dir)){if(name==='node_modules'||name==='.git'||name==='package-lock.json')continue;const p=resolve(dir,name),s=await stat(p);if(s.isDirectory())out.push(...await files(p));else out.push(p);}return out;}
 test('deployment starts source directly and cannot repeat missing dist/index.js failure',async()=>{const pkg=JSON.parse(await readFile(resolve(root,'package.json'),'utf8'));assert.equal(pkg.scripts.start,'node src/index.mjs');assert.equal(pkg.scripts.start.includes('dist/'),false);const railway=JSON.parse(await readFile(resolve(root,'railway.json'),'utf8'));assert.equal(railway.deploy.startCommand,'npm start');assert.equal(railway.build.buildCommand,'npm test && npm run check');});
 const R56_PROJECT_SOURCE_FILE_BUDGET=44; // R56 adds Arayashiki runtime plus its dedicated survival regression surface on top of R55 Phoenix; generated dependency files remain excluded.
-test("R56 project stays within the explicit compact authored source-file budget even when npm generates package-lock.json",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');assert.equal(RELEASE,'SAGITTARIUS-R59-BIG-WAVE-CHOKE-RECOVERY-2026-08-29');const root=new URL('../',import.meta.url);async function walk(u){let out=[];for(const ent of await readdir(u,{withFileTypes:true})){if(ent.name==='node_modules'||ent.name==='.git'||ent.name==='package-lock.json')continue;const x=new URL(ent.name+(ent.isDirectory()?'/':''),u);if(ent.isDirectory())out.push(...await walk(x));else out.push(x);}return out;}const all=await walk(root);assert.equal(all.length,R56_PROJECT_SOURCE_FILE_BUDGET);assert.ok(all.some(x=>x.pathname.endsWith('/src/opportunity.mjs')));assert.ok(all.some(x=>x.pathname.endsWith('/src/authority.mjs')));assert.ok(all.some(x=>x.pathname.endsWith('/tests/r51.test.mjs')));});
+test("R56 project stays within the explicit compact authored source-file budget even when npm generates package-lock.json",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');assert.equal(RELEASE,'SAGITTARIUS-R63-GEMINI-ANOTHER-DIMENSION-LIVE-PARITY-2026-08-31');const root=new URL('../',import.meta.url);async function walk(u){let out=[];for(const ent of await readdir(u,{withFileTypes:true})){if(ent.name==='node_modules'||ent.name==='.git'||ent.name==='package-lock.json')continue;const x=new URL(ent.name+(ent.isDirectory()?'/':''),u);if(ent.isDirectory())out.push(...await walk(x));else out.push(x);}return out;}const all=await walk(root);assert.equal(all.length,R56_PROJECT_SOURCE_FILE_BUDGET);assert.ok(all.some(x=>x.pathname.endsWith('/src/opportunity.mjs')));assert.ok(all.some(x=>x.pathname.endsWith('/src/authority.mjs')));assert.ok(all.some(x=>x.pathname.endsWith('/tests/r51.test.mjs')));});
 test('all required Railway/Kalshi variables are recognized',async()=>{const src=await readFile(resolve(root,'src/config.mjs'),'utf8');for(const k of ['KALSHI_API_KEY_ID','KALSHI_PRIVATE_KEY_PEM','KALSHI_BASE_URL','DEFAULT_ENGINE_MODE','ALLOW_LIVE_TRADING','DATABASE_URL'])assert.ok(src.includes(k),`${k} missing`);});
 test("R45 dashboard contains the four-layer Mega Wave architecture plus operational research sections",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const html=await readFile(new URL('../public/index.html',import.meta.url),'utf8');const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');assert.ok(html.includes('ATOMIC THUNDER BOLT'));assert.ok(html.includes('ATHENA'));assert.ok(html.includes('INFINITY BREAK'));assert.ok(html.includes('AURORA EXECUTION'));assert.ok(html.includes('COSMO UNIVERSE'));assert.ok(app.includes('auroraDamageControlPercent'));assert.ok(app.includes('lightningPlasmaMaxStrikes'));for(const retired of ['momentumMinRiseCents','waveMinFeederFavorableMoveCents','crashRecoveryMinCrashCents','recoveryMinReboundCents'])assert.equal(app.includes(retired),false,retired);});
 
@@ -339,35 +339,31 @@ test('R54 closed-position dashboard projection never rehydrates full historical 
   assert.match(sql,/'\{\}'::jsonb as stop_guard_state/);
 });
 
-test('R54 Railway startup never awaits Scarlet Needle historical arm restoration',async()=>{
+test('R61 startup has no Scarlet retracement-arm hydration path or incomplete-history dependency',async()=>{
   const {AthenaCommander}=await import('../src/athena.mjs');
-  let incompleteReads=0,releaseIncomplete;
-  const incomplete=new Promise((resolve)=>{releaseIncomplete=resolve;});
+  let incompleteReads=0;
   const db={
-    async entries(){return[];},
-    async opportunityEpisodes(_system,options={}){if(options.trackingComplete===false){incompleteReads+=1;return incomplete;}return[];},
-    async profitEpisodes(){return[];},
+    async athenaEconomicEntries(){return[];},
+    async athenaEconomicOpportunityEpisodes(){return[];},
+    async athenaEconomicProfitEpisodes(){return[];},
+    async opportunityEpisodes(_system,options={}){if(options.trackingComplete===false)incompleteReads+=1;return[];},
     async audit(){},
   };
-  const athena=new AthenaCommander({db,systemName:'S',sourceRelease:'R54-RGM3-TEST',getSettings:()=>({scarletNeedleEnabled:true})});
-  const initResult=await Promise.race([athena.init().then(()=> 'ready'),new Promise((resolve)=>setTimeout(()=>resolve('blocked'),100))]);
-  assert.equal(initResult,'ready','Athena core memory initialization must not wait on active Needle restoration');
-  assert.equal(incompleteReads,0,'startup init must not touch incomplete Needle history');
-  const hydration=athena.hydrateScarletNeedleArms();
-  await new Promise((resolve)=>setImmediate(resolve));
-  assert.equal(incompleteReads,1,'Needle history is restored only by the detached hydration path');
-  assert.equal(athena.summary().scarletNeedle.hydration.state,'LOADING');
-  releaseIncomplete([]);await hydration;
-  assert.equal(athena.summary().scarletNeedle.hydration.state,'READY');
+  const athena=new AthenaCommander({db,systemName:'S',sourceRelease:'R61-TEST',getSettings:()=>({scarletNeedleEnabled:true})});
+  await athena.init();
+  assert.equal(incompleteReads,0,'Athena startup must never scan old incomplete Scarlet arm history');
+  assert.equal(typeof athena.hydrateScarletNeedleArms,'undefined');
+  assert.equal(typeof athena.armScarletNeedle,'undefined');
+  assert.equal(typeof athena.evaluateScarletNeedle,'undefined');
+  assert.equal(athena.summary().scarletNeedle.managedBy,'ENGINE_POST_PROFIT_CLOSE_HANDOFF');
   const dbSource=await readFile(resolve(root,'src/db.mjs'),'utf8');
-  assert.equal(dbSource.includes('activeScarletNeedleArms'),false,'R54 must not add an unindexed Scarlet JSON history scan');
   const engineSource=await readFile(resolve(root,'src/engine.mjs'),'utf8');
-  const runningAt=engineSource.indexOf('this.running = true;');
-  const hydrateAt=engineSource.indexOf('hydrateScarletNeedleArms?.()');
-  assert.ok(runningAt>=0&&hydrateAt>runningAt,'Needle restoration must be detached after the engine reaches its running startup phase');
+  assert.equal(dbSource.includes('activeScarletNeedleArms'),false,'R61 must not restore an obsolete Scarlet arm query');
+  assert.equal(engineSource.includes('hydrateScarletNeedleArms'),false,'R61 startup must contain no delayed-arm hydration');
+  assert.equal(engineSource.includes('scarletNeedleArms'),false,'R61 engine must contain no retracement-arm runtime state');
 });
 
-test('R54 dashboard always exposes Scarlet Needle and deploys frontend assets without stale-cache split versions',async()=>{
+test('R61 dashboard exposes Scarlet continuation controls and cache-busts the new frontend without old retracement doctrine',async()=>{
   const app=await readFile(resolve(root,'public/app.js'),'utf8');
   const html=await readFile(resolve(root,'public/index.html'),'utf8');
   const server=await readFile(resolve(root,'src/server.mjs'),'utf8');
@@ -375,23 +371,27 @@ test('R54 dashboard always exposes Scarlet Needle and deploys frontend assets wi
   const scarletAt=app.indexOf("{legacy:'Scarlet Needle',name:'Scarlet Needle'");
   const athenaAt=app.indexOf("{legacy:'Athena Exclamation',name:'Athena Exclamation'");
   const waveAt=app.indexOf("{legacy:'Wave Surfer',name:'Pegasus Ryu Sei Ken'");
-  assert.ok(athenaAt>=0&&scarletAt>athenaAt&&waveAt>scarletAt,'Scarlet Needle must be the second visible Execution Attack row');
-  for(const key of ['scarletNeedleEnabled','scarletNeedleStakeCents','scarletNeedleMinEntryCents','scarletNeedleMaxEntryCents'])assert.ok(app.includes(key),key);
-  assert.ok(app.includes('fixed 10c retracement'));
-  assert.ok(engine.includes("this.settings.scarletNeedleEnabled === true ? 'Scarlet Needle'"),'enabled Needle must be reported as an initial-exposure Attack');
-  assert.ok(html.includes('/styles.css?v=R59BWR1'));
-  assert.ok(html.includes('/app.js?v=R59BWR1'));
-  assert.equal(server.includes("public, max-age=300"),false,'dashboard assets may not retain the old five-minute cache policy');
+  assert.ok(athenaAt>=0&&scarletAt>athenaAt&&waveAt>scarletAt,'Scarlet Needle must remain the second visible Execution Attack row');
+  for(const key of ['scarletNeedleEnabled','scarletNeedleStakeCents','scarletNeedleMinEntryCents','scarletNeedleMaxEntryCents','scarletNeedleMaxRepeats'])assert.ok(app.includes(key),key);
+  assert.ok(app.includes('Post-profit continuation Attack'));
+  assert.ok(app.includes('Max repeats'));
+  assert.equal(app.includes('fixed 10c retracement'),false);
+  assert.equal(engine.includes("this.settings.scarletNeedleEnabled === true ? 'Scarlet Needle'"),false,'Scarlet is continuation-only, not normal initial exposure');
+  assert.ok(engine.includes('scarletNeedleContinuationAuthority:true'));
+  assert.ok(engine.includes("noBoltNoAttackExceptions:['SCARLET_NEEDLE_POST_PROFIT_CONTINUATION','SAGITTARIUS_JUSTICE_ARROW_POST_SHADOW_WIN']"));
+  assert.ok(html.includes('/styles.css?v=R61MW1'));
+  assert.ok(html.includes('/app.js?v=R63GEMINI1'));
+  assert.equal(server.includes('public, max-age=300'),false,'dashboard assets may not retain the old five-minute cache policy');
   assert.ok(server.includes("'cache-control':'no-store'"),'static dashboard responses must be no-store');
 
   const {startServer}=await import('../src/server.mjs');
   const runtime={engine:null,boot:{status:'starting',startedAtMs:Date.now(),attempts:1}};
   const srv=startServer(runtime,0,root);await new Promise(r=>srv.once('listening',r));const port=srv.address().port;
   try{
-    for(const path of ['/','/app.js?v=R59BWR1','/styles.css?v=R59BWR1']){
+    for(const path of ['/','/app.js?v=R63GEMINI1','/styles.css?v=R61MW1']){
       const res=await fetch(`http://127.0.0.1:${port}${path}`);assert.equal(res.status,200,path);assert.equal(res.headers.get('cache-control'),'no-store',path);
     }
-    const js=await (await fetch(`http://127.0.0.1:${port}/app.js?v=R59BWR1`)).text();assert.ok(js.includes("name:'Scarlet Needle'"));
+    const js=await (await fetch(`http://127.0.0.1:${port}/app.js?v=R63GEMINI1`)).text();assert.ok(js.includes("name:'Scarlet Needle'"));assert.ok(js.includes('scarletNeedleMaxRepeats'));
   }finally{await new Promise(r=>srv.close(r));}
 });
 
@@ -464,7 +464,7 @@ test('R55 Phoenix is event-driven, reference-only, TTL-bounded and cannot contam
   const app=await readFile(resolve(root,'public/app.js'),'utf8');
   const html=await readFile(resolve(root,'public/index.html'),'utf8');
 
-  assert.ok(config.includes("SAGITTARIUS-R59-BIG-WAVE-CHOKE-RECOVERY-2026-08-29"));
+  assert.ok(config.includes("SAGITTARIUS-R63-GEMINI-ANOTHER-DIMENSION-LIVE-PARITY-2026-08-31"));
   assert.ok(config.includes('phoenixEnabled: false'),'Phoenix must migrate fail-safe OFF');
   assert.ok(config.includes("'phoenixEnabled'"));
   for(const key of ['phoenixReferenceStakeCents','phoenixMinPriceCents','phoenixMaxPriceCents'])assert.ok(config.includes(key),key);
@@ -500,39 +500,94 @@ test('R55 Phoenix is event-driven, reference-only, TTL-bounded and cannot contam
   assert.ok(phoenix.includes('sourceDoesNotAuthorizeEntry:true'));
   assert.ok(app.includes("legacy:'Phoenix',name:'Phoenix'"));
   assert.ok(html.includes('Pegasus, Dragon and Phoenix'));
-  assert.ok(html.includes('/styles.css?v=R59BWR1'));
-  assert.ok(html.includes('/app.js?v=R59BWR1'));
+  assert.ok(html.includes('/styles.css?v=R61MW1'));
+  assert.ok(html.includes('/app.js?v=R63GEMINI1'));
 });
 
-test('R56 Athena A3 embeds Arayashiki A8 before FIRE and execution cannot create a second predictive survival veto',async()=>{
+test('R60 Athena receives COSMO_GREEN directly; Arayashiki and ATB2 remain non-authority research only',async()=>{
   const doctrine=await readFile(resolve(root,'src/doctrine.mjs'),'utf8');
   const athena=await readFile(resolve(root,'src/athena.mjs'),'utf8');
   const engine=await readFile(resolve(root,'src/engine.mjs'),'utf8');
   const strategy=await readFile(resolve(root,'src/strategy.mjs'),'utf8');
-  const arayashiki=await readFile(resolve(root,'src/arayashiki.mjs'),'utf8');
-  const model=await readFile(resolve(root,'src/athenaB2R2Model.mjs'),'utf8');
-  const { ATHENA_B2 }=await import('../src/athena.mjs');
+  const opportunity=await readFile(resolve(root,'src/opportunity.mjs'),'utf8');
   const html=await readFile(resolve(root,'public/index.html'),'utf8');
   const app=await readFile(resolve(root,'public/app.js'),'utf8');
+  assert.ok(doctrine.includes("version:'COSMO-SHADOW-V1'"));
+  assert.ok(doctrine.includes("policyRevision:'ATB3-R1-COSMO-GREEN-IMMEDIATE-BOLT'"));
+  assert.ok(doctrine.includes("authority:'RESEARCH_ONLY'"));
+  assert.equal(athena.includes('examineArayashikiSurvival({bolt,context,selectedAttack:null,now})'),false);
+  assert.ok(athena.includes("reason='cosmo_green_best_attack'"));
+  assert.ok(athena.includes("authorityMode:'COSMO_GREEN_DIRECT'"));
+  assert.equal(strategy.includes('verifyArayashikiCertificate(command.survivalCertificate,now)'),false);
+  assert.equal(strategy.includes('examineArayashikiSurvival'),false);
+  assert.ok(opportunity.includes("event:COSMO_SHADOW_TRADING.atomicThunderEvent"));
+  assert.ok(opportunity.includes("stage:'COSMO_GREEN'"));
+  assert.ok(engine.includes("authorityChain:'GAME_CLOCK->COSMO_SHADOW->COSMO_GREEN->ATOMIC_THUNDER_BOLT->ATHENA->EXECUTION_ATTACK->INFINITY_BREAK/AURORA'"));
+  assert.ok(html.includes('COSMO SHADOW TRADES'));
+  assert.ok(html.includes('Cosmo GREEN trigger'));
+  assert.ok(app.includes('atomicThunderGreenTriggerCents'));
+  assert.equal(html.includes('PRE-BOLT → ATB2 → ARAYASHIKI'),false);
+});
 
-  assert.ok(doctrine.includes("version:'ATHENA-A3'"));
-  assert.ok(doctrine.includes("version:'ARAYASHIKI-A8-V1'"));
-  assert.ok(doctrine.includes("postFirePredictiveVeto:false"));
-  assert.ok(doctrine.includes("noEvidencePolicy:'NOT_CERTIFIED'"));
-  assert.ok(athena.includes("examineArayashikiSurvival({bolt,context,selectedAttack:null,now})"));
-  assert.ok(athena.indexOf("examineArayashikiSurvival({bolt,context,selectedAttack:null,now})")<athena.indexOf('ranking=rankAthenaAttacks(bolt,settings,this.memory,context)'));
-  assert.ok(athena.includes("decision='SURVIVAL_REJECT'"));
-  assert.ok(athena.includes('survivalCertificate'));
-  assert.ok(strategy.includes('verifyArayashikiCertificate(command.survivalCertificate,now)'));
-  assert.equal(strategy.includes('examineArayashikiSurvival'),false,'post-FIRE execution may verify but never recompute predictive survival');
-  assert.ok(engine.includes('crashState'));
-  assert.ok(engine.includes('survivalFeatures'));
-  assert.ok(arayashiki.includes('all_cosmo_sources_invalidated_by_regime'));
-  assert.ok(arayashiki.includes('source_predates_current_regime'));
-  assert.ok(arayashiki.includes('low_band_directional_proof_missing'));
-  assert.ok(model.includes('ATHENA_B2_R2_MODEL'));
-  assert.equal(ATHENA_B2.guardianModelHash,'77f1153640f1565f7eaaa8823d8dacd2b18d9bfd954e4590ddd63e8e79a5feb4');
-  assert.ok(html.includes('ARAYASHIKI'));
-  assert.ok(app.includes('survivalCertified'));
-  assert.ok(app.includes('survivalRejected'));
+test('R60-HF1 reset permanently preserves intelligence and enforces an epoch/drain mutation barrier',async()=>{
+  const engine=await readFile(resolve(root,'src/engine.mjs'),'utf8');
+  const strategy=await readFile(resolve(root,'src/strategy.mjs'),'utf8');
+  const start=engine.indexOf('async resetSimulation()');
+  const end=engine.indexOf('\n  async _reconcileBroker()',start);
+  assert.ok(start>=0&&end>start,'resetSimulation source must be present');
+  const reset=engine.slice(start,end);
+  assert.equal(reset.includes('clearTrackers'),false,'Simulation reset must never delete persisted tracker intelligence');
+  assert.equal(reset.includes('histories.clear'),false,'Simulation reset must never delete MarketHub rolling history');
+  assert.ok(reset.includes('simulationMutationGate.blockAndDrain()'),'reset must close the mutation barrier before archive');
+  assert.ok(reset.includes('simulationMutationGate.release()'),'reset must reopen the mutation barrier in finally');
+  assert.ok(reset.includes('archiveSimulation'),'reset remains an economic-cohort archive, not an intelligence wipe');
+  assert.ok(engine.includes('export class SimulationMutationGate'));
+  assert.ok(strategy.includes("simulation_reset_mutation_blocked"),'final SIM persistence must reject stale pre-reset work');
+});
+
+test('R60-HF1 historical Athena and Atomic Thunder hydration is ranking/research-only and cannot block engine readiness',async()=>{
+  const engine=await readFile(resolve(root,'src/engine.mjs'),'utf8');
+  const athena=await readFile(resolve(root,'src/athena.mjs'),'utf8');
+  assert.equal(engine.includes('await this.legacyAthena.init()'),false,'legacy Athena research cannot block startup');
+  assert.equal(engine.includes('await this.athenaCommander.init()'),false,'Athena historical ranking memory cannot block startup');
+  assert.equal(engine.includes('await this.atomicThunderBolt.init()'),false,'Atomic Thunder counterfactual research cannot block startup');
+  assert.ok(engine.includes('await this.strategy.init({backgroundResearch:true})'),'legacy strategy research must be detached');
+  assert.ok(engine.includes('startBackgroundIntelligenceHydration()'),'background hydration launcher must exist');
+  const protectionAt=engine.indexOf('this.protectionLoopPromise = this.protectionLoop()');
+  const cycleAt=engine.indexOf('this.cyclePromise = this.cycleLoop()');
+  const hydrateAt=engine.indexOf('this.startBackgroundIntelligenceHydration()',cycleAt);
+  assert.ok(protectionAt>=0&&cycleAt>protectionAt&&hydrateAt>cycleAt,'trading/protection loops must start before optional historical hydration');
+  assert.ok(engine.includes('tradingBlocked:false'),'hydration telemetry must explicitly expose non-blocking authority');
+  assert.ok(athena.includes('entryAuthorityBlockedUntilLoaded:false'),'Athena summary must permanently document non-blocking history semantics');
+  assert.ok(athena.includes("state:'STALE_DISCARDED'"),'late historical reads must not overwrite newer live learning');
+  assert.ok(engine.includes("resetSafetyVersion:'R60-HF1-SIMULATION-MUTATION-EPOCH-DRAIN'"),'diagnostics must expose the reset barrier version');
+  assert.ok(engine.includes('simulationMutationGate:this.simulationMutationGate?.snapshot?.()||null'),'diagnostics must expose reset gate state');
+  assert.ok(engine.includes('intelligenceHydration:{...(this.intelligenceHydration||{}),tradingBlocked:false}'),'diagnostics must expose non-blocking hydration state');
+  assert.ok(engine.includes('historicalIntelligenceBlocksTrading:false'),'diagnostics must make the authority boundary explicit');
+});
+
+test('R61-HF1 full scanner completes without any retired Scarlet priority-arm variable and advances scanner freshness',async()=>{
+  const {SagittariusEngine}=await import('../src/engine.mjs');
+  const {freshInstallSettings}=await import('../src/config.mjs');
+  const source=await readFile(resolve(root,'src/engine.mjs'),'utf8');
+  assert.equal(source.includes('scarletPriorityTickers'),false,'retired delayed-Scarlet priority variable must not survive R61-HF1');
+  const e=Object.create(SagittariusEngine.prototype);
+  e.settings={...freshInstallSettings(),systemName:'S',ownerId:'O',mode:'SIMULATION',engineActive:true};
+  e.health={scannerFresh:false,degraded:true,lastError:null};e.speed={};e.cycleFailureCount=0;e.lastFullScanMs=0;e.lastDiscoveryMs=0;e.lastScanMarkets=[];
+  e.recoveryPriorityTickers=new Set();e.crashPriorityTickers=new Set();
+  e.db={
+    async openEntries(){return[];},async openHunterEntries(){return[];},async trackers(){return[];},async audit(){},
+  };
+  e.market={quotes:new Map(),async discover(){return[];},sample(){},getQuote(){return null;}};
+  e.learning={async trackRecovery(){},async trackStopGuardRecovery(){},async observeCrashQuote(){},async learnMarketDrops(){},async aggregatePatterns(){},async aggregateStopGuardProfiles(){},async learnDurations(){}};
+  e.refreshRecoveryPriorityTickers=async()=>e.recoveryPriorityTickers;e.refreshCrashPriorityTickers=()=>e.crashPriorityTickers;
+  let trackerPriority=null;e.persistTrackers=async(_markets,priority)=>{trackerPriority=[...priority];return new Map();};
+  e.runProtectionSweep=async()=>{};e.evaluateEntryChain=async()=>[];e.runPostExitResearchIfDue=async()=>{};e.reconcileBroker=async()=>{};e.testConnection=async()=>{};e.snapshot=async()=>{};
+  e.recomputeHealth=()=>{e.health.scannerFresh=e.lastFullScanMs>0;e.health.degraded=!e.health.scannerFresh;};
+  const result=await e.fullScan();
+  assert.deepEqual(result,{markets:0,newEntries:0});
+  assert.deepEqual(trackerPriority,[]);
+  assert.ok(e.lastFullScanMs>0);
+  assert.equal(e.health.scannerFresh,true);
+  assert.equal(e.health.degraded,false);
 });

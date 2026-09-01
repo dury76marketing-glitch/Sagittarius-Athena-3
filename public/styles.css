@@ -30,3 +30,5 @@
 .athena-section{border-color:#c4b5fd;background:linear-gradient(180deg,#f5f3ff 0,#fff 150px)}
 .infinity-section{border-color:#86efac;background:linear-gradient(180deg,#f0fdf4 0,#fff 130px)}
 .attack-authority-note{font-size:10px;color:#475569;font-weight:700;margin-top:4px}
+
+.cosmo-filters{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.cosmo-filter.active{background:#111827;color:#fff;border-color:#111827}

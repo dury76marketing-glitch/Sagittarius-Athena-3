@@ -4,18 +4,24 @@
 // R45 Mega Wave separates active runtime concepts from historical compatibility.
 // Retired concepts remain recognizable so old/open positions stay protected and
 // historical analytics stay truthful, but they have zero new-entry authority.
-export const ACTIVE_PORTFOLIO_CONCEPTS = new Set(['Athena Exclamation', 'Scarlet Needle', 'Momentum Hunter', 'Recovery Hunter', 'Wave Surfer', 'Crash Recovery Hunter', 'Lightning Plasma']);
+export const ACTIVE_PORTFOLIO_CONCEPTS = new Set(['Athena Exclamation', 'Scarlet Needle', 'Sagittarius Justice Arrow', 'Momentum Hunter', 'Recovery Hunter', 'Wave Surfer', 'Crash Recovery Hunter', 'Lightning Plasma']);
 export const RETIRED_PORTFOLIO_CONCEPTS = new Set(['Dragon Recovery Hunter', 'Golden Dragon Hunter']);
 export const PORTFOLIO_CONCEPTS = new Set([...ACTIVE_PORTFOLIO_CONCEPTS, ...RETIRED_PORTFOLIO_CONCEPTS]);
 export const ACTIVE_FEEDER_CONCEPTS = new Set(['Pegasus', 'Dragon', 'Phoenix']);
 export const RETIRED_FEEDER_CONCEPTS = new Set(['Sagittarius', 'Golden Dragon']);
 export const FEEDER_CONCEPTS = new Set([...ACTIVE_FEEDER_CONCEPTS, ...RETIRED_FEEDER_CONCEPTS]);
-export const ALL_CONCEPTS = new Set([...PORTFOLIO_CONCEPTS, ...FEEDER_CONCEPTS]);
+// R63 Gemini is a broker-free, portfolio-free shadow universe. Its Another
+// Dimension Attack consumes ordinary Cosmos shadow positions but is neither a
+// Cosmos source nor portfolio exposure. Keeping this authority class separate
+// prevents Atomic Thunder/Lightning Plasma feedback and capital accounting.
+export const SHADOW_ATTACK_CONCEPTS = new Set(['Another Dimension']);
+export const ALL_CONCEPTS = new Set([...PORTFOLIO_CONCEPTS, ...FEEDER_CONCEPTS, ...SHADOW_ATTACK_CONCEPTS]);
 export const WATCHDOG_MODEL = 'bolt-athena-infinity-aurora';
 
 export const EXECUTION_ATTACK_DISPLAY = Object.freeze({
   'Athena Exclamation': Object.freeze({ name:'Athena Exclamation', legacy:'AE1 / Three Gold Saint Convergence' }),
-  'Scarlet Needle': Object.freeze({ name:'Scarlet Needle', legacy:'Needle / Scorpio Delayed Strike' }),
+  'Scarlet Needle': Object.freeze({ name:'Scarlet Needle', legacy:'Needle / Scorpio Continuation Strike' }),
+  'Sagittarius Justice Arrow': Object.freeze({ name:'Sagittarius Justice Arrow', legacy:'Sagittarius Aiolos / Arrow of Justice' }),
   'Wave Surfer': Object.freeze({ name:'Pegasus Ryu Sei Ken', legacy:'Wave Surfer / Wave Hunter' }),
   'Crash Recovery Hunter': Object.freeze({ name:'Starlight Extinction', legacy:'Crash Recovery Hunter' }),
   'Recovery Hunter': Object.freeze({ name:'Crystal Wall', legacy:'Recovery Hunter' }),
@@ -25,12 +31,12 @@ export const EXECUTION_ATTACK_DISPLAY = Object.freeze({
 
 
 // R49/AE1 Athena Exclamation. This is a meta-Attack formed by three distinct
-// Gold Saint Attack doctrines converging on one exact ticker inside the rolling
-// AE1 doctrine window. The convergence never bypasses ordinary
+// Gold Saint Attack doctrines converging on one exact ticker inside a rolling
+// operator-configurable window. The convergence never bypasses ordinary
 // execution, ownership, clock, executable-book, capital, or protection gates.
 export const ATHENA_EXCLAMATION = Object.freeze({
   version:'ATHENA-EXCLAMATION-AE1',
-  policyRevision:'AE1-R3-DURABLE-FORMATION-SINGLE-CONSUMPTION',
+  policyRevision:'AE1-R2-ATHENA-FIRE-GOLD-SAINT-CONVERGENCE',
   role:'rolling_three_gold_saint_meta_attack',
   minimumSaints:3,
   defaultConvergenceWindowMinutes:70,
@@ -51,17 +57,77 @@ export const ATHENA_EXCLAMATION = Object.freeze({
 
 
 export const SCARLET_NEEDLE = Object.freeze({
-  version:'SCARLET-NEEDLE-V1',
-  policyRevision:'SN1-R1-FROZEN-BOLT-REFERENCE-10C-RETRACEMENT',
-  role:'athena_controlled_delayed_retracement_attack',
-  triggerDropCents:10,
-  referencePrice:'ATOMIC_THUNDER_BOLT_SIGNAL_ASK',
-  triggerCondition:'CURRENT_EXECUTABLE_ASK_AT_OR_BELOW_FROZEN_REFERENCE_MINUS_10C',
-  triggerEditable:false,
-  oneActiveArmPerTicker:true,
+  version:'SCARLET-NEEDLE-V2',
+  policyRevision:'SN2-R1-POST-PROFIT-SAFE-CONTINUATION',
+  role:'post_profit_same_ticker_continuation_attack',
+  trigger:'POST_PROFIT_INFINITY_CLOSE',
+  triggerRequiresPositiveRealizedNet:true,
+  sameExactTicker:true,
+  sameSide:true,
+  normalStrategicDiscoveryBypass:true,
+  ordinaryCooldownExempt:true,
+  fullExecutionSafetyRequired:true,
+  defaultMaxRepeats:1,
+  maximumConfigurableRepeats:100,
   sourceDoesNotAuthorizeEntry:true,
-  strategicEntryAuthority:'ATHENA',
+  strategicEntryAuthority:'SCARLET_NEEDLE_POST_PROFIT_CONTINUATION',
   profitAuthority:'INFINITY_BREAK',
+  lossAuthority:'AURORA_EXECUTION',
+  noPostEntryTimeExit:true,
+});
+
+
+
+// R63 Gemini / Another Dimension / Sagittarius Justice Arrow. Gemini is the
+// isolated shadow universe. Another Dimension is the Attack inside Gemini and
+// applies Great Horn momentum physics to active ordinary Cosmos shadows. It has
+// a full virtual entry-to-exit lifecycle but zero broker authority and zero
+// simulation/real portfolio-capital authority. Only a completed +1c-net-or-
+// better Another Dimension close may authorize one Justice Arrow continuation.
+export const GEMINI_UNIVERSE = Object.freeze({
+  version:'GEMINI-V1',
+  policyRevision:'GEMINI1-R1-FULL-VIRTUAL-TRADE-UNIVERSE',
+  role:'isolated_shadow_trade_universe',
+  attack:'Another Dimension',
+  sourceConcepts:Object.freeze(['Pegasus','Dragon','Phoenix']),
+  brokerOrderAuthority:false,
+  portfolioCapitalAuthority:false,
+  simulationPortfolioCapitalAuthority:false,
+});
+
+export const ANOTHER_DIMENSION = Object.freeze({
+  version:'ANOTHER-DIMENSION-V2',
+  policyRevision:'AD2-R1-GEMINI-GREAT-HORN-FULL-VIRTUAL-TRADE',
+  role:'gemini_great_horn_physics_shadow_attack',
+  universe:GEMINI_UNIVERSE.version,
+  sourceConcepts:GEMINI_UNIVERSE.sourceConcepts,
+  brokerOrderAuthority:false,
+  portfolioCapitalAuthority:false,
+  simulationPortfolioCapitalAuthority:false,
+  entryPhysics:'GREAT_HORN_MOMENTUM',
+  virtualProfitAuthority:'INFINITY_BREAK',
+  virtualLossAuthority:'AURORA_EXECUTION',
+  minimumNetPerOriginalContractCents:1,
+  profitableCloseReason:'another_dimension_profit',
+  lossCloseReason:'another_dimension_aurora',
+  maximumRecentResults:100,
+  sourceDoesNotAuthorizeRealEntry:true,
+});
+
+export const SAGITTARIUS_JUSTICE_ARROW = Object.freeze({
+  version:'SAGITTARIUS-JUSTICE-ARROW-V1',
+  policyRevision:'SJA1-R1-POST-ANOTHER-DIMENSION-VICTORY',
+  role:'post_shadow_victory_same_ticker_continuation_attack',
+  trigger:'POST_PROFIT_ANOTHER_DIMENSION_CLOSE',
+  triggerRequiresPositiveRealizedNet:true,
+  sameExactTicker:true,
+  sameSide:true,
+  normalStrategicDiscoveryBypass:true,
+  ordinaryCooldownExempt:true,
+  fullExecutionSafetyRequired:true,
+  sourceDoesNotAuthorizeEntry:true,
+  strategicEntryAuthority:'SAGITTARIUS_JUSTICE_ARROW_POST_SHADOW_WIN',
+  profitAuthority:'ATHENA-X1',
   lossAuthority:'AURORA_EXECUTION',
   noPostEntryTimeExit:true,
 });
@@ -84,7 +150,7 @@ export const COSMO_ROUTING = Object.freeze({
   version:'COSMO-ROUTING-V1',
   role:'shared_reference_opportunity_bus',
   activeCosmos:Object.freeze(['Pegasus','Dragon','Phoenix']),
-  currentInitialEntryConsumers:Object.freeze(['Momentum Hunter','Wave Surfer','Crash Recovery Hunter','Scarlet Needle','Lightning Plasma']),
+  currentInitialEntryConsumers:Object.freeze(['Momentum Hunter','Wave Surfer','Crash Recovery Hunter','Lightning Plasma']),
   followOnOnlyExceptions:Object.freeze(['Recovery Hunter']),
   defaultFutureInitialEntryConsumer:true,
   sourceDoesNotAuthorizeEntry:true,
@@ -123,6 +189,20 @@ export const PHOENIX_COSMO = Object.freeze({
   orderAuthority:false,
   strategicEntryAuthority:'ATHENA',
   persistenceRole:'prospective_causal_learning_and_audit',
+});
+
+
+export const COSMO_SHADOW_TRADING = Object.freeze({
+  version:'COSMO-SHADOW-V1',
+  policyRevision:'CST1-R1-VISIBLE-PERSISTED-SHADOW-TRADING',
+  role:'broker_free_market_observation_and_virtual_trade_layer',
+  brokerOrderAuthority:false,
+  portfolioCapitalAuthority:false,
+  defaultGreenTriggerCents:1,
+  greenPriceBasis:'EXECUTABLE_YES_BID_MINUS_SHADOW_ENTRY',
+  oneBoltPerShadowTrade:true,
+  atomicThunderEvent:'COSMO_GREEN',
+  lineageRequired:true,
 });
 
 export const FEEDERS = Object.freeze([
@@ -174,7 +254,7 @@ export const LIGHTNING_PLASMA = Object.freeze({
 // can still execute worse, so U-SG1 remains the sole loss-execution authority.
 export const AURORA_EXECUTION = Object.freeze({
   version:'AURORA-V2',
-  policyRevision:'AURORA-V2-R1-CONFIGURABLE-DAMAGE-CONTROL',
+  policyRevision:'AURORA-V2-R2-VERIFIED-FROZEN-DANGER-GATE',
   defaultDamageControlPercent:45,
   minimumDamageControlPercent:1,
   maximumDamageControlPercent:95,
@@ -184,37 +264,35 @@ export const AURORA_EXECUTION = Object.freeze({
   recalculatesAfterEntry:false,
   lossAuthority:'U-SG1',
   watchdog:'SLW1',
+  normalAutomatedLossExitGate:'FROZEN_DANGER_LINE_VERIFIED_EXECUTABLE_TOUCH',
+  watchdogAboveDangerLine:'OBSERVATION_ONLY',
 });
 
 export const ATOMIC_THUNDER_BOLT = Object.freeze({
-  version:'ATOMIC-THUNDER-BOLT-V1',
-  policyRevision:'ATB1-R2-TARGET-AWARE-ECONOMIC-RADAR',
-  role:'pre_entry_short_horizon_opportunity_radar',
+  version:'ATOMIC-THUNDER-BOLT-V2',
+  policyRevision:'ATB3-R1-COSMO-GREEN-IMMEDIATE-BOLT',
+  role:'cosmo_shadow_green_momentum_signal',
   authority:'SIGNAL_ONLY',
   entryAuthority:false,
   orderAuthority:false,
   athenaRequired:true,
   noBoltNoAttack:true,
   maximumOpportunityAgeMs:5_000,
-  minimumHistorySamples:4,
+  minimumHistorySamples:0,
   maximumActiveBolts:4096,
   maximumCounterfactualEpisodes:2048,
   learningHorizonsMs:Object.freeze([5_000,15_000,30_000,60_000,120_000,300_000,600_000]),
 });
 
-// R57 ATB2 Pattern Guardian. Atomic Thunder keeps its existing opportunity
-// nomination logic. ATB2 adds one deliberately small upstream responsibility:
-// do not emit a Bolt while the recent price path is a known damaged-market
-// shape. The pre-Bolt candidate uses operator-editable first/final examination
-// times (defaults 30s/120s) and must remain free of these patterns throughout.
-// HF1 also treats the current CI1 crash episode/pending rebound signal as part
-// of the path, so a crash->rebound cannot become clean merely by aging beyond
-// the raw 120-second quote window. This is not a winner score and has no order
-// authority.
+// Legacy ATB2 price-path classifier retained for bounded historical research.
+// R60 removes it from the command path: it cannot delay COSMO_GREEN, block a
+// Bolt, alter Athena FIRE, or place an order. The old 30s/120s values below are
+// research-window metadata only and are no longer operator strategy settings.
 export const ATOMIC_THUNDER_PATTERN_GUARDIAN = Object.freeze({
-  version:'ATB2',
-  policyRevision:'ATB2-R5-P6-P8-UPSIDEDANGER-PATTERN-GUARD-30S-120S',
-  role:'pre_bolt_dangerous_price_path_recognition',
+  version:'ATB2-RESEARCH',
+  policyRevision:'ATB2-R5-RESEARCH-ONLY-NON-AUTHORITY',
+  role:'historical_dangerous_price_path_research_only',
+  authority:'RESEARCH_ONLY',
   defaultPreExamMs:30_000,
   defaultFinalExamMs:120_000,
   lookbackMs:120_000,
@@ -226,55 +304,21 @@ export const ATOMIC_THUNDER_PATTERN_GUARDIAN = Object.freeze({
   minimumCrashReclaimRatio:0.50,
   fallingKnifeNetDropCents:8,
   fallingKnifeMinimumDownLegs:3,
-  // R5/P6-P8: the five-log 2026-08-29 loss wave exposed a second danger
-  // family: apparently strong markets that exhaust near a peak before the
-  // destructive move begins. These are topology thresholds, not a score and
-  // never a high-price-only veto.
-  peakEntryMinimumPriorRiseCents:6,
-  peakEntryStallBandCents:1,
-  peakEntryMinimumStallMs:10_000,
-  peakEntryRolloverDropCents:4,
-  peakEntryMinimumDownSteps:2,
-  microBreakoutMinimumCents:1,
-  microBreakoutMaximumCents:4,
-  microBreakoutPriorHighBandCents:1,
-  microBreakoutPriorHighMinimumTouches:2,
-  microBreakoutPriorHighMinimumSpanMs:10_000,
-  microBreakoutMinimumGivebackCents:4,
-  microBreakoutPriorHighUndercutCents:1,
-  microBreakoutMinimumDownSteps:2,
-  highZoneMinimumCents:70,
-  highZoneMinimumAscentCents:8,
-  highZoneCompressionBandCents:3,
-  highZoneCompressionMinimumSamples:3,
-  highZoneCompressionMinimumSpanMs:10_000,
-  highZoneTerminalReversalCents:6,
-  highZoneMinimumDownSteps:2,
-  mappedFamilies:Object.freeze([
-    'P1_FALL_REBOUND_FALL',
-    'P2_REPEATED_FALL_REBOUND_CYCLES',
-    'P3_CRASH_REBOUND_SECOND_CRASH_CONTAMINATION',
-    'P4_PERSISTENT_LOWER_LOWS_FAILED_REBOUNDS',
-    'P5_FALLING_DEAD_MARKET_CONTINUATION',
-    'P6_PEAK_ENTRY_NO_EXTENSION_CLIFF',
-    'P7_MICRO_BREAKOUT_REJECTION_CLIFF',
-    'P8_EXTENDED_HIGH_ZONE_EXHAUSTION_TERMINAL_REVERSAL',
-  ]),
   maximumActivePreBolts:2048,
 });
 
 export const ARAYASHIKI = Object.freeze({
   version:'ARAYASHIKI-A8-V1',
-  policyRevision:'A8-R2-CURRENT-STATE-SURVIVAL-CERTIFICATE',
-  role:'SUPREME_PRE_ENTRY_SURVIVAL_INTELLIGENCE',
-  authority:'ATHENA_INTERNAL_SURVIVAL_CERTIFICATION_ONLY',
+  policyRevision:'A8-R3-RESEARCH-ONLY-NON-STRATEGIC',
+  role:'NON_AUTHORITY_RESEARCH_AND_DIAGNOSTIC_CONTEXT',
+  authority:'RESEARCH_ONLY',
   independentEntryAuthority:false,
   brokerOrderAuthority:false,
   noEvidencePolicy:'NOT_CERTIFIED',
   certificateTtlMs:5_000,
   maximumMarketAgeMs:2_000,
   maximumCrashStateAgeMs:5_000,
-  minimumHistorySamples:4,
+  minimumHistorySamples:0,
   minimumHistoryWindowMs:5_000,
   maximumSpreadCents:3,
   materialCrashCents:8,
@@ -289,9 +333,9 @@ export const ARAYASHIKI = Object.freeze({
 
 export const ATHENA_COMMANDER = Object.freeze({
   version:'ATHENA-A3',
-  policyRevision:'ATHENA-A3-R5-MEMORY-SHADOW-AUTHORITY-BOUNDARY',
-  role:'supreme_economic_entry_commander_after_arayashiki',
-  authority:'STRATEGIC_ENTRY_AND_ATTACK_SELECTION_AFTER_ARAYASHIKI_CERTIFICATION',
+  policyRevision:'ATHENA-A3-R5-COSMO-GREEN-DIRECT-FIRE',
+  role:'supreme_attack_selector_after_atomic_thunder_green_bolt',
+  authority:'STRATEGIC_ENTRY_AND_ATTACK_SELECTION_AFTER_ATOMIC_THUNDER',
   decisions:Object.freeze(['FIRE','WATCH','REJECT','SURVIVAL_REJECT','EXPIRED']),
   outcomeLabels:Object.freeze(['CLEAN_BOLT','TOXIC_LATE_BOLT','FALSE_BOLT','EXPIRED_NO_IMPULSE']),
   entryDecisionAuthority:true,
@@ -301,11 +345,9 @@ export const ATHENA_COMMANDER = Object.freeze({
   attackStrategicRevalidationAllowed:false,
   economicObjective:'MAXIMIZE_EXPECTED_NET_VALUE_AT_CONFIGURED_INFINITY_TARGET',
   targetAwareAttackSelection:true,
-  economicMemoryAuthority:'SHADOW_RANKING_ONLY',
-  economicMemoryDecisionAuthority:false,
-  matureNegativeExpectedValueMayFire:true,
+  matureNegativeExpectedValueMayFire:false,
   legacyNegativeExpectedValuePreSurvivalVeto:false,
-  certifiedEconomicMemoryRequiredWhenMature:false,
+  certifiedEconomicMemoryRequiredWhenMature:true,
   certifiedEconomicMaturityObservations:5,
   partialCertifiedEconomicMinimumObservations:3,
   partialCertifiedEconomicDecisionWeight:0.45,
@@ -334,7 +376,7 @@ export const INFINITY_BREAK = Object.freeze({
   authority:'PROFIT_EXIT',
   appliesTo:'R51_plus_entries_with_INFINITY_BREAK_snapshot',
   fullPositionOnly:true,
-  defaultMinimumNetPerOriginalContractCents:5,
+  defaultMinimumNetPerOriginalContractCents:1,
   defaultRequiredFreshConfirmations:2,
   defaultMaximumBookAgeMs:1000,
   defaultConfirmationWindowMs:3000,
@@ -515,12 +557,11 @@ export const RECOVERY_MARKET_DROP_CENTS = 5;
 // R15 U-SG1 Ultimate Stop Guard. The model-owned frozen stop remains the
 // immutable Danger Line. U-SG1 adds bounded recovery intelligence below that
 // line; it never rewrites the configured stop distance.
-// R39 SLW1 Stop Loss Watchdog. This is not a second loss authority. It is an
-// early economic-loss wake-up/classification layer inside the U-SG1 domain.
-// The frozen model stop remains immutable; SLW1 may only ask U-SG1 to commit
-// the existing full-position hard-stop exit path when both historical recovery
-// evidence and fresh live deterioration indicate that a deeply losing market is
-// likely dead rather than temporarily wounded.
+// R61 SLW1 Stop Loss Watchdog. This is not a second loss authority. Above a
+// frozen Aurora danger line it is observation/classification telemetry only and
+// can never sell. Only a fresh executable touch/cross of the frozen Aurora line
+// activates U-SG1 loss-domain authority; below that verified gate SLW1 evidence
+// may inform U-SG1 recovery/exit handling without changing the frozen line.
 export const STOP_LOSS_WATCHDOG = Object.freeze({
   version: 'SLW1',
   policyRevision: 'SLW1-R2-STAKE-NORMALIZED',

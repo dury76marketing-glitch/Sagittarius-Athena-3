@@ -6,12 +6,12 @@ import { KalshiClient } from './kalshi.mjs';
 import { MarketHub } from './market.mjs';
 import { LearningEngine, classifyDeterministic } from './learning.mjs';
 import { Athena, ATHENA_BRAIN, ATHENA_B2, AthenaCommander } from './athena.mjs';
-import { StrategyEngine, activeCosmoSources, lightningPlasmaFieldSelection } from './strategy.mjs';
+import { StrategyEngine, activeCosmoSources, lightningPlasmaFieldSelection, anotherDimensionQualification } from './strategy.mjs';
 import { ProfitGuard } from './profitGuard.mjs';
 import { GoldenEye } from './goldenEye.mjs';
-import { FeederSignalIntel, FEEDER_SIGNAL_INTELLIGENCE } from './feederSignalIntel.mjs';
+import { FEEDER_SIGNAL_INTELLIGENCE } from './feederSignalIntel.mjs';
 import { PhoenixCosmoEngine } from './phoenix.mjs';
-import { PORTFOLIO_CONCEPTS, ACTIVE_PORTFOLIO_CONCEPTS, RETIRED_PORTFOLIO_CONCEPTS, FEEDER_CONCEPTS, ACTIVE_FEEDER_CONCEPTS, RETIRED_FEEDER_CONCEPTS, EXECUTION_ATTACK_DISPLAY, GALACTIC_EXPLOSION, COSMO_ROUTING, LIGHTNING_PLASMA, PHOENIX_COSMO, ATHENA_EXCLAMATION, SCARLET_NEEDLE, AURORA_EXECUTION, computeLiveStatus, MOMENTUM, RECOVERY, ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE, ATOMIC_THUNDER, ATOMIC_THUNDER_BOLT, ATOMIC_THUNDER_PATTERN_GUARDIAN, ATHENA_COMMANDER, ARAYASHIKI, INFINITY_BREAK, POST_EXIT_RESEARCH } from './doctrine.mjs';
+import { PORTFOLIO_CONCEPTS, ACTIVE_PORTFOLIO_CONCEPTS, RETIRED_PORTFOLIO_CONCEPTS, FEEDER_CONCEPTS, ACTIVE_FEEDER_CONCEPTS, RETIRED_FEEDER_CONCEPTS, SHADOW_ATTACK_CONCEPTS, EXECUTION_ATTACK_DISPLAY, GALACTIC_EXPLOSION, COSMO_ROUTING, LIGHTNING_PLASMA, PHOENIX_COSMO, ATHENA_EXCLAMATION, SCARLET_NEEDLE, GEMINI_UNIVERSE, ANOTHER_DIMENSION, SAGITTARIUS_JUSTICE_ARROW, AURORA_EXECUTION, kalshiGeneralTakerFeeEstimateCents, computeLiveStatus, MOMENTUM, RECOVERY, ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE, ATOMIC_THUNDER, ATOMIC_THUNDER_BOLT, ATOMIC_THUNDER_PATTERN_GUARDIAN, COSMO_SHADOW_TRADING, ATHENA_COMMANDER, ARAYASHIKI, INFINITY_BREAK, POST_EXIT_RESEARCH } from './doctrine.mjs';
 import { GameClockAuthority, GAME_CLOCK_AUTHORITY, isConfirmedGameClockState, isEntryAuthorizedGameClockState } from './gameClock.mjs';
 import { AtomicThunderBoltEngine, atomicThunderBoltFeatures } from './opportunity.mjs';
 
@@ -42,11 +42,11 @@ export const DATABASE_PRESSURE_ISOLATION = Object.freeze({
 });
 
 export const ENTRY_ADMISSION_CONTROL = Object.freeze({
-  version:'EAC2',
+  version:'EAC3',
   unknownProbeIntervalMs:30_000,
   maximumTrackedEvents:2048,
   preBoltExecutionMarginMs:5_000,
-  role:'event_level_prequeue_clock_and_prebolt_feasibility_admission',
+  role:'event_level_prequeue_clock_and_immediate_green_execution_admission',
 });
 
 const REFERENCE_SIGNAL_SWEEP_MS = DATABASE_PRESSURE_ISOLATION.referenceSignalSweepMs;
@@ -77,8 +77,8 @@ export const RUNTIME_RESOURCE_GOVERNOR = Object.freeze({
   sampleIntervalMs:5000,
   // R58 diagnostics showed systems already sitting around 425-448 MiB while
   // only in COMPACT. Begin reconstructable-state compaction at that first
-  // pressure tier instead of waiting until 450 MiB. Protected/live/Needle
-  // crash tickers are never evicted by LearningEngine's pruning contract.
+  // pressure tier instead of waiting until 450 MiB. Protected/live/crash
+  // tickers are never evicted by LearningEngine's pruning contract.
   crashStateLimits:Object.freeze({GREEN:768,COMPACT:512,PRESSURE:384,TRADE_PRIORITY:320,HARD_RESEARCH_SHED:256}),
   fsiObservationLimits:Object.freeze({GREEN:96,COMPACT:64,PRESSURE:64,TRADE_PRIORITY:64,HARD_RESEARCH_SHED:64}),
   tradingAuthority:false,
@@ -210,52 +210,53 @@ export function entryAdmissionDecision({ quote=null, mode='SIMULATION', minGameM
   return{action:'PROBE',reason:'clock_authority_probe_required',nextEligibleAtMs:null};
 }
 
-// EAC2 closes the authority-order gap that allowed the quote-event Athena path
-// to consume ATB2/A8/Athena work and only discover at createHunter() that the
-// game window had already expired. A new PRE-BOLT is admitted only when its
-// *frozen* final examination plus a small execution margin fits strictly inside
-// the configured maximum game window. Existing PRE-Bolts are judged from their
-// original frozen schedule; already-cleared Bolts and an armed Scarlet Needle
-// need only the execution margin.
+// EAC3 keeps only the hard game-window proof needed by the immediate
+// COSMO_GREEN -> Atomic Thunder -> Athena chain. There is no strategic
+// PRE-BOLT waiting clock. A green signal or an already emitted Bolt needs only
+// enough remaining game time for the bounded execution margin.
 export function entryChainAdmissionDecision({
   quote=null,
   mode='SIMULATION',
   minGameMinutes=0,
   maxGameMinutes=0,
   now=Date.now(),
-  stage='NEW_PRE_BOLT',
-  finalExamSeconds=120,
-  preBoltStartedAtMs=0,
-  preBoltFinalExamMs=0,
+  stage='ATOMIC_GREEN',
   executionMarginMs=ENTRY_ADMISSION_CONTROL.preBoltExecutionMarginMs,
 }={}){
+  const normalizedStage=stage==='NEW_PRE_BOLT'||stage==='ACTIVE_PRE_BOLT'?'ATOMIC_GREEN':stage==='POST_ATB2'?'POST_BOLT':String(stage||'ATOMIC_GREEN');
   const base=entryAdmissionDecision({quote,mode,minGameMinutes,maxGameMinutes,now});
-  if(base.action!=='ALLOW')return{...base,stage};
+  if(base.action!=='ALLOW')return{...base,stage:normalizedStage};
   const maxAt=Number(base.lastEligibleAtMs||0),t=Number(now),margin=Math.max(0,Number(executionMarginMs)||0);
-  if(!(maxAt>0))return{...base,stage,executionMarginMs:margin,preBoltFeasible:true};
-
+  if(!(maxAt>0))return{...base,stage:normalizedStage,executionMarginMs:margin,preBoltFeasible:true,immediateGreenChain:true};
   const expectedEvent=String(quote?.eventTicker||quote?.ticker||'');
   const freshClock=isEntryAuthorizedGameClockState(quote?.gameClockState,expectedEvent,t);
-  if(['NEW_PRE_BOLT','POST_ATB2'].includes(String(stage))&&!freshClock){
-    return{action:'PROBE',reason:stage==='NEW_PRE_BOLT'?'prebolt_clock_authorization_refresh_required':'post_atb2_clock_authorization_refresh_required',stage,startTimeMs:base.startTimeMs,lastEligibleAtMs:maxAt,nextEligibleAtMs:base.nextEligibleAtMs};
+  if(['ATOMIC_GREEN','POST_BOLT'].includes(normalizedStage)&&!freshClock){
+    return{action:'PROBE',reason:normalizedStage==='POST_BOLT'?'post_bolt_clock_authorization_refresh_required':'cosmo_green_clock_authorization_refresh_required',stage:normalizedStage,startTimeMs:base.startTimeMs,lastEligibleAtMs:maxAt,nextEligibleAtMs:base.nextEligibleAtMs};
   }
+  const readyAtMs=t+margin;
+  if(!(readyAtMs<maxAt))return{action:'BLOCK',reason:'execution_window_infeasible',stage:normalizedStage,startTimeMs:base.startTimeMs,lastEligibleAtMs:maxAt,readyAtMs,executionMarginMs:margin,nextEligibleAtMs:null};
+  return{...base,stage:normalizedStage,executionMarginMs:margin,readyAtMs,preBoltFeasible:true,immediateGreenChain:true};
+}
 
-  let readyAtMs=t+margin;
-  let latestSafePreBoltStartAtMs=null;
-  if(stage==='NEW_PRE_BOLT'){
-    const finalMs=Math.max(1,Number(finalExamSeconds||0)*1000);
-    readyAtMs=t+finalMs+margin;
-    latestSafePreBoltStartAtMs=maxAt-finalMs-margin;
-  }else if(stage==='ACTIVE_PRE_BOLT'){
-    const started=Number(preBoltStartedAtMs||0),finalMs=Math.max(1,Number(preBoltFinalExamMs||0));
-    if(!(started>0)||!(finalMs>0))return{action:'BLOCK',reason:'prebolt_schedule_missing',stage,startTimeMs:base.startTimeMs,lastEligibleAtMs:maxAt,nextEligibleAtMs:null};
-    readyAtMs=started+finalMs+margin;
-    latestSafePreBoltStartAtMs=maxAt-finalMs-margin;
+// R60-HF1 simulation reset mutation barrier. Reset invalidates the epoch,
+// blocks new SIM work, and drains only already-entered entry work before the
+// archive boundary. This covers both Cosmos shadow commits and real Attacks.
+export class SimulationMutationGate {
+  constructor(){this.epoch=0;this.blocked=false;this.active=0;this.waiters=[];}
+  capture(){return{epoch:this.epoch,blocked:this.blocked};}
+  enter(token){
+    if(this.blocked||!token||Number(token.epoch)!==this.epoch)return null;
+    this.active+=1;let released=false;
+    return()=>{if(released)return;released=true;this.active=Math.max(0,this.active-1);if(this.active===0){const waiters=this.waiters.splice(0);for(const resolve of waiters)resolve();}};
   }
-  if(!(readyAtMs<maxAt)){
-    return{action:'BLOCK',reason:stage==='POST_ATB2'||stage==='ARMED_SCARLET'?'execution_window_infeasible':'prebolt_time_infeasible',stage,startTimeMs:base.startTimeMs,lastEligibleAtMs:maxAt,readyAtMs,executionMarginMs:margin,latestSafePreBoltStartAtMs,nextEligibleAtMs:null};
+  async blockAndDrain(){
+    if(this.blocked)throw new Error('simulation_reset_already_in_progress');
+    this.blocked=true;this.epoch+=1;
+    if(this.active>0)await new Promise((resolve)=>this.waiters.push(resolve));
+    return{epoch:this.epoch,active:this.active};
   }
-  return{...base,stage,executionMarginMs:margin,readyAtMs,latestSafePreBoltStartAtMs,preBoltFeasible:true};
+  release(){this.blocked=false;}
+  snapshot(){return{version:'SIM-RESET-GATE-V1',epoch:this.epoch,blocked:this.blocked,active:this.active,waiting:this.waiters.length};}
 }
 
 // HF2 crash orchestration is independent of any one Cosmo source. CI1 wakes
@@ -276,6 +277,10 @@ export class SagittariusEngine {
     // HF3: serialize dashboard/settings mutations so rapid one-by-one topology
     // toggles cannot persist out of order across PostgreSQL pool clients.
     this.settingsMutationTail = Promise.resolve();
+    this.simulationMutationGate = new SimulationMutationGate();
+    this.simulationResetPromise = null;
+    this.intelligenceHydration = {legacyAthena:'IDLE',athenaCommander:'IDLE',atomicThunderResearch:'IDLE',lastError:null,startedAtMs:0,completedAtMs:0};
+    this.intelligenceHydrationPromise = null;
     this.cyclePromise = null;
     this.protectionLoopPromise = null;
     this.startedAtMs = Date.now();
@@ -317,15 +322,46 @@ export class SagittariusEngine {
     });
     this.entryAdmissionProbeAt = new Map();
     this.entryAdmissionStats = {version:ENTRY_ADMISSION_CONTROL.version,allowed:0,blockedBeforeQueue:0,probeAllowed:0,probeCoalesced:0,byReason:{}};
-    // R59/ECF1: one bounded identity follows an opportunity from PRE-BOLT to
+    // R60/ECF1: one bounded identity follows an opportunity from COSMO_GREEN to
     // OPENED. These maps are telemetry/dedup only; they never grant authority.
     this.entryCandidateFunnel = new Map();
     this.entryCandidateFunnelTotals = {uniqueCandidates:0,byStage:{}};
     this.entryCandidateFunnelRecent = [];
     this.athenaDecisionMemo = new Map();
     this.athenaDecisionInFlight = new Set();
-    this.scarletTriggerMemo = new Map();
-    this.entryDecisionDedupStats = {athenaEvaluated:0,athenaUnchangedSuppressed:0,athenaInFlightSuppressed:0,athenaChangedStateRetries:0,scarletEvaluated:0,scarletUnchangedSuppressed:0};
+    this.entryDecisionDedupStats = {athenaEvaluated:0,athenaUnchangedSuppressed:0,athenaInFlightSuppressed:0,athenaChangedStateRetries:0};
+    this.scarletContinuationInFlight = new Set();
+    this.scarletContinuationStats = {version:SCARLET_NEEDLE.version,eligible:0,authorized:0,attempted:0,opened:0,blocked:0,duplicateSuppressed:0,maxRepeatBlocked:0,modeMismatchBlocked:0,lastEvent:null};
+    this.scarletContinuationQueue = new CoalescingWorkQueue({
+      maxConcurrency:1,
+      onError:async(error,key)=>{await this.db.audit('error','scarlet_continuation_queue',{key,message:String(error?.message||error)}).catch(()=>{});},
+    });
+    // R63 Gemini shadow universe. Another Dimension is deliberately isolated from
+    // the ordinary Cosmo source class: it observes active Cosmos but can never
+    // become an Atomic Thunder/Lightning Plasma source. Quote work is memory-only;
+    // durable open/close transitions are serialized on one bounded worker.
+    this.activeCosmosByTicker = new Map();
+    this.anotherDimensionSourcePeaks = new Map();
+    this.anotherDimensionOpenByTicker = new Map();
+    this.anotherDimensionRecent = new Map();
+    this.anotherDimensionRuntime = new Map();
+    this.geminiOpenAttemptBookMs = new Map();
+    this.anotherDimensionQueue = new CoalescingWorkQueue({
+      maxConcurrency:1,
+      onError:async(error,key)=>{await this.db.audit('error','another_dimension_queue',{key,message:String(error?.message||error)}).catch(()=>{});},
+    });
+    this.anotherDimensionStats = {version:ANOTHER_DIMENSION.version,qualified:0,opened:0,profitClosed:0,lossClosed:0,realizedPnlCents:0,blocked:0,lastEvent:null};
+    this.justiceArrowInFlight = new Set();
+    this.justiceArrowQueue = new CoalescingWorkQueue({
+      maxConcurrency:1,
+      onError:async(error,key)=>{await this.db.audit('error','justice_arrow_continuation_queue',{key,message:String(error?.message||error)}).catch(()=>{});},
+    });
+    this.justiceArrowStats = {version:SAGITTARIUS_JUSTICE_ARROW.version,eligible:0,authorized:0,attempted:0,opened:0,blocked:0,duplicateSuppressed:0,modeMismatchBlocked:0,lastEvent:null};
+    // R61-HF1: a dashboard settings write is only reported as verified after
+    // the persisted PostgreSQL runtime record has been read back and the
+    // edited fields match exactly. This telemetry never changes frozen trade
+    // economics or grants trading authority.
+    this.settingsPersistence = {version:'SETTINGS-PERSISTENCE-R1',lastVerifiedAtMs:0,lastKeys:[],lastValues:{},lastError:null};
     this.protectedTickers = new Set();
     this.goldenEyeTimer = null;
     this.goldenEyeEvaluationPromise = null;
@@ -390,6 +426,359 @@ export class SagittariusEngine {
     };
   }
 
+  queueScarletContinuation(entry) {
+    const id=String(entry?.id||'');
+    if(!id)return false;
+    if(!(this.scarletContinuationQueue instanceof CoalescingWorkQueue)){
+      this.scarletContinuationQueue=new CoalescingWorkQueue({maxConcurrency:1,onError:async(error,key)=>{await this.db.audit('error','scarlet_continuation_queue',{key,message:String(error?.message||error)}).catch(()=>{});}});
+    }
+    return this.scarletContinuationQueue.enqueue(`close:${id}`,()=>this.handleScarletContinuation(entry));
+  }
+
+  scarletContinuationRuntime() {
+    if(!(this.scarletContinuationInFlight instanceof Set))this.scarletContinuationInFlight=new Set();
+    if(!this.scarletContinuationStats||typeof this.scarletContinuationStats!=='object')this.scarletContinuationStats={version:SCARLET_NEEDLE.version,eligible:0,authorized:0,attempted:0,opened:0,blocked:0,duplicateSuppressed:0,maxRepeatBlocked:0,modeMismatchBlocked:0,lastEvent:null};
+    return this.scarletContinuationStats;
+  }
+
+  async handleScarletContinuation(parentEntry) {
+    const stats=this.scarletContinuationRuntime();
+    const s=this.settings||{};
+    const parentId=String(parentEntry?.id||''),ticker=String(parentEntry?.ticker||'');
+    const record=(status,data={})=>{stats.lastEvent={status,atMs:Date.now(),parentEntryId:parentId,ticker,...data};return stats.lastEvent;};
+    if(!parentId||!ticker||parentEntry?.status!=='closed'||Number(parentEntry?.remainingCount||0)>1e-9)return {status:'IGNORED',reason:'not_fully_closed'};
+    if(!ACTIVE_PORTFOLIO_CONCEPTS.has(String(parentEntry.conceptName||'')))return {status:'IGNORED',reason:'not_active_execution_attack'};
+    if(String(parentEntry.closeReason||'')!=='infinity_break'||!(Number(parentEntry.pnlCents||0)>0))return {status:'IGNORED',reason:'not_profitable_infinity_close'};
+    if(s.scarletNeedleEnabled!==true)return {status:'IGNORED',reason:'scarlet_disabled'};
+    if(String(parentEntry.systemName||'')!==String(s.systemName)||String(parentEntry.ownerId||'')!==String(s.ownerId)){
+      stats.blocked+=1;record('BLOCKED',{reason:'owner_or_system_mismatch'});return {status:'BLOCKED',reason:'owner_or_system_mismatch'};
+    }
+    if(String(parentEntry.mode||'')!==String(s.mode||'')){
+      stats.modeMismatchBlocked+=1;stats.blocked+=1;record('BLOCKED',{reason:'mode_changed_since_parent_close'});return {status:'BLOCKED',reason:'mode_changed_since_parent_close'};
+    }
+    const maxRepeats=Math.max(0,Math.min(SCARLET_NEEDLE.maximumConfigurableRepeats,Math.floor(Number(s.scarletNeedleMaxRepeats??SCARLET_NEEDLE.defaultMaxRepeats))));
+    if(maxRepeats<=0)return {status:'IGNORED',reason:'repeat_limit_zero'};
+    const priorLineage=parentEntry?.entryConfig?.scarletContinuation&&typeof parentEntry.entryConfig.scarletContinuation==='object'?parentEntry.entryConfig.scarletContinuation:null;
+    const repeatIndex=String(parentEntry.conceptName||'')==='Scarlet Needle'?Math.max(1,Math.floor(Number(priorLineage?.repeatIndex||0))+1):1;
+    const rootEntryId=String(priorLineage?.rootEntryId||parentId);
+    stats.eligible+=1;
+    if(repeatIndex>maxRepeats){
+      stats.maxRepeatBlocked+=1;record('MAX_REPEATS_REACHED',{repeatIndex,maxRepeats,rootEntryId});
+      await this.db.audit('info','scarlet_continuation_max_repeats_reached',{parentEntryId:parentId,rootEntryId,ticker,repeatIndex,maxRepeats}).catch(()=>{});
+      return {status:'MAX_REPEATS_REACHED',repeatIndex,maxRepeats};
+    }
+    const authorizationId=`SCARLET-CONTINUATION:${parentId}:${repeatIndex}`;
+    if(this.scarletContinuationInFlight.has(authorizationId)){
+      stats.duplicateSuppressed+=1;record('DUPLICATE_SUPPRESSED',{authorizationId,repeatIndex,maxRepeats,rootEntryId,scope:'local'});return {status:'DUPLICATE_SUPPRESSED',reason:'local_in_flight'};
+    }
+    this.scarletContinuationInFlight.add(authorizationId);
+    let unlock=null;
+    const baseEpisode=(decision={})=>({id:authorizationId,systemName:s.systemName,sourceRelease:RELEASE,cohortId:String(s.resetTimestampMs||''),ticker,eventTicker:String(parentEntry.eventTicker||ticker),side:'YES',sport:String(parentEntry.sport||'Unknown'),boltAtMs:Number(parentEntry.closedAtMs||Date.now()),boltSnapshot:{version:SCARLET_NEEDLE.version,authority:SCARLET_NEEDLE.strategicEntryAuthority,parentEntryId:parentId,rootEntryId,repeatIndex,maxRepeats},athenaDecision:decision,fireCommand:{},attackSelected:'Scarlet Needle',entryId:null,entryAtMs:null,outcome:{},trackingComplete:false,updatedAtMs:Date.now()});
+    const terminal=async(reason,data={})=>{
+      stats.blocked+=1;record('BLOCKED',{reason,authorizationId,repeatIndex,maxRepeats,rootEntryId,...data});
+      const decision={decision:'BLOCKED',reason,strategicAuthority:false,scarletNeedleContinuation:{version:SCARLET_NEEDLE.version,status:'BLOCKED',terminal:true,authorizationId,parentEntryId:parentId,rootEntryId,repeatIndex,maxRepeats,...data}};
+      await this.db.upsertOpportunityEpisode(baseEpisode(decision)).catch(()=>{});
+      await this.db.audit('info','scarlet_continuation_blocked',{authorizationId,parentEntryId:parentId,rootEntryId,ticker,repeatIndex,maxRepeats,reason,...data}).catch(()=>{});
+      return {status:'BLOCKED',reason,authorizationId,repeatIndex,maxRepeats};
+    };
+    try{
+      if(typeof this.db.acquireHunterTickerLock!=='function')return terminal('continuation_lock_unavailable');
+      unlock=await this.db.acquireHunterTickerLock(s.systemName,`scarlet-continuation:${parentId}`);
+      if(!unlock){stats.duplicateSuppressed+=1;record('DUPLICATE_SUPPRESSED',{authorizationId,repeatIndex,maxRepeats,rootEntryId,scope:'database_lock'});return {status:'DUPLICATE_SUPPRESSED',reason:'database_lock_busy'};}
+      const existing=typeof this.db.opportunityEpisode==='function'?await this.db.opportunityEpisode(authorizationId).catch(()=>null):null;
+      const existingStatus=String(existing?.athenaDecision?.scarletNeedleContinuation?.status||existing?.athenaDecision?.decision||'');
+      if(existing?.entryId||['OPENED','BLOCKED'].includes(existingStatus)){
+        stats.duplicateSuppressed+=1;record('DUPLICATE_SUPPRESSED',{authorizationId,repeatIndex,maxRepeats,rootEntryId,scope:'durable_episode',existingStatus,entryId:existing?.entryId||null});return {status:'DUPLICATE_SUPPRESSED',reason:'durable_authorization_already_consumed',entryId:existing?.entryId||null};
+      }
+      const authorizedAtMs=Date.now();
+      const lineage={version:SCARLET_NEEDLE.version,status:'AUTHORIZED',terminal:false,authorizationId,parentEntryId:parentId,rootEntryId,repeatIndex,maxRepeats,parentConcept:String(parentEntry.conceptName||''),parentCloseReason:String(parentEntry.closeReason||''),parentRealizedPnlCents:Number(parentEntry.pnlCents||0),parentExitPriceCents:Number(parentEntry.exitPriceCents||0),parentClosedAtMs:Number(parentEntry.closedAtMs||0),authorizedAtMs,fullExecutionSafetyRequired:true,normalStrategicDiscoveryBypassed:true};
+      await this.db.upsertOpportunityEpisode(baseEpisode({decision:'AUTHORIZED',reason:'profitable_close_authorized_scarlet_continuation',strategicAuthority:false,scarletNeedleContinuation:lineage}));
+      stats.authorized+=1;record('AUTHORIZED',{authorizationId,repeatIndex,maxRepeats,rootEntryId});
+      const refreshed=typeof this.market?.refreshTickerVerified==='function'?await this.market.refreshTickerVerified(ticker).catch(()=>null):null;
+      if(!refreshed?.marketFresh||!refreshed?.bookFresh||!refreshed?.quote)return terminal('fresh_executable_market_unavailable');
+      const q={...refreshed.quote,ticker,eventTicker:String(refreshed.quote.eventTicker||refreshed.quote.ticker||ticker)};
+      const expectedEvent=String(parentEntry.eventTicker||ticker),status=String(q.status||'').toLowerCase();
+      if(String(q.eventTicker||ticker)!==expectedEvent)return terminal('event_identity_mismatch',{expectedEventTicker:expectedEvent,freshEventTicker:q.eventTicker||null});
+      if(status!=='active'||Boolean(q.result))return terminal('market_not_active',{status:status||null,result:q.result||null});
+      stats.attempted+=1;record('ATTEMPTED',{authorizationId,repeatIndex,maxRepeats,rootEntryId,bidCents:Number(q.yesBid||0),askCents:Number(q.yesAsk||0)});
+      const opened=await this.strategy.executeScarletContinuation(q,parentEntry,{authorizationId,rootEntryId,repeatIndex,maxRepeats,authorizedAtMs});
+      if(!opened)return terminal('hard_safety_or_execution_blocked');
+      stats.opened+=1;record('OPENED',{authorizationId,repeatIndex,maxRepeats,rootEntryId,entryId:opened.id,entryPriceCents:Number(opened.entryPriceCents||0)});
+      const openedDecision={decision:'OPENED',reason:'scarlet_continuation_opened',strategicAuthority:false,scarletNeedleContinuation:{...lineage,status:'OPENED',terminal:true,entryId:opened.id,entryAtMs:Number(opened.openedAtMs||Date.now()),entryPriceCents:Number(opened.entryPriceCents||0)}};
+      const current=typeof this.db.opportunityEpisode==='function'?await this.db.opportunityEpisode(authorizationId).catch(()=>null):null;
+      await this.db.upsertOpportunityEpisode({...baseEpisode(openedDecision),...(current||{}),athenaDecision:openedDecision,fireCommand:structuredClone(opened.entryConfig?.athenaFire||current?.fireCommand||{}),entryId:opened.id,entryAtMs:Number(opened.openedAtMs||Date.now()),attackSelected:'Scarlet Needle',updatedAtMs:Date.now()}).catch(()=>{});
+      await this.db.audit('info','scarlet_continuation_opened',{authorizationId,parentEntryId:parentId,rootEntryId,ticker,repeatIndex,maxRepeats,entryId:opened.id,entryPriceCents:Number(opened.entryPriceCents||0),closeToEntryLatencyMs:Math.max(0,Number(opened.openedAtMs||Date.now())-Number(parentEntry.closedAtMs||authorizedAtMs))}).catch(()=>{});
+      return {status:'OPENED',authorizationId,repeatIndex,maxRepeats,entry:opened};
+    }catch(error){
+      await this.db.audit('error','scarlet_continuation_failed',{authorizationId,parentEntryId:parentId,rootEntryId,ticker,repeatIndex,maxRepeats,message:String(error?.message||error)}).catch(()=>{});
+      return terminal('continuation_exception',{message:String(error?.message||error)});
+    }finally{
+      if(unlock)await unlock().catch(()=>{});
+      this.scarletContinuationInFlight.delete(authorizationId);
+    }
+  }
+
+  rememberAnotherDimension(entry) {
+    if(!entry?.id)return;
+    if(!(this.anotherDimensionRecent instanceof Map))this.anotherDimensionRecent=new Map();
+    if(!(this.anotherDimensionOpenByTicker instanceof Map))this.anotherDimensionOpenByTicker=new Map();
+    this.anotherDimensionRecent.delete(String(entry.id));
+    this.anotherDimensionRecent.set(String(entry.id),entry);
+    while(this.anotherDimensionRecent.size>ANOTHER_DIMENSION.maximumRecentResults){
+      const oldest=this.anotherDimensionRecent.keys().next().value;
+      this.anotherDimensionRecent.delete(oldest);
+    }
+    if(openLike(entry.status))this.anotherDimensionOpenByTicker.set(String(entry.ticker),entry);
+    else if(this.anotherDimensionOpenByTicker.get(String(entry.ticker))?.id===entry.id)this.anotherDimensionOpenByTicker.delete(String(entry.ticker));
+  }
+
+  async hydrateAnotherDimension() {
+    this.anotherDimensionOpenByTicker=new Map();
+    this.anotherDimensionRecent=new Map();
+    this.anotherDimensionRuntime=new Map();
+    this.geminiOpenAttemptBookMs=new Map();
+    if(typeof this.db?.entriesByConcept!=='function')return;
+    const rows=await this.db.entriesByConcept(this.settings.systemName,'Another Dimension',{limit:ANOTHER_DIMENSION.maximumRecentResults}).catch(()=>[]);
+    for(const entry of (rows||[]).slice().reverse())this.rememberAnotherDimension(entry);
+  }
+
+  anotherDimensionRuntimeState(entry) {
+    const id=String(entry?.id||'');
+    if(!id)return null;
+    if(!(this.anotherDimensionRuntime instanceof Map))this.anotherDimensionRuntime=new Map();
+    let state=this.anotherDimensionRuntime.get(id);
+    if(!state){
+      state={confirmations:0,firstConfirmationAtMs:0,lastBookMs:0,peakPriceCents:Number(entry.entryPriceCents||0),lowestPriceAfterEntryCents:Number(entry.entryPriceCents||0),maeCents:Number(entry.maeCents||0),maeAtMs:entry.maeAtMs||null,lastEvaluation:null};
+      this.anotherDimensionRuntime.set(id,state);
+    }
+    return state;
+  }
+
+  evaluateAnotherDimensionExit(entry,q,{now=Date.now(),finalize=false}={}) {
+    if(!entry?.id||entry.conceptName!=='Another Dimension'||!openLike(entry.status)||!q)return null;
+    const state=this.anotherDimensionRuntimeState(entry);
+    const count=Math.max(1,Number(entry.remainingCount??entry.count??0));
+    const entryPrice=Number(entry.entryPriceCents||0);
+    const entryFee=Number(entry.entryFeeCents||0);
+    const bid=Number(q.yesBid||0);
+    const required=Math.max(1,Math.floor(Number(entry.entryConfig?.virtualInfinity?.requiredFreshConfirmations??INFINITY_BREAK.defaultRequiredFreshConfirmations)));
+    const targetPerContract=Math.max(0.01,Number(entry.entryConfig?.virtualInfinity?.minimumNetPerOriginalContractCents??ANOTHER_DIMENSION.minimumNetPerOriginalContractCents));
+    const targetNet=targetPerContract*count;
+    const setEvaluation=(extra={})=>{
+      state.lastEvaluation={
+        universe:'Gemini',attack:'Another Dimension',evaluatedAtMs:now,entryPriceCents:entryPrice,
+        currentBidCents:bid,requiredCount:count,confirmations:Number(state.confirmations||0),requiredConfirmations:required,
+        targetNetPerOriginalContractCents:targetPerContract,targetNetCents:targetNet,
+        ...extra,
+      };
+      return state.lastEvaluation;
+    };
+    if(bid>0){
+      if(bid>state.peakPriceCents)state.peakPriceCents=bid;
+      if(!(state.lowestPriceAfterEntryCents>0)||bid<state.lowestPriceAfterEntryCents){state.lowestPriceAfterEntryCents=bid;state.maeCents=Math.max(0,entryPrice-bid);state.maeAtMs=now;}
+    }
+    const status=String(q.status||'').toLowerCase();
+    if(Boolean(q.result)||FINAL_STATUSES.has(status)){
+      const payout=String(q.result||'').toLowerCase()==='yes'?100:0;
+      const pnl=(payout-entryPrice)*count-entryFee;
+      setEvaluation({action:'CLOSE',holdReason:null,settlement:true,fullPositionExecutable:true,executableCount:count,executableAverageBidCents:payout,executableNetPnlCents:pnl,bookMs:Number(q.updatedAtMs||now)});
+      return{action:'CLOSE',closeReason:pnl>0?ANOTHER_DIMENSION.profitableCloseReason:ANOTHER_DIMENSION.lossCloseReason,exitPriceCents:payout,exitAverageCents:payout,exitFeeCents:0,pnlCents:pnl,bookMs:Number(q.updatedAtMs||now),peakPriceCents:state.peakPriceCents,lowestPriceAfterEntryCents:state.lowestPriceAfterEntryCents,maeCents:state.maeCents,maeAtMs:state.maeAtMs,settlement:true};
+    }
+    const cfg=entry.entryConfig?.virtualInfinity||{};
+    const maxBookAge=Math.max(100,Number(cfg.maximumBookAgeMs??INFINITY_BREAK.defaultMaximumBookAgeMs));
+    const bookAge=typeof this.market?.bookAgeMs==='function'?this.market.bookAgeMs(entry.ticker,now):Infinity;
+    const quoteAge=typeof this.market?.quoteAgeMs==='function'?this.market.quoteAgeMs(entry.ticker,now):Infinity;
+    if(bookAge>maxBookAge||quoteAge>maxBookAge||q.bookInvalid){
+      setEvaluation({action:'HOLD',holdReason:q.bookInvalid?'invalid_book':'stale_quote_or_book',bookAgeMs:Number.isFinite(bookAge)?bookAge:null,quoteAgeMs:Number.isFinite(quoteAge)?quoteAge:null,maximumBookAgeMs:maxBookAge,fullPositionExecutable:false,executableCount:0,executableAverageBidCents:null,executableNetPnlCents:null});
+      return null;
+    }
+    const executable=this.market?.executableBid?.(entry.ticker,count);
+    const executableCount=Math.max(0,Number(executable?.filled||0));
+    const fullExecutable=Boolean(executable?.full)&&executableCount+1e-9>=count&&Number.isFinite(Number(executable?.avgCents));
+    if(!fullExecutable){
+      state.confirmations=0;state.firstConfirmationAtMs=0;state.lastBookMs=0;
+      setEvaluation({action:'HOLD',holdReason:'insufficient_full_position_executable_depth',bookAgeMs:bookAge,quoteAgeMs:quoteAge,maximumBookAgeMs:maxBookAge,fullPositionExecutable:false,executableCount,executableAverageBidCents:Number.isFinite(Number(executable?.avgCents))?Number(executable.avgCents):null,executableNetPnlCents:null});
+      return null;
+    }
+    const avgBid=Number(executable.avgCents),bestBid=Number(executable.bestCents??bid);
+    const bookMs=Number(this.market?.getBook?.(entry.ticker)?.updatedAtMs||q.updatedAtMs||now);
+    const exitFee=String(entry.mode||this.settings.mode||'SIMULATION').toUpperCase()==='LIVE'
+      ? kalshiGeneralTakerFeeEstimateCents({count,priceCents:Math.max(0,Math.min(100,avgBid))})
+      : Math.max(0,Number(entry.entryConfig?.simFeeCents??this.settings.simFeeCents??0))*count;
+    const pnl=(avgBid-entryPrice)*count-entryFee-exitFee;
+    const danger=Number(entry.entryConfig?.aurora?.dangerPriceCents??entry.stopPriceCents??0);
+    if(danger>0&&bestBid<=danger+1e-9){
+      state.confirmations=0;state.firstConfirmationAtMs=0;state.lastBookMs=0;
+      setEvaluation({action:'CLOSE',holdReason:null,closeReason:ANOTHER_DIMENSION.lossCloseReason,bookAgeMs:bookAge,quoteAgeMs:quoteAge,bookMs,fullPositionExecutable:true,executableCount,executableAverageBidCents:avgBid,executableBestBidCents:bestBid,executableExitFeeCents:exitFee,executableNetPnlCents:pnl,auroraDangerPriceCents:danger,auroraTouch:true,confirmations:0});
+      return{action:'CLOSE',closeReason:ANOTHER_DIMENSION.lossCloseReason,exitPriceCents:Math.round(avgBid),exitAverageCents:avgBid,exitFeeCents:exitFee,pnlCents:pnl,bookMs,peakPriceCents:state.peakPriceCents,lowestPriceAfterEntryCents:state.lowestPriceAfterEntryCents,maeCents:state.maeCents,maeAtMs:state.maeAtMs,auroraTouch:true};
+    }
+    if(pnl+1e-9<targetNet){
+      state.confirmations=0;state.firstConfirmationAtMs=0;state.lastBookMs=0;
+      setEvaluation({action:'HOLD',holdReason:'below_plus_one_net_target',bookAgeMs:bookAge,quoteAgeMs:quoteAge,bookMs,fullPositionExecutable:true,executableCount,executableAverageBidCents:avgBid,executableBestBidCents:bestBid,executableExitFeeCents:exitFee,executableNetPnlCents:pnl,auroraDangerPriceCents:danger,confirmations:0});
+      return null;
+    }
+    const windowMs=Math.max(250,Number(cfg.confirmationWindowMs??INFINITY_BREAK.defaultConfirmationWindowMs));
+    if(finalize){
+      const confirmationFresh=state.confirmations>=required&&state.firstConfirmationAtMs>0&&now-state.firstConfirmationAtMs<=windowMs;
+      if(!confirmationFresh){
+        setEvaluation({action:'HOLD',holdReason:'profit_confirmation_expired_before_commit',bookAgeMs:bookAge,quoteAgeMs:quoteAge,bookMs,fullPositionExecutable:true,executableCount,executableAverageBidCents:avgBid,executableBestBidCents:bestBid,executableExitFeeCents:exitFee,executableNetPnlCents:pnl,auroraDangerPriceCents:danger,confirmations:Number(state.confirmations||0)});
+        return null;
+      }
+      setEvaluation({action:'CLOSE',holdReason:null,closeReason:ANOTHER_DIMENSION.profitableCloseReason,bookAgeMs:bookAge,quoteAgeMs:quoteAge,bookMs,fullPositionExecutable:true,executableCount,executableAverageBidCents:avgBid,executableBestBidCents:bestBid,executableExitFeeCents:exitFee,executableNetPnlCents:pnl,auroraDangerPriceCents:danger,confirmations:Number(state.confirmations||0),finalRevalidation:true});
+      return{action:'CLOSE',closeReason:ANOTHER_DIMENSION.profitableCloseReason,exitPriceCents:Math.round(avgBid),exitAverageCents:avgBid,exitFeeCents:exitFee,pnlCents:pnl,bookMs,peakPriceCents:state.peakPriceCents,lowestPriceAfterEntryCents:state.lowestPriceAfterEntryCents,maeCents:state.maeCents,maeAtMs:state.maeAtMs,confirmations:state.confirmations,finalRevalidation:true};
+    }
+    if(bookMs===state.lastBookMs){
+      setEvaluation({action:'HOLD',holdReason:'waiting_for_fresh_confirmation_book',bookAgeMs:bookAge,quoteAgeMs:quoteAge,bookMs,fullPositionExecutable:true,executableCount,executableAverageBidCents:avgBid,executableBestBidCents:bestBid,executableExitFeeCents:exitFee,executableNetPnlCents:pnl,auroraDangerPriceCents:danger,confirmations:Number(state.confirmations||0)});
+      return null;
+    }
+    if(!state.firstConfirmationAtMs||now-state.firstConfirmationAtMs>windowMs){state.confirmations=1;state.firstConfirmationAtMs=now;}
+    else state.confirmations+=1;
+    state.lastBookMs=bookMs;
+    if(state.confirmations<required){
+      setEvaluation({action:'HOLD',holdReason:`profit_confirmation_${state.confirmations}_of_${required}`,bookAgeMs:bookAge,quoteAgeMs:quoteAge,bookMs,fullPositionExecutable:true,executableCount,executableAverageBidCents:avgBid,executableBestBidCents:bestBid,executableExitFeeCents:exitFee,executableNetPnlCents:pnl,auroraDangerPriceCents:danger,confirmations:state.confirmations});
+      return null;
+    }
+    setEvaluation({action:'CLOSE_PENDING_COMMIT',holdReason:null,bookAgeMs:bookAge,quoteAgeMs:quoteAge,bookMs,fullPositionExecutable:true,executableCount,executableAverageBidCents:avgBid,executableBestBidCents:bestBid,executableExitFeeCents:exitFee,executableNetPnlCents:pnl,auroraDangerPriceCents:danger,confirmations:state.confirmations});
+    return{action:'CLOSE',closeReason:ANOTHER_DIMENSION.profitableCloseReason,exitPriceCents:Math.round(avgBid),exitAverageCents:avgBid,exitFeeCents:exitFee,pnlCents:pnl,bookMs,peakPriceCents:state.peakPriceCents,lowestPriceAfterEntryCents:state.lowestPriceAfterEntryCents,maeCents:state.maeCents,maeAtMs:state.maeAtMs,confirmations:state.confirmations};
+  }
+
+  observeAnotherDimensionQuote(q) {
+    if(!q?.ticker||!this.strategy)return;
+    const ticker=String(q.ticker);
+    const sources=this.activeCosmosByTicker?.get?.(ticker)||[];
+    for(const source of sources){
+      const id=String(source?.id||'');if(!id)continue;
+      if(!(this.anotherDimensionSourcePeaks instanceof Map))this.anotherDimensionSourcePeaks=new Map();
+      const prior=Math.max(Number(source.entryPriceCents||0),Number(source.peakPriceCents||0),Number(this.anotherDimensionSourcePeaks.get(id)||0));
+      const next=Math.max(prior,Number(q.yesBid||0));
+      this.anotherDimensionSourcePeaks.set(id,next);
+    }
+    const open=this.anotherDimensionOpenByTicker.get(ticker);
+    if(open&&openLike(open.status)){
+      const decision=this.evaluateAnotherDimensionExit(open,q);
+      if(decision?.action==='CLOSE'){
+        this.anotherDimensionQueue.enqueue(`close:${open.id}`,async()=>{
+          const durable=typeof this.db?.entryById==='function'?await this.db.entryById(open.id).catch(()=>null):open;
+          if(!durable||!openLike(durable.status)||durable.conceptName!=='Another Dimension')return;
+          // Re-prove the market/book at commit time, but do NOT demand a third
+          // book merely because the second qualifying book already completed the
+          // configured confirmation sequence. R62 re-ran the normal evaluator on
+          // the same book and accidentally canceled every profitable close.
+          let freshQ=this.market?.getQuote?.(ticker)||q;
+          if(typeof this.market?.refreshTickerVerified==='function'){
+            const refreshed=await this.market.refreshTickerVerified(ticker).catch(()=>null);
+            if(!refreshed?.marketFresh||!refreshed?.bookFresh||!refreshed?.quote)return;
+            freshQ=refreshed.quote;
+          }
+          const finalDecision=this.evaluateAnotherDimensionExit(durable,freshQ,{finalize:true});
+          if(finalDecision?.action!=='CLOSE')return;
+          const closed=await this.strategy.closeAnotherDimensionShadow(durable,finalDecision);
+          if(closed)this.rememberAnotherDimension(closed);
+        });
+      }
+      return;
+    }
+    if(this.settings?.geminiEnabled!==true)return;
+    if(!sources.length)return;
+    // Same visible market book should produce at most one durable Gemini-open
+    // attempt. This bounds DB/lock churn without changing the qualification.
+    const bookMs=Number(this.market?.getBook?.(ticker)?.updatedAtMs||q.updatedAtMs||0);
+    if(bookMs>0&&Number(this.geminiOpenAttemptBookMs?.get?.(ticker)||0)===bookMs)return;
+    for(const source of sources){
+      const peak=this.anotherDimensionSourcePeaks.get(String(source.id));
+      const qualification=anotherDimensionQualification(source,q,this.settings,{sourcePeakCents:peak});
+      if(!qualification.ok)continue;
+      if(bookMs>0){
+        if(!(this.geminiOpenAttemptBookMs instanceof Map))this.geminiOpenAttemptBookMs=new Map();
+        this.geminiOpenAttemptBookMs.set(ticker,bookMs);
+        while(this.geminiOpenAttemptBookMs.size>2048)this.geminiOpenAttemptBookMs.delete(this.geminiOpenAttemptBookMs.keys().next().value);
+      }
+      this.anotherDimensionStats.qualified+=1;
+      this.anotherDimensionStats.lastEvent={status:'QUALIFIED',atMs:Date.now(),universe:'Gemini',attack:'Another Dimension',sourceTradeId:source.id,ticker,riseCents:qualification.riseCents,pullbackCents:qualification.pullbackCents};
+      this.anotherDimensionQueue.enqueue(`open:${ticker}`,async()=>{
+        if(this.anotherDimensionOpenByTicker.has(ticker))return;
+        const durable=typeof this.db?.entryById==='function'?await this.db.entryById(source.id).catch(()=>null):source;
+        if(!durable||!openLike(durable.status)||!ACTIVE_FEEDER_CONCEPTS.has(String(durable.conceptName||'')))return;
+        let unlock=null;
+        try{
+          if(typeof this.db?.acquireHunterTickerLock==='function')unlock=await this.db.acquireHunterTickerLock(this.settings.systemName,`gemini-another-dimension:${ticker}`);
+          if(typeof this.db?.acquireHunterTickerLock==='function'&&!unlock){this.anotherDimensionStats.blocked+=1;return;}
+          const freshQ=this.market?.getQuote?.(ticker)||q;
+          const opened=await this.strategy.createAnotherDimensionShadow(durable,freshQ,{sourcePeakCents:this.anotherDimensionSourcePeaks.get(String(durable.id))});
+          if(opened){this.anotherDimensionStats.opened+=1;this.rememberAnotherDimension(opened);this.anotherDimensionStats.lastEvent={status:'OPENED',atMs:Date.now(),universe:'Gemini',attack:'Another Dimension',entryId:opened.id,sourceTradeId:opened.sourceTradeId,ticker};}
+        }finally{if(unlock)await unlock().catch(()=>{});}
+      });
+      break;
+    }
+  }
+
+  queueJusticeArrowContinuation(entry) {
+    const id=String(entry?.id||'');
+    if(!id)return false;
+    if(!(this.justiceArrowQueue instanceof CoalescingWorkQueue))this.justiceArrowQueue=new CoalescingWorkQueue({maxConcurrency:1,onError:async(error,key)=>{await this.db.audit('error','justice_arrow_continuation_queue',{key,message:String(error?.message||error)}).catch(()=>{});}});
+    return this.justiceArrowQueue.enqueue(`close:${id}`,()=>this.handleJusticeArrowContinuation(entry));
+  }
+
+  justiceArrowRuntime() {
+    if(!(this.justiceArrowInFlight instanceof Set))this.justiceArrowInFlight=new Set();
+    if(!this.justiceArrowStats||typeof this.justiceArrowStats!=='object')this.justiceArrowStats={version:SAGITTARIUS_JUSTICE_ARROW.version,eligible:0,authorized:0,attempted:0,opened:0,blocked:0,duplicateSuppressed:0,modeMismatchBlocked:0,lastEvent:null};
+    return this.justiceArrowStats;
+  }
+
+  async handleJusticeArrowContinuation(parentShadow) {
+    const stats=this.justiceArrowRuntime(),s=this.settings||{};
+    const parentId=String(parentShadow?.id||''),ticker=String(parentShadow?.ticker||'');
+    const record=(status,data={})=>{stats.lastEvent={status,atMs:Date.now(),parentShadowTradeId:parentId,ticker,...data};return stats.lastEvent;};
+    if(!parentId||!ticker||parentShadow?.conceptName!=='Another Dimension'||parentShadow?.status!=='closed'||Number(parentShadow?.remainingCount||0)>1e-9)return{status:'IGNORED',reason:'not_completed_another_dimension'};
+    if(String(parentShadow.closeReason||'')!==ANOTHER_DIMENSION.profitableCloseReason||!(Number(parentShadow.pnlCents||0)>0))return{status:'IGNORED',reason:'not_profitable_another_dimension_close'};
+    if(s.justiceArrowEnabled!==true)return{status:'IGNORED',reason:'justice_arrow_disabled'};
+    if(String(parentShadow.systemName||'')!==String(s.systemName)||String(parentShadow.ownerId||'')!==String(s.ownerId)){stats.blocked+=1;record('BLOCKED',{reason:'owner_or_system_mismatch'});return{status:'BLOCKED',reason:'owner_or_system_mismatch'};}
+    if(String(parentShadow.mode||'')!==String(s.mode||'')){stats.modeMismatchBlocked+=1;stats.blocked+=1;record('BLOCKED',{reason:'mode_changed_since_shadow_close'});return{status:'BLOCKED',reason:'mode_changed_since_shadow_close'};}
+    stats.eligible+=1;
+    const authorizationId=`JUSTICE-ARROW:${parentId}:1`;
+    if(this.justiceArrowInFlight.has(authorizationId)){stats.duplicateSuppressed+=1;record('DUPLICATE_SUPPRESSED',{authorizationId,scope:'local'});return{status:'DUPLICATE_SUPPRESSED',reason:'local_in_flight'};}
+    this.justiceArrowInFlight.add(authorizationId);
+    let unlock=null;
+    const baseEpisode=(decision={})=>({id:authorizationId,systemName:s.systemName,sourceRelease:RELEASE,cohortId:String(s.resetTimestampMs||''),ticker,eventTicker:String(parentShadow.eventTicker||ticker),side:'YES',sport:String(parentShadow.sport||'Unknown'),boltAtMs:Number(parentShadow.closedAtMs||Date.now()),boltSnapshot:{version:SAGITTARIUS_JUSTICE_ARROW.version,authority:SAGITTARIUS_JUSTICE_ARROW.strategicEntryAuthority,parentShadowTradeId:parentId},athenaDecision:decision,fireCommand:{},attackSelected:'Sagittarius Justice Arrow',entryId:null,entryAtMs:null,outcome:{},trackingComplete:false,updatedAtMs:Date.now()});
+    const terminal=async(reason,data={})=>{stats.blocked+=1;record('BLOCKED',{reason,authorizationId,...data});const decision={decision:'BLOCKED',reason,strategicAuthority:false,justiceArrowContinuation:{version:SAGITTARIUS_JUSTICE_ARROW.version,status:'BLOCKED',terminal:true,authorizationId,parentShadowTradeId:parentId,...data}};await this.db.upsertOpportunityEpisode(baseEpisode(decision)).catch(()=>{});await this.db.audit('info','justice_arrow_continuation_blocked',{authorizationId,parentShadowTradeId:parentId,ticker,reason,...data}).catch(()=>{});return{status:'BLOCKED',reason,authorizationId};};
+    try{
+      if(typeof this.db.acquireHunterTickerLock!=='function')return terminal('continuation_lock_unavailable');
+      unlock=await this.db.acquireHunterTickerLock(s.systemName,`justice-arrow:${parentId}`);
+      if(!unlock){stats.duplicateSuppressed+=1;record('DUPLICATE_SUPPRESSED',{authorizationId,scope:'database_lock'});return{status:'DUPLICATE_SUPPRESSED',reason:'database_lock_busy'};}
+      const existing=typeof this.db.opportunityEpisode==='function'?await this.db.opportunityEpisode(authorizationId).catch(()=>null):null;
+      const existingStatus=String(existing?.athenaDecision?.justiceArrowContinuation?.status||existing?.athenaDecision?.decision||'');
+      if(existing?.entryId||['OPENED','BLOCKED'].includes(existingStatus)){stats.duplicateSuppressed+=1;record('DUPLICATE_SUPPRESSED',{authorizationId,scope:'durable_episode',existingStatus,entryId:existing?.entryId||null});return{status:'DUPLICATE_SUPPRESSED',reason:'durable_authorization_already_consumed',entryId:existing?.entryId||null};}
+      const authorizedAtMs=Date.now();
+      const lineage={version:SAGITTARIUS_JUSTICE_ARROW.version,status:'AUTHORIZED',terminal:false,authorizationId,parentShadowTradeId:parentId,parentCloseReason:String(parentShadow.closeReason||''),parentRealizedPnlCents:Number(parentShadow.pnlCents||0),parentExitPriceCents:Number(parentShadow.exitPriceCents||0),parentClosedAtMs:Number(parentShadow.closedAtMs||0),sourceCosmo:String(parentShadow.sourceFeeder||''),sourceCosmoTradeId:String(parentShadow.sourceTradeId||''),authorizedAtMs,fullExecutionSafetyRequired:true,normalStrategicDiscoveryBypassed:true,profitAuthority:ATHENA_EXIT_INTELLIGENCE.version};
+      await this.db.upsertOpportunityEpisode(baseEpisode({decision:'AUTHORIZED',reason:'profitable_another_dimension_close_authorized_justice_arrow',strategicAuthority:false,justiceArrowContinuation:lineage}));
+      stats.authorized+=1;record('AUTHORIZED',{authorizationId});
+      const refreshed=typeof this.market?.refreshTickerVerified==='function'?await this.market.refreshTickerVerified(ticker).catch(()=>null):null;
+      if(!refreshed?.marketFresh||!refreshed?.bookFresh||!refreshed?.quote)return terminal('fresh_executable_market_unavailable');
+      const q={...refreshed.quote,ticker,eventTicker:String(refreshed.quote.eventTicker||refreshed.quote.ticker||ticker)};
+      const expectedEvent=String(parentShadow.eventTicker||ticker),status=String(q.status||'').toLowerCase();
+      if(String(q.eventTicker||ticker)!==expectedEvent)return terminal('event_identity_mismatch',{expectedEventTicker:expectedEvent,freshEventTicker:q.eventTicker||null});
+      if(status!=='active'||Boolean(q.result))return terminal('market_not_active',{status:status||null,result:q.result||null});
+      stats.attempted+=1;record('ATTEMPTED',{authorizationId,bidCents:Number(q.yesBid||0),askCents:Number(q.yesAsk||0)});
+      const opened=await this.strategy.executeJusticeArrowContinuation(q,parentShadow,{authorizationId,authorizedAtMs});
+      if(!opened)return terminal('hard_safety_or_execution_blocked');
+      stats.opened+=1;record('OPENED',{authorizationId,entryId:opened.id,entryPriceCents:Number(opened.entryPriceCents||0)});
+      // Durable reverse link keeps the Gemini table traceable to the real
+      // Sagittarius Justice Arrow even after restart/state reconstruction.
+      const parentDurable=typeof this.db?.entryById==='function'?await this.db.entryById(parentId).catch(()=>null):parentShadow;
+      if(parentDurable&&typeof this.db?.updateEntry==='function'){
+        const feederState={...(parentDurable.feederState||parentShadow.feederState||{}),universe:'Gemini',justiceArrowEntryId:opened.id,justiceArrowOpenedAtMs:Number(opened.openedAtMs||Date.now()),justiceArrowAuthorizationId:authorizationId};
+        await this.db.updateEntry(parentId,{feederState,updatedAtMs:Date.now()}).catch(()=>{});
+        this.rememberAnotherDimension({...parentDurable,feederState,updatedAtMs:Date.now()});
+      }
+      const openedDecision={decision:'OPENED',reason:'justice_arrow_continuation_opened',strategicAuthority:false,justiceArrowContinuation:{...lineage,status:'OPENED',terminal:true,entryId:opened.id,entryAtMs:Number(opened.openedAtMs||Date.now()),entryPriceCents:Number(opened.entryPriceCents||0)}};
+      const current=typeof this.db.opportunityEpisode==='function'?await this.db.opportunityEpisode(authorizationId).catch(()=>null):null;
+      await this.db.upsertOpportunityEpisode({...baseEpisode(openedDecision),...(current||{}),athenaDecision:openedDecision,fireCommand:structuredClone(opened.entryConfig?.athenaFire||current?.fireCommand||{}),entryId:opened.id,entryAtMs:Number(opened.openedAtMs||Date.now()),attackSelected:'Sagittarius Justice Arrow',updatedAtMs:Date.now()}).catch(()=>{});
+      await this.db.audit('info','justice_arrow_continuation_opened',{authorizationId,parentShadowTradeId:parentId,ticker,entryId:opened.id,entryPriceCents:Number(opened.entryPriceCents||0),profitAuthority:opened.entryConfig?.profitAuthority||null}).catch(()=>{});
+      return{status:'OPENED',authorizationId,entry:opened};
+    }catch(error){await this.db.audit('error','justice_arrow_continuation_failed',{authorizationId,parentShadowTradeId:parentId,ticker,message:String(error?.message||error)}).catch(()=>{});return terminal('continuation_exception',{message:String(error?.message||error)});}
+    finally{if(unlock)await unlock().catch(()=>{});this.justiceArrowInFlight.delete(authorizationId);}
+  }
+
   async init() {
     await this.db.init();
     const loadedSettings = await this.db.loadSettings(freshInstallSettings());
@@ -418,7 +807,8 @@ export class SagittariusEngine {
       db:this.db, systemName:this.settings.systemName, sourceRelease:RELEASE,
       audit:(event,data)=>this.db.audit('info',event,data),
     });
-    await this.legacyAthena.init();
+    // R60-HF1: legacy Athena is research/read-only context. It starts neutral
+    // and hydrates after the executable runtime is already alive.
     // R52: Athena-C2 is the single economic strategic entry commander. The R50 Athena
     // object remains loaded only for creation-era/legacy compatibility.
     this.athenaCommander = new AthenaCommander({
@@ -426,7 +816,8 @@ export class SagittariusEngine {
       getSettings:()=>this.settings, legacyAthena:this.legacyAthena,
       audit:(event,data)=>this.db.audit('info',event,data),
     });
-    await this.athenaCommander.init();
+    // AthenaCommander can rank immediately from live GREEN geometry using its
+    // neutral memory. Historical economic memory is optional enrichment only.
     this.athena = this.athenaCommander;
     this.phoenixCosmo = new PhoenixCosmoEngine({ getSettings:()=>this.settings });
     this.market = new MarketHub({
@@ -449,9 +840,6 @@ export class SagittariusEngine {
         } catch(error) {
           void this.db.audit('warning','phoenix_quote_observer',{ticker:q?.ticker||null,message:String(error?.message||error)}).catch(()=>{});
         }
-        // FSI1 observes the same fresh quote stream but has no entry/exit authority.
-        // Telemetry failure is isolated and can never block protection or execution.
-        try { this.feederSignalIntel?.observeQuote?.(q); } catch {}
         try { this.atomicThunderBolt?.observeCounterfactual?.(q,Date.now()); } catch {}
         this.queueQuoteProtection(q?.ticker);
         this.queueGoldenEyeEvaluation(q?.ticker);
@@ -469,17 +857,21 @@ export class SagittariusEngine {
             void this.db.audit('error','crash_intelligence_quote',{ticker:q.ticker,message:String(e?.message||e)}).catch(()=>{});
           }
         }
+        // R63 Gemini / Another Dimension observes the already-cached quote/book state.
+        // This call performs no SQL/network I/O on the quote hot path; only a
+        // qualified open/close transition is coalesced onto its bounded worker.
+        try { this.observeAnotherDimensionQuote(q); } catch(error) {
+          void this.db.audit('error','another_dimension_quote_observer',{ticker:q?.ticker||null,message:String(error?.message||error)}).catch(()=>{});
+        }
         this.queueAthenaOpportunityEvaluation(q?.ticker);
       },
       onPrivate: () => this.queueReconcile(),
     });
-    this.feederSignalIntel = new FeederSignalIntel({
-      db:this.db, market:this.market, getSettings:()=>this.settings,
-      audit:(event,data)=>this.db.audit('warning',event,data),
-    });
-    await this.feederSignalIntel.init().catch(async(e)=>{
-      await this.db.audit('warning','feeder_signal_intel_init_error',{message:String(e?.message||e)}).catch(()=>{});
-    });
+    // R60 removes FSI1 from the live process. Its historical module/schema stay
+    // readable for audits, but quote-rate observation/persistence was redundant
+    // with visible Cosmos shadow trades and was the largest reconstructable
+    // memory/DB pressure source in R59.
+    this.feederSignalIntel = null;
     this.atomicThunderBolt = new AtomicThunderBoltEngine({
       db:this.db, market:this.market, getSettings:()=>this.settings,
       systemName:this.settings.systemName, sourceRelease:RELEASE,
@@ -487,7 +879,8 @@ export class SagittariusEngine {
       onOpportunityCompleted:(episode)=>this.athenaCommander?.learnEpisode?.(episode),
       onCandidateStage:(event)=>this.recordEntryCandidateStage(event),
     });
-    await this.atomicThunderBolt.init();
+    // Counterfactual restart hydration is research-only. The authoritative
+    // COSMO_GREEN detector is live immediately and does not wait for history.
     this.profitGuard = new ProfitGuard({
       db: this.db,
       kalshi: this.kalshi,
@@ -496,6 +889,7 @@ export class SagittariusEngine {
       athena: this.legacyAthena,
       getSettings: () => this.settings,
       onOpportunityCompleted: (episode) => this.athenaCommander?.learnEpisode?.(episode),
+      onPositionClosed: (entry) => this.queueScarletContinuation(entry),
     });
     this.goldenEye = new GoldenEye({
       db:this.db, market:this.market, getSettings:()=>this.settings,
@@ -523,14 +917,33 @@ export class SagittariusEngine {
       onFeederOpened: (entry) => {
         this.invalidateStateSnapshot();
         if(entry?.ticker)this.feederPriorityTickers.add(entry.ticker);
-        void this.feederSignalIntel?.register?.(entry).catch(async(error)=>{
-          await this.db.audit('warning','feeder_signal_intel_register_error',{feederId:entry?.id,ticker:entry?.ticker,message:String(error?.message||error)}).catch(()=>{});
-        });
+        if(entry?.ticker&&ACTIVE_FEEDER_CONCEPTS.has(String(entry.conceptName||''))){
+          const ticker=String(entry.ticker),rows=this.activeCosmosByTicker.get(ticker)||[];
+          if(!rows.some((x)=>String(x.id)===String(entry.id)))this.activeCosmosByTicker.set(ticker,[...rows,entry]);
+          this.anotherDimensionSourcePeaks.set(String(entry.id),Math.max(Number(entry.entryPriceCents||0),Number(entry.peakPriceCents||0)));
+        }
         this.queueAthenaOpportunityEvaluation(entry?.ticker);
       },
+      onShadowAttackOpened: (entry) => {
+        this.rememberAnotherDimension(entry);
+        this.invalidateStateSnapshot();
+        if(entry?.ticker){const wanted=new Set(this.market?.wanted||[]);wanted.add(entry.ticker);this.market?.setWanted?.([...wanted]);}
+      },
+      onShadowAttackClosed: (entry) => {
+        this.rememberAnotherDimension(entry);
+        this.anotherDimensionRuntime.delete(String(entry?.id||''));
+        if(Number(entry?.pnlCents||0)>0&&String(entry?.closeReason||'')===ANOTHER_DIMENSION.profitableCloseReason){this.anotherDimensionStats.profitClosed+=1;this.queueJusticeArrowContinuation(entry);}
+        else if(entry?.status==='closed')this.anotherDimensionStats.lossClosed+=1;
+        if(entry?.status==='closed')this.anotherDimensionStats.realizedPnlCents=Number(this.anotherDimensionStats.realizedPnlCents||0)+Number(entry?.pnlCents||0);
+        this.anotherDimensionStats.lastEvent={status:'CLOSED',atMs:Date.now(),entryId:entry?.id||null,ticker:entry?.ticker||null,closeReason:entry?.closeReason||null,pnlCents:Number(entry?.pnlCents||0)};
+        this.invalidateStateSnapshot();
+      },
       onEntryPipeline: (row) => this.recordEntryPipelineCandidateStage(row),
+      captureSimulationMutationToken: () => this.simulationMutationGate.capture(),
+      enterSimulationMutation: (token) => this.simulationMutationGate.enter(token),
     });
-    await this.strategy.init();
+    await this.strategy.init({backgroundResearch:true});
+    await this.hydrateAnotherDimension();
     await this.refreshFeederPriorityTickers();
     const trackers = typeof this.db?.trackerHistoryRows==='function'
       ? await this.db.trackerHistoryRows(this.settings.systemName,100)
@@ -544,21 +957,31 @@ export class SagittariusEngine {
     this.applyResourceGovernance({force:true});
     this.resourceGovernorTimer=setInterval(()=>{try{this.applyResourceGovernance();}catch{}},RUNTIME_RESOURCE_GOVERNOR.sampleIntervalMs);
     this.resourceGovernorTimer.unref?.();
-    // R53-HF1: restart recovery for delayed Needle arms is intentionally
-    // detached from Railway's critical startup path. New Needle arming fails
-    // closed until hydration reaches READY, while HTTP readiness/protection
-    // startup can continue even if historical persistence is slow.
-    const scarletHydration=this.athenaCommander?.hydrateScarletNeedleArms?.();
-    if(scarletHydration&&typeof scarletHydration.then==='function')void scarletHydration.then(()=>{
-      const tickers=this.athenaCommander?.scarletNeedleTickers?.()||[];if(!tickers.length)return;
-      const wanted=new Set(this.market?.wanted||[]);for(const ticker of tickers)wanted.add(ticker);this.market?.setWanted?.([...wanted]);
-    }).catch((e)=>this.recordError('scarlet_needle_hydration',e));
+    // R61 Scarlet Needle has no delayed/restart arm state. Post-profit continuation
+    // is authorized only by a newly persisted profitable close event.
     this.market.start();
     await this.testConnection().catch((e) => this.recordError('kalshi_connection', e));
     await this.reconcileBroker().catch((e) => this.recordError('reconciliation', e));
     this.protectionLoopPromise = this.protectionLoop();
     this.cyclePromise = this.cycleLoop();
+    this.startBackgroundIntelligenceHydration();
     return this;
+  }
+
+  startBackgroundIntelligenceHydration(){
+    if(this.intelligenceHydrationPromise)return this.intelligenceHydrationPromise;
+    const startedAtMs=Date.now();
+    this.intelligenceHydration={legacyAthena:'LOADING',athenaCommander:'LOADING',atomicThunderResearch:'LOADING',lastError:null,startedAtMs,completedAtMs:0};
+    const legacy=Promise.resolve().then(()=>this.legacyAthena?.init?.()).then(()=>{this.intelligenceHydration={...this.intelligenceHydration,legacyAthena:this.legacyAthena?.loadError?'FAILED':'READY',lastError:this.legacyAthena?.loadError||this.intelligenceHydration.lastError};return this.legacyAthena?.brain||null;}).catch((error)=>{this.intelligenceHydration={...this.intelligenceHydration,legacyAthena:'FAILED',lastError:String(error?.message||error)};return null;});
+    const commander=Promise.resolve().then(()=>this.athenaCommander?.refreshLearning?.()).then((memory)=>{this.intelligenceHydration={...this.intelligenceHydration,athenaCommander:'READY'};return memory;}).catch((error)=>{this.intelligenceHydration={...this.intelligenceHydration,athenaCommander:'FAILED',lastError:String(error?.message||error)};return null;});
+    const atomic=Promise.resolve().then(()=>this.atomicThunderBolt?.init?.()).then((r)=>{this.intelligenceHydration={...this.intelligenceHydration,atomicThunderResearch:'READY'};return r;}).catch((error)=>{this.intelligenceHydration={...this.intelligenceHydration,atomicThunderResearch:'FAILED',lastError:String(error?.message||error)};return null;});
+    const run=Promise.allSettled([legacy,commander,atomic]).then(async()=>{
+      this.intelligenceHydration={...this.intelligenceHydration,completedAtMs:Date.now()};
+      await this.db.audit('info','background_intelligence_hydration_complete',{release:RELEASE,legacyAthena:this.intelligenceHydration.legacyAthena,athenaCommander:this.intelligenceHydration.athenaCommander,atomicThunderResearch:this.intelligenceHydration.atomicThunderResearch,lastError:this.intelligenceHydration.lastError,tradingBlocked:false}).catch(()=>{});
+      return this.intelligenceHydration;
+    }).finally(()=>{if(this.intelligenceHydrationPromise===run)this.intelligenceHydrationPromise=null;});
+    this.intelligenceHydrationPromise=run;
+    return run;
   }
 
   recomputeHealth() {
@@ -659,17 +1082,26 @@ export class SagittariusEngine {
   queuePhoenixSignal(qualification,q=null) {
     const ticker=String(qualification?.ticker||q?.ticker||'');
     if(!ticker||!this.running||!this.strategy||!this.referenceSignalGate().allowed)return;
+    const simulationToken=this.settings?.mode==='SIMULATION'?this.simulationMutationGate.capture():null;
     const queue=this.phoenixSignalQueue;
     queue.enqueue(`phoenix:${ticker}`,async()=>{
-      const live=this.market?.getQuote?.(ticker)||q;
-      if(!live)return;
-      await this.strategy.materializePhoenixSignal(live,qualification);
+      let releaseSimulationWork=null;
+      if(this.settings?.mode==='SIMULATION'){
+        releaseSimulationWork=this.simulationMutationGate.enter(simulationToken);
+        if(!releaseSimulationWork)return;
+      }
+      try{
+        const live=this.market?.getQuote?.(ticker)||q;
+        if(!live)return;
+        await this.strategy.materializePhoenixSignal(live,qualification);
+      }finally{try{releaseSimulationWork?.();}catch{}}
     });
   }
 
   queueAthenaOpportunityEvaluation(ticker) {
     if (!ticker || !this.running || !this.strategy || !this.atomicThunderBolt || !this.athenaCommander) return;
     if (!this.entryExecutionGate().allowed) return;
+    const simulationToken=this.settings?.mode==='SIMULATION'?this.simulationMutationGate.capture():null;
     // EAC2 is the quote-event authority boundary. R57's scanner path used EAC1
     // but this centralized quote path bypassed it, allowing A8/Athena FIRE to
     // run before a later createHunter() Game Clock rejection. No expensive
@@ -681,10 +1113,16 @@ export class SagittariusEngine {
       this.athenaOpportunityTimers.delete(ticker);
       const queue=this.entryEvaluationQueue||(this.entryEvaluationQueue=new CoalescingWorkQueue({maxConcurrency:ENTRY_EVALUATION_CONCURRENCY}));
       queue.enqueue(`athena:${ticker}`,async()=>{
+        let releaseSimulationWork=null;
+        if(this.settings?.mode==='SIMULATION'){
+          releaseSimulationWork=this.simulationMutationGate.enter(simulationToken);
+          if(!releaseSimulationWork)return;
+        }
         try{
           const q=this.market?.getQuote?.(ticker);if(!q)return;
           await this.evaluateNewGenerationOpportunities(new Map([[ticker,q]]),{onlyTicker:ticker});
         }catch(e){await this.db.audit('error','athena_opportunity_quote_evaluation',{ticker,message:String(e?.message||e)}).catch(()=>{});}
+        finally{try{releaseSimulationWork?.();}catch{}}
       });
     },125);
     this.athenaOpportunityTimers.set(ticker,timer);
@@ -698,11 +1136,10 @@ export class SagittariusEngine {
     // an entry.
     if(!(this.athenaDecisionMemo instanceof Map))this.athenaDecisionMemo=new Map();
     if(!(this.athenaDecisionInFlight instanceof Set))this.athenaDecisionInFlight=new Set();
-    if(!(this.scarletTriggerMemo instanceof Map))this.scarletTriggerMemo=new Map();
-    if(!this.entryDecisionDedupStats||typeof this.entryDecisionDedupStats!=='object')this.entryDecisionDedupStats={athenaEvaluated:0,athenaUnchangedSuppressed:0,athenaInFlightSuppressed:0,athenaChangedStateRetries:0,scarletEvaluated:0,scarletUnchangedSuppressed:0};
+    if(!this.entryDecisionDedupStats||typeof this.entryDecisionDedupStats!=='object')this.entryDecisionDedupStats={athenaEvaluated:0,athenaUnchangedSuppressed:0,athenaInFlightSuppressed:0,athenaChangedStateRetries:0};
     const s=this.settings, now=Date.now();
-    // EAC2 defense-in-depth: perform clock/window admission before *any* DB
-    // fanout, Atomic Thunder feature work, A8 examination or Athena economics.
+    // EAC3 defense-in-depth: prove the hard clock/window boundary before any
+    // DB fanout, Cosmos GREEN work, or Athena ranking.
     // A PROBE is resolved once through the authoritative GCA2 refresh and then
     // re-evaluated; failure remains upstream and never turns into a post-FIRE
     // Game Clock choke.
@@ -761,8 +1198,8 @@ export class SagittariusEngine {
       const state=q.gameClockState||{};
       if(isConfirmedGameClockState(state,q.eventTicker||q.ticker)&&Number(state.startTimeMs)>0)q.gameMinutes=Math.max(0,(now-Number(state.startTimeMs))/60000);
       const cosmos=cosmosRows.filter(e=>String(e.ticker||'')===String(q.ticker||''));
-      // R59/CI1-F1 defense-in-depth for scan/REST paths: synchronize CI1 from
-      // the exact market observation that is about to be examined by ATB2/A8.
+      // Keep CI1 current for Dragon/Crash-Recovery specialist context and
+      // historical research. It has no veto over the R60 GREEN command path.
       // Use the quote's own observation time, not wall-clock now, so an actually
       // stale quote cannot manufacture a fresh crash-state timestamp.
       if(typeof this.learning?.observeCrashQuote==='function'){
@@ -782,66 +1219,32 @@ export class SagittariusEngine {
       const plasmaStrike=plasmaByTicker.get(String(q.ticker||''))||null;
       const aeCandidate=this.activeAthenaExclamationCandidate(q.ticker,now);
       const preliminaryFieldContext={version:LIGHTNING_PLASMA.version,fieldId,lightningPlasmaQualified:plasmaField.qualifies===true,currentTickerEligible:Boolean(plasmaStrike),currentEventEligible:Boolean(plasmaStrike),sourceCount:Number(plasmaField.sourceCount||0),cosmoCount:cosmos.length,independentEventCount:Number(plasmaField.independentEventCount||0),minCosmos:Number(plasmaField.minCosmos||LIGHTNING_PLASMA.minCosmos),minStrikes:Number(plasmaField.minStrikes||LIGHTNING_PLASMA.minStrikes),maxRays,rayStakeCents,fieldBudgetCents,expiresAtMs:fieldExpiresAtMs,sourceCosmoId:plasmaStrike?.source?.id||null,athenaExclamationCandidate:aeCandidate,goldSaintCount:Number(aeCandidate?.saintCount||0)};
-      // R56 Scarlet can trigger long after its original Bolt. Build a fresh,
-      // in-memory survival feature surface from the current MarketHub history
-      // so A8 never certifies a delayed Attack from stale source-Bolt velocity.
+      // R61 Scarlet Needle no longer participates in the Bolt/retracement lane.
+      // These fresh features remain normal Athena context for ordinary Attacks.
       const survivalFeatures=atomicThunderBoltFeatures({q,history:this.market?.getHistory?.(q.ticker)||[],settings:s,cosmos,crashSignal,recoveryContext,fieldContext:preliminaryFieldContext,now});
       const openEntriesOnTicker=(rows||[]).filter(e=>String(e.ticker||'')===String(q.ticker||'')&&openLike(e.status));
       const preTriggerContext={cosmos,crashSignal,crashState,survivalFeatures,recoveryContext,recoverySource,fieldContext:preliminaryFieldContext,openEntriesOnTicker};
-      const armedScarlet=this.athenaCommander?.scarletNeedleArms?.get?.(String(q.ticker||''))||null;
-      let scarletTrigger=null;
-      const scarletTriggerDue=armedScarlet&&Number(q.yesAsk||0)>0&&Number(q.yesAsk)<=Number(armedScarlet.triggerPriceCents||0);
-      if(scarletTriggerDue){
-        const triggerAdmission=await this.resolveEntryChainAdmission(q,{lane:'SCARLET_TRIGGER',forceProbe:true});
-        let eventAdmission=null;
-        if(triggerAdmission.action==='ALLOW'){
-          eventAdmission=await this.strategy.hunterEventAdmissionState(q,{concept:'Scarlet Needle'}).catch(()=>null);
-        }
-        const scarletFingerprint=this.scarletStateFingerprint({arm:armedScarlet,q,crashState,survivalFeatures,eventAdmission,clockDecision:triggerAdmission});
-        const priorScarlet=this.scarletTriggerMemo.get(String(armedScarlet.id));
-        if(priorScarlet?.fingerprint===scarletFingerprint){this.entryDecisionDedupStats.scarletUnchangedSuppressed+=1;}
-        else{
-          this.entryDecisionDedupStats.scarletEvaluated+=1;this.setBoundedRuntimeMap(this.scarletTriggerMemo,String(armedScarlet.id),{fingerprint:scarletFingerprint,atMs:Date.now()},ENTRY_CANDIDATE_FUNNEL.maximumCandidates);
-          if(triggerAdmission.action==='ALLOW'){
-            if(!eventAdmission)await this.db.audit('warning','scarlet_needle_upstream_event_policy_unavailable',{armId:armedScarlet.id,ticker:q.ticker}).catch(()=>{});
-            else if(eventAdmission.eventCapBlocked)await this.db.audit('info','scarlet_needle_upstream_event_cap_blocked',{armId:armedScarlet.id,ticker:q.ticker,eventTicker:eventAdmission.eventTicker,activeEntries:eventAdmission.activeEntries,maxEntriesPerTrade:eventAdmission.maxEntriesPerTrade}).catch(()=>{});
-            else if(eventAdmission.cooldownBlocked)await this.db.audit('info','scarlet_needle_upstream_cooldown_blocked',{armId:armedScarlet.id,ticker:q.ticker,eventTicker:eventAdmission.eventTicker,hunterCooldownMinutes:eventAdmission.hunterCooldownMinutes,cooldownScope:eventAdmission.cooldownScope,latestHunterEntryMs:eventAdmission.latestHunterEntryMs,attackLatestEntryMs:eventAdmission.attackLatestEntryMs}).catch(()=>{});
-            else scarletTrigger=await this.athenaCommander.evaluateScarletNeedle(q,{...preTriggerContext,entryAdmission:eventAdmission});
-          }else await this.db.audit('info','scarlet_needle_upstream_clock_blocked',{armId:armedScarlet.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,reason:triggerAdmission.reason,lastEligibleAtMs:triggerAdmission.lastEligibleAtMs||null}).catch(()=>{});
-        }
-      }
-      let scarletEntry=null;
-      if(scarletTrigger?.decision?.decision==='FIRE'){
-        const scarletCandidateId=String(scarletTrigger.arm?.boltSnapshot?.preBoltClearance?.preBoltId||scarletTrigger.arm?.sourceBoltId||scarletTrigger.arm?.id||'');
-        if(scarletTrigger.decision?.survivalCertificate?.status==='CERTIFIED')this.recordEntryCandidateStage({candidateId:scarletCandidateId,boltId:scarletTrigger.arm?.sourceBoltId||null,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'A8_CERTIFIED',status:'PASS',reason:'scarlet_trigger_arayashiki_certified'});
-        this.recordEntryCandidateStage({candidateId:scarletCandidateId,boltId:scarletTrigger.arm?.sourceBoltId||null,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'ATHENA_FIRE',status:'PASS',reason:'scarlet_needle_10c_retracement_trigger'});
-        this.recordEntryCandidateStage({candidateId:scarletCandidateId,boltId:scarletTrigger.arm?.sourceBoltId||null,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'EXECUTION_ELIGIBLE',status:'PASS',reason:'scarlet_trigger_ready'});
-        scarletEntry=await this.strategy.executeAthenaFire(q,scarletTrigger.bolt,scarletTrigger.decision,preTriggerContext);
-        await this.athenaCommander.noteScarletNeedleExecution(scarletTrigger.arm.id,scarletEntry);
-        if(scarletEntry)created.push(scarletEntry);
-      }
       const atbAdmission=await this.resolveEntryChainAdmission(q,{lane:'ATB',forceProbe:true});
       let bolt=null;
       if(atbAdmission.action==='ALLOW')bolt=await this.atomicThunderBolt.detect(q,{cosmos,crashSignal,crashState,recoveryContext,fieldContext:preliminaryFieldContext,now});
-      else await this.db.audit('info','atomic_thunder_pre_bolt_admission_blocked',{ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,reason:atbAdmission.reason,stage:atbAdmission.stage||null,lastEligibleAtMs:atbAdmission.lastEligibleAtMs||null,readyAtMs:atbAdmission.readyAtMs||null}).catch(()=>{});
+      else await this.db.audit('info','atomic_thunder_green_admission_blocked',{ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,reason:atbAdmission.reason,stage:atbAdmission.stage||null,lastEligibleAtMs:atbAdmission.lastEligibleAtMs||null,readyAtMs:atbAdmission.readyAtMs||null}).catch(()=>{});
       if(!bolt)continue;
-      // A completed ATB2 examination earns only a Bolt, not clock authority.
-      // Re-prove current GCA2 authorization *before* Arayashiki/Athena so a
-      // stale or now-final event cannot produce FIRE and die downstream.
-      const postAtb2Admission=await this.resolveEntryChainAdmission(q,{lane:'POST_ATB2',forceProbe:true});
-      if(postAtb2Admission.action!=='ALLOW'){
-        await this.db.audit('info','post_atb2_clock_admission_blocked',{boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,reason:postAtb2Admission.reason,lastEligibleAtMs:postAtb2Admission.lastEligibleAtMs||null}).catch(()=>{});
-        this.recordEntryCandidateStage({candidateId:this.candidateIdForBolt(bolt),boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'POST_ATB2_BLOCKED',status:'BLOCKED',reason:postAtb2Admission.reason});
+      // COSMO_GREEN earns only a Bolt, never clock authority. Re-prove fresh
+      // GCA2 authorization before Athena so a stale/final event cannot FIRE.
+      const postBoltAdmission=await this.resolveEntryChainAdmission(q,{lane:'POST_BOLT',forceProbe:true});
+      if(postBoltAdmission.action!=='ALLOW'){
+        await this.db.audit('info','post_bolt_clock_admission_blocked',{boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,reason:postBoltAdmission.reason,lastEligibleAtMs:postBoltAdmission.lastEligibleAtMs||null}).catch(()=>{});
+        this.recordEntryCandidateStage({candidateId:this.candidateIdForBolt(bolt),boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'POST_BOLT_BLOCKED',status:'BLOCKED',reason:postBoltAdmission.reason});
         continue;
       }
       if(isConfirmedGameClockState(q.gameClockState,q.eventTicker||q.ticker)&&Number(q.gameClockState.startTimeMs)>0)q.gameMinutes=Math.max(0,(Date.now()-Number(q.gameClockState.startTimeMs))/60000);
       const eventAdmission=await this.strategy.hunterEventAdmissionState(q).catch(()=>null);
-      if(!eventAdmission){await this.db.audit('warning','post_atb2_event_policy_unavailable',{boltId:bolt.id,ticker:q.ticker}).catch(()=>{});this.recordEntryCandidateStage({candidateId:this.candidateIdForBolt(bolt),boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'POST_ATB2_BLOCKED',status:'BLOCKED',reason:'event_policy_unavailable'});continue;}
-      if(eventAdmission.eventCapBlocked){await this.db.audit('info','post_atb2_event_cap_blocked',{boltId:bolt.id,ticker:q.ticker,eventTicker:eventAdmission.eventTicker,activeEntries:eventAdmission.activeEntries,maxEntriesPerTrade:eventAdmission.maxEntriesPerTrade}).catch(()=>{});this.recordEntryCandidateStage({candidateId:this.candidateIdForBolt(bolt),boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'POST_ATB2_BLOCKED',status:'BLOCKED',reason:'event_entry_cap'});continue;}
+      if(!eventAdmission){await this.db.audit('warning','post_bolt_event_policy_unavailable',{boltId:bolt.id,ticker:q.ticker}).catch(()=>{});this.recordEntryCandidateStage({candidateId:this.candidateIdForBolt(bolt),boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'POST_BOLT_BLOCKED',status:'BLOCKED',reason:'event_policy_unavailable'});continue;}
+      if(eventAdmission.eventCapBlocked){await this.db.audit('info','post_bolt_event_cap_blocked',{boltId:bolt.id,ticker:q.ticker,eventTicker:eventAdmission.eventTicker,activeEntries:eventAdmission.activeEntries,maxEntriesPerTrade:eventAdmission.maxEntriesPerTrade}).catch(()=>{});this.recordEntryCandidateStage({candidateId:this.candidateIdForBolt(bolt),boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'POST_BOLT_BLOCKED',status:'BLOCKED',reason:'event_entry_cap'});continue;}
       const athenaExclamationEligible=Boolean(preliminaryFieldContext.athenaExclamationCandidate);
-      if(eventAdmission.cooldownBlocked&&!athenaExclamationEligible){await this.db.audit('info','post_atb2_cooldown_blocked',{boltId:bolt.id,ticker:q.ticker,eventTicker:eventAdmission.eventTicker,hunterCooldownMinutes:eventAdmission.hunterCooldownMinutes,cooldownScope:eventAdmission.cooldownScope,latestHunterEntryMs:eventAdmission.latestHunterEntryMs}).catch(()=>{});this.recordEntryCandidateStage({candidateId:this.candidateIdForBolt(bolt),boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'POST_ATB2_BLOCKED',status:'BLOCKED',reason:'hunter_cooldown'});continue;}
+      if(eventAdmission.cooldownBlocked&&!athenaExclamationEligible){await this.db.audit('info','post_bolt_cooldown_blocked',{boltId:bolt.id,ticker:q.ticker,eventTicker:eventAdmission.eventTicker,hunterCooldownMinutes:eventAdmission.hunterCooldownMinutes,cooldownScope:eventAdmission.cooldownScope,latestHunterEntryMs:eventAdmission.latestHunterEntryMs}).catch(()=>{});this.recordEntryCandidateStage({candidateId:this.candidateIdForBolt(bolt),boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'POST_BOLT_BLOCKED',status:'BLOCKED',reason:'hunter_cooldown'});continue;}
       const fieldContext={...preliminaryFieldContext};
-      const commandContext={cosmos,crashSignal,crashState,recoveryContext,recoverySource,fieldContext,entryAdmission:eventAdmission,openEntriesOnTicker:scarletEntry?[...openEntriesOnTicker,scarletEntry]:openEntriesOnTicker};
+      const commandContext={cosmos,crashSignal,crashState,recoveryContext,recoverySource,fieldContext,entryAdmission:eventAdmission,openEntriesOnTicker};
       const candidateId=this.candidateIdForBolt(bolt),decisionFingerprint=this.athenaStateFingerprint({bolt,q,crashState,cosmos,recoveryContext,fieldContext,eventAdmission,openEntriesOnTicker:commandContext.openEntriesOnTicker});
       const priorDecision=this.athenaDecisionMemo.get(String(bolt.id));
       if(priorDecision?.fingerprint===decisionFingerprint){this.entryDecisionDedupStats.athenaUnchangedSuppressed+=1;continue;}
@@ -852,8 +1255,6 @@ export class SagittariusEngine {
       try{decision=await this.athenaCommander.decide(bolt,commandContext);this.setBoundedRuntimeMap(this.athenaDecisionMemo,String(bolt.id),{fingerprint:decisionFingerprint,decision:String(decision?.decision||''),reason:String(decision?.reason||''),atMs:Date.now()},ENTRY_CANDIDATE_FUNNEL.maximumCandidates);}
       finally{this.athenaDecisionInFlight.delete(String(bolt.id));}
       this.atomicThunderBolt.noteDecision(bolt,decision);
-      if(decision?.survivalCertificate?.status==='CERTIFIED')this.recordEntryCandidateStage({candidateId,boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'A8_CERTIFIED',status:'PASS',reason:'arayashiki_certified'});
-      else if(decision?.survivalCertificate)this.recordEntryCandidateStage({candidateId,boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:'A8_REJECTED',status:'BLOCKED',reason:decision.survivalCertificate.hardBlocks?.[0]||decision.reason||'arayashiki_not_certified'});
       if(decision.decision!=='FIRE'){
         this.recordEntryCandidateStage({candidateId,boltId:bolt.id,ticker:q.ticker,eventTicker:q.eventTicker||q.ticker,stage:decision.decision==='WATCH'?'ATHENA_WATCH':'ATHENA_REJECT',status:'BLOCKED',reason:decision.reason||String(decision.decision||'reject').toLowerCase()});
         continue;
@@ -987,7 +1388,7 @@ export class SagittariusEngine {
     if(!this.entryCandidateFunnelTotals||typeof this.entryCandidateFunnelTotals!=='object')this.entryCandidateFunnelTotals={uniqueCandidates:0,byStage:{}};
     if(!this.entryCandidateFunnelTotals.byStage||typeof this.entryCandidateFunnelTotals.byStage!=='object')this.entryCandidateFunnelTotals.byStage={};
     if(!Array.isArray(this.entryCandidateFunnelRecent))this.entryCandidateFunnelRecent=[];
-    if(!this.entryDecisionDedupStats||typeof this.entryDecisionDedupStats!=='object')this.entryDecisionDedupStats={athenaEvaluated:0,athenaUnchangedSuppressed:0,athenaInFlightSuppressed:0,athenaChangedStateRetries:0,scarletEvaluated:0,scarletUnchangedSuppressed:0};
+    if(!this.entryDecisionDedupStats||typeof this.entryDecisionDedupStats!=='object')this.entryDecisionDedupStats={athenaEvaluated:0,athenaUnchangedSuppressed:0,athenaInFlightSuppressed:0,athenaChangedStateRetries:0};
     const stage=String(event.stage||'UNKNOWN'),status=String(event.status||'INFO'),reason=event.reason==null?null:String(event.reason),atMs=Number(event.atMs||Date.now());
     let rec=this.entryCandidateFunnel.get(candidateId);
     if(!rec){rec={candidateId,ticker:String(event.ticker||''),eventTicker:String(event.eventTicker||event.ticker||''),boltId:event.boltId||null,firstAtMs:atMs,lastAtMs:atMs,currentStage:stage,currentStatus:status,currentReason:reason,stages:{}};this.entryCandidateFunnelTotals.uniqueCandidates+=1;}
@@ -1010,7 +1411,7 @@ export class SagittariusEngine {
     if(!(this.entryCandidateFunnel instanceof Map))this.entryCandidateFunnel=new Map();
     if(!this.entryCandidateFunnelTotals||typeof this.entryCandidateFunnelTotals!=='object')this.entryCandidateFunnelTotals={uniqueCandidates:0,byStage:{}};
     if(!Array.isArray(this.entryCandidateFunnelRecent))this.entryCandidateFunnelRecent=[];
-    if(!this.entryDecisionDedupStats||typeof this.entryDecisionDedupStats!=='object')this.entryDecisionDedupStats={athenaEvaluated:0,athenaUnchangedSuppressed:0,athenaInFlightSuppressed:0,athenaChangedStateRetries:0,scarletEvaluated:0,scarletUnchangedSuppressed:0};
+    if(!this.entryDecisionDedupStats||typeof this.entryDecisionDedupStats!=='object')this.entryDecisionDedupStats={athenaEvaluated:0,athenaUnchangedSuppressed:0,athenaInFlightSuppressed:0,athenaChangedStateRetries:0};
     const currentByStage={},currentByReason={};
     for(const rec of this.entryCandidateFunnel.values()){currentByStage[rec.currentStage]=Number(currentByStage[rec.currentStage]||0)+1;if(rec.currentReason)currentByReason[rec.currentReason]=Number(currentByReason[rec.currentReason]||0)+1;}
     return{version:ENTRY_CANDIDATE_FUNNEL.version,maximumCandidates:ENTRY_CANDIDATE_FUNNEL.maximumCandidates,uniqueCandidates:Number(this.entryCandidateFunnelTotals.uniqueCandidates||0),retainedCandidates:this.entryCandidateFunnel.size,byStage:{...(this.entryCandidateFunnelTotals.byStage||{})},currentByStage,currentByReason,dedup:{...this.entryDecisionDedupStats},recent:this.entryCandidateFunnelRecent.slice().reverse()};
@@ -1019,10 +1420,10 @@ export class SagittariusEngine {
   candidateIdForBolt(bolt){return String(bolt?.preBoltClearance?.preBoltId||bolt?.id||'');}
 
   activeAthenaExclamationCandidate(ticker,now=Date.now()){
-    const ae=this.strategy?.athenaExclamation;
-    const event=typeof ae?.activeCandidate==='function'?ae.activeCandidate(String(ticker||''),now):null;
-    if(!event)return null;
-    return{id:String(event.id),ticker:String(event.ticker||ticker||''),eventTicker:String(event.eventTicker||event.ticker||ticker||''),status:String(event.status||'CANDIDATE'),saintCount:Number(event.saintCount||0),combination:[...(event.combination||[])],createdAtMs:Number(event.createdAtMs||0),firstVoteAtMs:Number(event.firstVoteAtMs||0),thirdVoteAtMs:Number(event.thirdVoteAtMs||0),expiresAtMs:Number(event.expiresAtMs||0)};
+    const ae=this.strategy?.athenaExclamation,id=ae?.activeEventByTicker?.get?.(String(ticker||''));if(!id)return null;
+    const event=ae?.events?.get?.(String(id))||null;
+    if(!event||Number(event.expiresAtMs||0)<=Number(now)||Number(event.saintCount||0)<ATHENA_EXCLAMATION.minimumSaints)return null;
+    return{id:String(event.id),ticker:String(event.ticker||ticker||''),eventTicker:String(event.eventTicker||event.ticker||ticker||''),saintCount:Number(event.saintCount||0),combination:[...(event.combination||[])],createdAtMs:Number(event.createdAtMs||0),expiresAtMs:Number(event.expiresAtMs||0)};
   }
 
   executionBookState(ticker,requested=1,limitCents=null){
@@ -1044,12 +1445,6 @@ export class SagittariusEngine {
     return stableHash({boltId:String(bolt?.id||''),bid:Number(q?.yesBid||f.bidCents||0),ask:Number(q?.yesAsk||f.askCents||0),status:String(q?.status||''),result:String(q?.result||''),marketFresh:marketObserved>0&&now-marketObserved<=ARAYASHIKI.maximumMarketAgeMs,historySamples:Number(f.historySamples||0),currentUp:Number(f.currentUpwardTicks??0),currentLower:Number(f.currentLowerLowCount??0),currentCrash:rounded(f.currentCrashDepthCents),currentRebound:rounded(f.currentReboundCents),currentReclaim:rounded(f.currentReclaimRate),move30:rounded(f.recentMove30Cents),v15:rounded(f.velocity15CentsPerSec),v30:rounded(f.velocity30CentsPerSec),eligible,executionBook,crash:{present:!!crashState,fresh:ciAt>0&&now-ciAt<=ARAYASHIKI.maximumCrashStateAgeMs,phase:String(crashState?.phase||''),episodeId:String(crashState?.episodeId||''),lastEpisodeId:String(crashState?.lastEpisodeId||''),lastResetAtMs:Number(crashState?.lastResetAtMs||0),entryReady:crashState?.entryReady===true,bid:Number(crashState?.lastBidCents||0),ask:Number(crashState?.lastAskCents||0),reclaim:rounded(crashState?.reclaimRate)},cosmos:cosmosState,recovery:recoveryContext?{id:String(recoveryContext.sourceTradeId||''),trough:Number(recoveryContext.troughCents||0),rebound:Number(recoveryContext.reboundCents||0)}:null,field:{plasmaId:String(fieldContext?.fieldId||''),plasma:fieldContext?.lightningPlasmaQualified===true,plasmaTicker:fieldContext?.currentTickerEligible===true,independent:Number(fieldContext?.independentEventCount||0),aeId:String(fieldContext?.athenaExclamationCandidate?.id||''),aeSaints:Number(fieldContext?.athenaExclamationCandidate?.saintCount||0)},admission:{eventCap:eventAdmission?.eventCapBlocked===true,cooldownScope:String(eventAdmission?.cooldownScope||''),blockedConcepts:[...(eventAdmission?.cooldownBlockedConcepts||[])].sort(),active:Number(eventAdmission?.activeEntries||0)},open:[...(openEntriesOnTicker||[])].map(x=>String(x.conceptName||'')).sort(),memoryHash:String(this.athenaCommander?.memory?.memoryHash||'')});
   }
 
-  scarletStateFingerprint({arm,q,crashState,survivalFeatures,eventAdmission=null,clockDecision=null}={}){
-    const now=Date.now(),ciAt=Number(crashState?.lastObservationAtMs||crashState?.updatedAtMs||0),marketAt=Number(survivalFeatures?.marketObservedAtMs||q?.quoteAtMs||q?.updatedAtMs||0);
-    const ask=Math.max(1,Number(q?.yesAsk||0)),stake=Math.max(1,Number(this.settings?.scarletNeedleStakeCents||0)),requested=Math.max(1,Math.floor(stake/ask)),executionBook=this.executionBookState(q?.ticker||arm?.ticker,requested,ask);
-    return stableHash({armId:String(arm?.id||''),bid:Number(q?.yesBid||0),ask:Number(q?.yesAsk||0),status:String(q?.status||''),clock:String(clockDecision?.action||''),clockReason:String(clockDecision?.reason||''),marketFresh:marketAt>0&&now-marketAt<=ARAYASHIKI.maximumMarketAgeMs,ciFresh:ciAt>0&&now-ciAt<=ARAYASHIKI.maximumCrashStateAgeMs,phase:String(crashState?.phase||''),episodeId:String(crashState?.episodeId||''),currentLower:Number(survivalFeatures?.currentLowerLowCount||0),move30:rounded(survivalFeatures?.recentMove30Cents),v15:rounded(survivalFeatures?.velocity15CentsPerSec),v30:rounded(survivalFeatures?.velocity30CentsPerSec),executionBook,eventCap:eventAdmission?.eventCapBlocked===true,cooldown:eventAdmission?.cooldownBlocked===true,cooldownScope:String(eventAdmission?.cooldownScope||''),attackLatest:Number(eventAdmission?.attackLatestEntryMs||0),memoryHash:String(this.athenaCommander?.memory?.memoryHash||'')});
-  }
-
   noteEntryAdmission(reason,field){
     const stats=this.entryAdmissionStats||(this.entryAdmissionStats={version:ENTRY_ADMISSION_CONTROL.version,allowed:0,blockedBeforeQueue:0,probeAllowed:0,probeCoalesced:0,byReason:{}});
     stats[field]=Number(stats[field]||0)+1;
@@ -1063,22 +1458,11 @@ export class SagittariusEngine {
 
   entryChainAdmissionForQuote(q,{lane='ANY',now=Date.now()}={}){
     const ticker=String(q?.ticker||'');
-    const finalExamSeconds=Math.max(2,Math.floor(Number(this.settings?.atomicThunderFinalPatternExamSeconds||120)));
-    const pre=this.atomicThunderBolt?.preBolts?.get?.(ticker)||null;
     const activeBolt=this.atomicThunderBolt?.activeByTicker?.get?.(ticker)||null;
     const activeBoltReady=activeBolt&&Number(activeBolt.expiresAtMs||0)>=Number(now);
-    const scarletArm=this.athenaCommander?.scarletNeedleArms?.get?.(ticker)||null;
-    const common={quote:q,mode:this.settings.mode,minGameMinutes:this.settings.minGameMinutes,maxGameMinutes:this.settings.maxGameMinutes,now,finalExamSeconds,executionMarginMs:ENTRY_ADMISSION_CONTROL.preBoltExecutionMarginMs};
-    const atbStage=activeBoltReady?'POST_ATB2':pre?'ACTIVE_PRE_BOLT':'NEW_PRE_BOLT';
-    const atb=entryChainAdmissionDecision({...common,stage:atbStage,preBoltStartedAtMs:Number(pre?.startedAtMs||0),preBoltFinalExamMs:Number(pre?.finalExamMs||0)});
-    const scarlet=scarletArm?entryChainAdmissionDecision({...common,stage:'ARMED_SCARLET'}):null;
-    if(lane==='ATB')return atb;
-    if(lane==='SCARLET')return scarlet||{action:'BLOCK',reason:'scarlet_needle_not_armed',stage:'ARMED_SCARLET'};
-    if(lane==='SCARLET_TRIGGER'||lane==='POST_ATB2')return entryChainAdmissionDecision({...common,stage:'POST_ATB2'});
-    const rows=[scarlet,atb].filter(Boolean);
-    const allowed=rows.find(x=>x.action==='ALLOW');if(allowed)return{...allowed,lane:allowed===scarlet?'SCARLET':'ATB'};
-    const probe=rows.find(x=>x.action==='PROBE');if(probe)return{...probe,lane:probe===scarlet?'SCARLET':'ATB'};
-    return{...(rows[0]||{action:'BLOCK',reason:'entry_chain_unavailable'}),lane:rows[0]===scarlet?'SCARLET':'ATB'};
+    const common={quote:q,mode:this.settings.mode,minGameMinutes:this.settings.minGameMinutes,maxGameMinutes:this.settings.maxGameMinutes,now,executionMarginMs:ENTRY_ADMISSION_CONTROL.preBoltExecutionMarginMs};
+    const stage=(lane==='POST_BOLT'||lane==='POST_ATB2')?'POST_BOLT':activeBoltReady?'POST_BOLT':'ATOMIC_GREEN';
+    return entryChainAdmissionDecision({...common,stage});
   }
 
   async resolveEntryChainAdmission(q,{lane='ANY',forceProbe=true}={}){
@@ -1118,15 +1502,26 @@ export class SagittariusEngine {
   async refreshFeederPriorityTickers() {
     if (!this.db || !this.settings?.systemName) {
       this.feederPriorityTickers = new Set();
+      this.activeCosmosByTicker = new Map();
+      this.anotherDimensionSourcePeaks = new Map();
       return this.feederPriorityTickers;
     }
     const rows = (typeof this.db.openFeederEntries === 'function'
       ? await this.db.openFeederEntries(this.settings.systemName)
       : await this.db.openEntries(this.settings.systemName).catch(() => [])
     );
-    this.feederPriorityTickers = new Set(activeCosmoSources(rows || [],this.settings,{now:Date.now()})
-      .map((e) => e.ticker)
-      .filter(Boolean));
+    const active=activeCosmoSources(rows || [],this.settings,{now:Date.now()});
+    this.feederPriorityTickers = new Set(active.map((e) => e.ticker).filter(Boolean));
+    const byTicker=new Map(),activeIds=new Set();
+    for(const e of active){
+      const ticker=String(e?.ticker||''),id=String(e?.id||'');if(!ticker||!id)continue;
+      activeIds.add(id);
+      const list=byTicker.get(ticker)||[];list.push(e);byTicker.set(ticker,list);
+      const prior=Number(this.anotherDimensionSourcePeaks.get(id)||0);
+      this.anotherDimensionSourcePeaks.set(id,Math.max(prior,Number(e.entryPriceCents||0),Number(e.peakPriceCents||0)));
+    }
+    this.activeCosmosByTicker=byTicker;
+    for(const id of [...this.anotherDimensionSourcePeaks.keys()])if(!activeIds.has(id))this.anotherDimensionSourcePeaks.delete(id);
     return this.feederPriorityTickers;
   }
 
@@ -1241,6 +1636,7 @@ export class SagittariusEngine {
     const engineActive = this.settings?.engineActive === true;
     const mode = String(this.settings?.mode || 'SIMULATION').toUpperCase();
     if (!engineActive) return { version:'EMI1', allowed:false, reason:'engine_disabled', engineActive, mode, liveReady:false };
+    if (mode === 'SIMULATION' && this.simulationMutationGate?.blocked) return { version:'EMI1', allowed:false, reason:'simulation_reset_in_progress', engineActive, mode, liveReady:false };
     if (mode === 'SIMULATION') return { version:'EMI1', allowed:true, reason:'simulation', engineActive, mode, liveReady:false };
     if (mode !== 'LIVE') return { version:'EMI1', allowed:false, reason:'invalid_mode', engineActive, mode, liveReady:false };
     if (!env.allowLiveTrading) return { version:'EMI1', allowed:false, reason:'live_trading_disabled', engineActive, mode, liveReady:false };
@@ -1252,7 +1648,8 @@ export class SagittariusEngine {
 
   referenceSignalGate() {
     const engineActive = this.settings?.engineActive === true;
-    return { version:'EMI1', allowed:engineActive, reason:engineActive ? 'engine_active' : 'engine_disabled' };
+    const resetBlocked=this.settings?.mode==='SIMULATION'&&this.simulationMutationGate?.blocked===true;
+    return { version:'EMI1', allowed:engineActive&&!resetBlocked, reason:!engineActive?'engine_disabled':resetBlocked?'simulation_reset_in_progress':'engine_active' };
   }
 
   isLiveReady() {
@@ -1315,15 +1712,16 @@ export class SagittariusEngine {
     }
 
     const price=(k)=>{if(next[k]<1||next[k]>99)throw new Error(`${k} must be between 1 and 99 cents`);};
-    for(const k of ['pegasusMinPriceCents','pegasusMaxPriceCents','dragonMinSignalPriceCents','dragonMaxSignalPriceCents','phoenixMinPriceCents','phoenixMaxPriceCents','momentumMinEntryCents','momentumMaxEntryCents','waveMinEntryCents','waveMaxEntryCents','recoveryMinEntryCents','recoveryMaxEntryCents','crashRecoveryMinEntryCents','crashRecoveryMaxEntryCents','scarletNeedleMinEntryCents','scarletNeedleMaxEntryCents','athenaExclamationMinEntryCents','athenaExclamationMaxEntryCents','lightningPlasmaMinEntryCents','lightningPlasmaMaxEntryCents'])price(k);
+    for(const k of ['pegasusMinPriceCents','pegasusMaxPriceCents','dragonMinSignalPriceCents','dragonMaxSignalPriceCents','phoenixMinPriceCents','phoenixMaxPriceCents','geminiMinPriceCents','geminiMaxPriceCents','momentumMinEntryCents','momentumMaxEntryCents','waveMinEntryCents','waveMaxEntryCents','recoveryMinEntryCents','recoveryMaxEntryCents','crashRecoveryMinEntryCents','crashRecoveryMaxEntryCents','scarletNeedleMinEntryCents','scarletNeedleMaxEntryCents','justiceArrowMinEntryCents','justiceArrowMaxEntryCents','athenaExclamationMinEntryCents','athenaExclamationMaxEntryCents','lightningPlasmaMinEntryCents','lightningPlasmaMaxEntryCents'])price(k);
     for(const [lo,hi,label] of [
       ['pegasusMinPriceCents','pegasusMaxPriceCents','Pegasus'],['dragonMinSignalPriceCents','dragonMaxSignalPriceCents','Dragon'],['phoenixMinPriceCents','phoenixMaxPriceCents','Phoenix'],
       ['momentumMinEntryCents','momentumMaxEntryCents','Great Horn'],['waveMinEntryCents','waveMaxEntryCents','Pegasus Ryu Sei Ken'],
       ['recoveryMinEntryCents','recoveryMaxEntryCents','Crystal Wall'],['crashRecoveryMinEntryCents','crashRecoveryMaxEntryCents','Starlight Extinction'],
-      ['scarletNeedleMinEntryCents','scarletNeedleMaxEntryCents','Scarlet Needle'],['athenaExclamationMinEntryCents','athenaExclamationMaxEntryCents','Athena Exclamation'],['lightningPlasmaMinEntryCents','lightningPlasmaMaxEntryCents','Lightning Plasma'],
+      ['geminiMinPriceCents','geminiMaxPriceCents','Gemini'],['scarletNeedleMinEntryCents','scarletNeedleMaxEntryCents','Scarlet Needle'],['justiceArrowMinEntryCents','justiceArrowMaxEntryCents','Sagittarius Justice Arrow'],['athenaExclamationMinEntryCents','athenaExclamationMaxEntryCents','Athena Exclamation'],['lightningPlasmaMinEntryCents','lightningPlasmaMaxEntryCents','Lightning Plasma'],
     ])if(next[lo]>next[hi])throw new Error(`${label} minimum price cannot exceed maximum price`);
     if(next.pegasusDropCents<1||next.pegasusDropCents>99)throw new Error('pegasusDropCents must be between 1 and 99 cents');
-    for(const k of ['pegasusReferenceStakeCents','dragonReferenceStakeCents','phoenixReferenceStakeCents','momentumStakeCents','waveStakeCents','recoveryStakeCents','crashRecoveryStakeCents','scarletNeedleStakeCents','athenaExclamationStakeCents','lightningPlasmaFieldStakeCents','startingCapitalCents'])if(next[k]<=0)throw new Error(`${k} must be greater than zero`);
+    for(const k of ['pegasusReferenceStakeCents','dragonReferenceStakeCents','phoenixReferenceStakeCents','geminiReferenceStakeCents','momentumStakeCents','waveStakeCents','recoveryStakeCents','crashRecoveryStakeCents','scarletNeedleStakeCents','justiceArrowStakeCents','athenaExclamationStakeCents','lightningPlasmaFieldStakeCents','startingCapitalCents'])if(next[k]<=0)throw new Error(`${k} must be greater than zero`);
+    next.scarletNeedleMaxRepeats=Math.max(0,Math.min(SCARLET_NEEDLE.maximumConfigurableRepeats,Math.floor(Number(next.scarletNeedleMaxRepeats??SCARLET_NEEDLE.defaultMaxRepeats))));
     if(next.maxPositions<1||!Number.isInteger(next.maxPositions))throw new Error('maxPositions must be a positive integer');
     if(next.maxEntriesPerTrade<1||!Number.isInteger(next.maxEntriesPerTrade))throw new Error('maxEntriesPerTrade must be a positive integer');
     if(next.hunterCooldownMinutes<0)throw new Error('hunterCooldownMinutes cannot be negative');
@@ -1332,13 +1730,9 @@ export class SagittariusEngine {
     if(next.maxGameMinutes>0&&next.maxGameMinutes<next.minGameMinutes)throw new Error('maxGameMinutes must be zero (disabled) or greater than or equal to minGameMinutes');
     if(next.eventCooldownMinutes<0)throw new Error('eventCooldownMinutes cannot be negative');
     if(next.maxSpreadCents<0||next.maxSpreadCents>99)throw new Error('maxSpreadCents must be between 0 and 99');
-    if(next.simFillProbability<0||next.simFillProbability>1)throw new Error('simFillProbability must be between 0 and 1');
     if(next.simFeeCents<0)throw new Error('simFeeCents cannot be negative');
     if(next.recoveryTrackingHours<=0)throw new Error('recoveryTrackingHours must be greater than zero');
-    if(next.atomicThunderFirstPatternExamSeconds<1||!Number.isInteger(next.atomicThunderFirstPatternExamSeconds))throw new Error('atomicThunderFirstPatternExamSeconds must be a positive integer');
-    if(next.atomicThunderFinalPatternExamSeconds<2||!Number.isInteger(next.atomicThunderFinalPatternExamSeconds))throw new Error('atomicThunderFinalPatternExamSeconds must be an integer of at least 2 seconds');
-    if(next.atomicThunderFirstPatternExamSeconds>3600||next.atomicThunderFinalPatternExamSeconds>3600)throw new Error('Atomic Thunder pattern exam settings cannot exceed 3600 seconds');
-    if(next.atomicThunderFinalPatternExamSeconds<=next.atomicThunderFirstPatternExamSeconds)throw new Error('Atomic Thunder final pattern exam must be greater than the first pattern exam');
+    if(next.atomicThunderGreenTriggerCents<1||next.atomicThunderGreenTriggerCents>99||!Number.isInteger(next.atomicThunderGreenTriggerCents))throw new Error('atomicThunderGreenTriggerCents must be an integer from 1 to 99');
     if(next.dragonMaxEpisode<1||!Number.isInteger(next.dragonMaxEpisode))throw new Error('dragonMaxEpisode must be a positive integer');
     if(next.infinityBreakMinNetPerOriginalContractCents<=0)throw new Error('infinityBreakMinNetPerOriginalContractCents must be greater than zero');
     if(next.infinityBreakRequiredConfirmations<1||!Number.isInteger(next.infinityBreakRequiredConfirmations))throw new Error('infinityBreakRequiredConfirmations must be a positive integer');
@@ -1347,13 +1741,27 @@ export class SagittariusEngine {
     if(next.auroraDamageControlPercent<1||next.auroraDamageControlPercent>95)throw new Error('auroraDamageControlPercent must be between 1 and 95 percent');
     if(next.lightningPlasmaMaxStrikes<1||!Number.isInteger(next.lightningPlasmaMaxStrikes))throw new Error('lightningPlasmaMaxStrikes must be a positive integer');
 
-    const topologyKeys=['pegasusEnabled','dragonEnabled','phoenixEnabled','momentumHunterEnabled','waveSurferEnabled','recoveryHunterEnabled','crashRecoveryHunterEnabled','scarletNeedleEnabled','athenaExclamationEnabled','lightningPlasmaEnabled','galacticExplosionEnabled'];
+    const topologyKeys=['pegasusEnabled','dragonEnabled','phoenixEnabled','momentumHunterEnabled','waveSurferEnabled','recoveryHunterEnabled','crashRecoveryHunterEnabled','scarletNeedleEnabled','geminiEnabled','justiceArrowEnabled','athenaExclamationEnabled','lightningPlasmaEnabled','galacticExplosionEnabled'];
     const topologyChanged=topologyKeys.some((k)=>Object.hasOwn(patch||{},k)&&this.settings?.[k]!==next[k]);
+    const changedKeys=Object.keys(patch||{});
+    try{
+      await this.db.saveSettings(next);
+      if(typeof this.db.loadSettings!=='function')throw new Error('settings_persistence_readback_unavailable');
+      const persisted=await this.db.loadSettings(freshInstallSettings());
+      for(const k of changedKeys){
+        const expected=next[k],actual=persisted?.[k];
+        const matches=typeof expected==='number'?Number(actual)===Number(expected):typeof expected==='boolean'?actual===expected:String(actual??'')===String(expected??'');
+        if(!matches)throw new Error(`settings_persistence_verification_failed:${k}:expected=${expected}:actual=${actual}`);
+      }
+      this.settingsPersistence={version:'SETTINGS-PERSISTENCE-R1',lastVerifiedAtMs:Date.now(),lastKeys:[...changedKeys],lastValues:Object.fromEntries(changedKeys.map((k)=>[k,next[k]])),lastError:null};
+    }catch(error){
+      this.settingsPersistence={...(this.settingsPersistence||{version:'SETTINGS-PERSISTENCE-R1',lastVerifiedAtMs:0,lastKeys:[],lastValues:{}}),lastError:String(error?.message||error)};
+      await this.db.audit?.('error','settings_persistence_verification_failed',{release:RELEASE,changedKeys,message:String(error?.message||error)}).catch(()=>{});
+      throw error;
+    }
     this.settings = next;
     if(Object.hasOwn(patch||{},'phoenixEnabled')&&next.phoenixEnabled!==true)this.phoenixCosmo?.clear?.();
-    await this.db.saveSettings(next);
     this.invalidateStateSnapshot();
-    if(Object.hasOwn(patch||{},'scarletNeedleEnabled')&&next.scarletNeedleEnabled!==true)queueMicrotask(()=>{void this.athenaCommander?.cancelAllScarletNeedleArms?.('operator_disabled').catch(()=>{});});
     if(topologyChanged){
       // HF3 activation coordination: settings writes remain fast and durable,
       // while the scanner/priority sets are synchronised out-of-band. Multiple
@@ -1364,7 +1772,7 @@ export class SagittariusEngine {
         void Promise.allSettled([this.refreshFeederPriorityTickers(),this.refreshRecoveryPriorityTickers()]).catch(()=>{});
         this.refreshCrashPriorityTickers();
       });
-      if(typeof this.db.audit==='function')await this.db.audit('info','entry_topology_settings_changed',{release:RELEASE,changed:topologyKeys.filter((k)=>Object.hasOwn(patch||{},k)),galacticExplosionEnabled:next.galacticExplosionEnabled===true,pegasusEnabled:next.pegasusEnabled===true,dragonEnabled:next.dragonEnabled===true,momentumHunterEnabled:next.momentumHunterEnabled===true,waveSurferEnabled:next.waveSurferEnabled===true,recoveryHunterEnabled:next.recoveryHunterEnabled===true,crashRecoveryHunterEnabled:next.crashRecoveryHunterEnabled===true,scarletNeedleEnabled:next.scarletNeedleEnabled===true,athenaExclamationEnabled:next.athenaExclamationEnabled===true}).catch(()=>{});
+      if(typeof this.db.audit==='function')await this.db.audit('info','entry_topology_settings_changed',{release:RELEASE,changed:topologyKeys.filter((k)=>Object.hasOwn(patch||{},k)),galacticExplosionEnabled:next.galacticExplosionEnabled===true,pegasusEnabled:next.pegasusEnabled===true,dragonEnabled:next.dragonEnabled===true,momentumHunterEnabled:next.momentumHunterEnabled===true,waveSurferEnabled:next.waveSurferEnabled===true,recoveryHunterEnabled:next.recoveryHunterEnabled===true,crashRecoveryHunterEnabled:next.crashRecoveryHunterEnabled===true,scarletNeedleEnabled:next.scarletNeedleEnabled===true,geminiEnabled:next.geminiEnabled===true,justiceArrowEnabled:next.justiceArrowEnabled===true,athenaExclamationEnabled:next.athenaExclamationEnabled===true}).catch(()=>{});
     }
     return next;
   }
@@ -1387,18 +1795,31 @@ export class SagittariusEngine {
 
   async resetSimulation() {
     if (this.settings.mode !== 'SIMULATION') throw new Error('Simulation reset is only allowed in SIMULATION mode');
-    await this.athenaCommander?.cancelAllScarletNeedleArms?.('simulation_reset').catch(()=>{});
-    const n = await this.db.archiveSimulation(this.settings.systemName);
-    await this.db.clearTrackers(this.settings.systemName);
-    // Crash Intelligence is learning state, not simulation P/L. Preserve it
-    // across performance resets so Dragon episode numbering and historical
-    // context cannot restart mid-market.
-    this.refreshCrashPriorityTickers();
-    this.market.histories.clear();
-    this.settings = { ...this.settings, resetTimestampMs: null };
-    await this.db.saveSettings(this.settings);
-    this.invalidateStateSnapshot();
-    return n;
+    if(this.simulationResetPromise)return this.simulationResetPromise;
+    const run=(async()=>{
+      const before=this.simulationMutationGate.snapshot();
+      await this.simulationMutationGate.blockAndDrain();
+      try{
+        const n = await this.db.archiveSimulation(this.settings.systemName);
+        // Performance reset archives economic SIM rows only. The following are
+        // intelligence and MUST survive: tracker rows, MarketHub histories,
+        // crash/learning state, Atomic Thunder observations and Athena memory.
+        this.anotherDimensionOpenByTicker?.clear?.();
+        this.anotherDimensionRecent?.clear?.();
+        this.anotherDimensionRuntime?.clear?.();
+        this.anotherDimensionSourcePeaks?.clear?.();
+        this.geminiOpenAttemptBookMs?.clear?.();
+        this.activeCosmosByTicker?.clear?.();
+        this.refreshCrashPriorityTickers();
+        this.settings = { ...this.settings, resetTimestampMs: null };
+        await this.db.saveSettings(this.settings);
+        this.invalidateStateSnapshot();
+        await this.db.audit('info','simulation_reset_completed',{release:RELEASE,archivedEntries:n,intelligencePreserved:true,trackersCleared:false,marketHistoriesCleared:false,athenaMemoryPreserved:true,atomicThunderHistoryPreserved:true,mutationGateBefore:before,mutationGateAtArchive:this.simulationMutationGate.snapshot()}).catch(()=>{});
+        return n;
+      }finally{this.simulationMutationGate.release();}
+    })();
+    this.simulationResetPromise=run;
+    try{return await run;}finally{if(this.simulationResetPromise===run)this.simulationResetPromise=null;}
   }
 
   async _reconcileBroker() {
@@ -1471,6 +1892,7 @@ export class SagittariusEngine {
     if (this.settings.dragonEnabled) bands.push([this.settings.dragonMinSignalPriceCents, this.settings.dragonMaxSignalPriceCents]);
     if (this.settings.waveSurferEnabled) bands.push([this.settings.waveMinEntryCents, this.settings.waveMaxEntryCents]);
     if (this.settings.momentumHunterEnabled) bands.push([this.settings.momentumMinEntryCents ?? MOMENTUM.minEntryCents, this.settings.momentumMaxEntryCents ?? MOMENTUM.maxEntryCents]);
+    if (this.settings.geminiEnabled) bands.push([this.settings.geminiMinPriceCents ?? MOMENTUM.minEntryCents, this.settings.geminiMaxPriceCents ?? MOMENTUM.maxEntryCents]);
     if (this.settings.recoveryHunterEnabled) bands.push([this.settings.recoveryMinEntryCents ?? RECOVERY.minEntryCents, this.settings.recoveryMaxEntryCents ?? RECOVERY.maxEntryCents]);
     if (this.settings.crashRecoveryHunterEnabled) bands.push([this.settings.crashRecoveryMinEntryCents, this.settings.crashRecoveryMaxEntryCents]);
     const inBand = (ask) => bands.some(([min,max]) => ask >= min && ask <= max);
@@ -1656,17 +2078,25 @@ export class SagittariusEngine {
   async evaluateEntryChain(markets, trackerMap, marketMap) {
     const created=[];
     if(!this.referenceSignalGate().allowed)return created;
-    // Cosmo Universe remains observation/reference-only and is evaluated first
-    // so Athena can consume the newest Pegasus/Dragon context in the same scan.
-    // Phoenix is quote-event driven and therefore never adds a second scanner.
-    created.push(...await this.strategy.evaluateDragon(marketMap));
-    created.push(...await this.strategy.evaluateFeeders(markets,trackerMap));
-    await this.refreshFeederPriorityTickers();
-    if(this.entryExecutionGate().allowed){
-      const admitted=this.admittedInitialExposureMap(marketMap,{allowProbe:false});
-      created.push(...await this.evaluateNewGenerationOpportunities(admitted));
+    const simulationToken=this.settings?.mode==='SIMULATION'?this.simulationMutationGate.capture():null;
+    let releaseSimulationWork=null;
+    if(this.settings?.mode==='SIMULATION'){
+      releaseSimulationWork=this.simulationMutationGate.enter(simulationToken);
+      if(!releaseSimulationWork)return created;
     }
-    return created;
+    try{
+      // Cosmo Universe remains observation/reference-only and is evaluated first
+      // so Athena can consume the newest Pegasus/Dragon context in the same scan.
+      // Phoenix is quote-event driven and therefore never adds a second scanner.
+      created.push(...await this.strategy.evaluateDragon(marketMap));
+      created.push(...await this.strategy.evaluateFeeders(markets,trackerMap));
+      await this.refreshFeederPriorityTickers();
+      if(this.entryExecutionGate().allowed){
+        const admitted=this.admittedInitialExposureMap(marketMap,{allowProbe:false});
+        created.push(...await this.evaluateNewGenerationOpportunities(admitted));
+      }
+      return created;
+    }finally{try{releaseSimulationWork?.();}catch{}}
   }
 
   async fullScan() {
@@ -1676,8 +2106,7 @@ export class SagittariusEngine {
       const open = await this.db.openEntries(this.settings.systemName);
       await this.refreshRecoveryPriorityTickers();
       this.refreshCrashPriorityTickers();
-      const scarletPriorityTickers=this.athenaCommander?.scarletNeedleTickers?.()||[];
-      const priority = [...new Set([...open.map((x) => x.ticker), ...this.recoveryPriorityTickers, ...this.crashPriorityTickers, ...scarletPriorityTickers])];
+      const priority = [...new Set([...open.map((x) => x.ticker), ...this.recoveryPriorityTickers, ...this.crashPriorityTickers])];
       const markets = await this.market.discover(priority);
       this.lastScanMarkets = markets;
       this.lastDiscoveryMs = Date.now();
@@ -1688,7 +2117,7 @@ export class SagittariusEngine {
         const q = this.market.getQuote(t);
         if (q) this.market.sample(q.ticker, Date.now());
       }
-      const trackerMap = await this.persistTrackers(markets, [...new Set([...this.recoveryPriorityTickers, ...this.crashPriorityTickers, ...scarletPriorityTickers])]);
+      const trackerMap = await this.persistTrackers(markets, [...new Set([...this.recoveryPriorityTickers, ...this.crashPriorityTickers])]);
       const map = new Map(markets.map((x) => [x.ticker, x]));
       for (const t of priority) {
         if (!map.has(t)) {
@@ -2000,7 +2429,7 @@ export class SagittariusEngine {
   resourceProtectedCrashTickers(){
     return new Set([
       ...(this.market?.wanted||[]),...(this.protectedTickers||[]),...(this.recoveryPriorityTickers||[]),
-      ...(this.crashPriorityTickers||[]),...(this.feederPriorityTickers||[]),...(this.athenaCommander?.scarletNeedleTickers?.()||[]),
+      ...(this.crashPriorityTickers||[]),...(this.feederPriorityTickers||[]),
     ].filter(Boolean).map(String));
   }
 
@@ -2058,6 +2487,8 @@ export class SagittariusEngine {
       queues:{
         entry:this.entryEvaluationQueue?.snapshot?.()||{},
         protection:this.quoteProtectionQueue?.snapshot?.()||{},
+        anotherDimension:this.anotherDimensionQueue?.snapshot?.()||{},
+        justiceArrow:this.justiceArrowQueue?.snapshot?.()||{},
       },
       entryAdmission:this.entryAdmissionSnapshot?.()||{},
       workload:{version:DATABASE_PRESSURE_ISOLATION.version,entryAdmissionControl:ENTRY_ADMISSION_CONTROL.version,quoteProtectionScope:DATABASE_PRESSURE_ISOLATION.quoteProtectionScope,entryWorkers:ENTRY_EVALUATION_CONCURRENCY,protectionWorkers:QUOTE_PROTECTION_CONCURRENCY,ordinaryPoolReservedHeadroom:DATABASE_PRESSURE_ISOLATION.ordinaryPoolReservedHeadroom,lowPriorityPersistenceConcurrency:DATABASE_PRESSURE_ISOLATION.lowPriorityPersistenceConcurrency,lowPriorityPersistenceMaximumPending:DATABASE_PRESSURE_ISOLATION.lowPriorityPersistenceMaximumPending,lowPriorityPersistenceScope:DATABASE_PRESSURE_ISOLATION.lowPriorityPersistenceScope,lowPriorityPersistenceMaximumBatchBytes:DATABASE_PRESSURE_ISOLATION.lowPriorityPersistenceMaximumBatchBytes,fsiPersistenceRevision:DATABASE_PRESSURE_ISOLATION.fsiPersistenceRevision,fsiPersistenceBatchSize:DATABASE_PRESSURE_ISOLATION.fsiPersistenceBatchSize,referenceSignalSweepIntervalMs:REFERENCE_SIGNAL_SWEEP_MS,lastReferenceSweepMs:this.lastReferenceSweepMs||0,postExitResearchSweepIntervalMs:POST_EXIT_RESEARCH.sweepIntervalMs,postExitResearchMaximumRowsPerSweep:POST_EXIT_RESEARCH.maximumRowsPerSweep,lastPostExitResearchMs:this.lastPostExitResearchMs||0,stateCollectionSingleFlight:true,stateSnapshotTtlMs:STATE_SNAPSHOT_TTL_MS,stateDbFanoutMaximum:STATE_DB_FANOUT_MAX,stateCollectionCount:Number(this.stateCollectionCount||0),stateSnapshotAgeMs:this.stateSnapshotAtMs?Math.max(0,Date.now()-this.stateSnapshotAtMs):null},
@@ -2067,6 +2498,7 @@ export class SagittariusEngine {
       feederSignalIntel:this.feederSignalIntel?.resourceSnapshot?.()||{},
       learning:this.learning?.resourceSnapshot?.()||{},
       strategy:this.strategy?.resourceSnapshot?.()||{},
+      shadowAttack:{universe:'Gemini',activeCosmosTickers:Number(this.activeCosmosByTicker?.size||0),sourcePeaks:Number(this.anotherDimensionSourcePeaks?.size||0),anotherDimensionOpen:Number(this.anotherDimensionOpenByTicker?.size||0),anotherDimensionRecent:Number(this.anotherDimensionRecent?.size||0),anotherDimensionRuntime:Number(this.anotherDimensionRuntime?.size||0),openAttemptBookDedup:Number(this.geminiOpenAttemptBookMs?.size||0),maximumRecent:ANOTHER_DIMENSION.maximumRecentResults},
       profitGuard:this.profitGuard?.resourceSnapshot?.()||{},
     };
   }
@@ -2111,14 +2543,12 @@ export class SagittariusEngine {
     const athena = this.athena?.summary?.() || { version:ATHENA_BRAIN.version, ready:false, adaptiveMode:ATHENA_BRAIN.adaptiveMode, adaptiveDecisionWeight:0 };
     const entryPipeline = this.strategy?.entryPipelineSummary?.() || { version:'EPT1', attempts:0, opened:0, blocked:0, byStage:{}, byReason:{}, recent:[] };
     const entryCandidateFunnel=this.entryCandidateFunnelSummary();
-    const feederEnabled = this.settings.pegasusEnabled === true || this.settings.dragonEnabled === true;
     // R51: Cosmos strengthens Athena intelligence but is never a prerequisite
     // for a Bolt or for an Athena-authorized initial Attack.
     const initialExposureEnabled = [
       this.settings.momentumHunterEnabled === true ? 'Momentum Hunter' : null,
       this.settings.waveSurferEnabled === true ? 'Wave Surfer' : null,
       this.settings.crashRecoveryHunterEnabled === true ? 'Crash Recovery Hunter' : null,
-      this.settings.scarletNeedleEnabled === true ? 'Scarlet Needle' : null,
       this.settings.lightningPlasmaEnabled === true ? 'Lightning Plasma' : null,
       this.settings.athenaExclamationEnabled === true ? 'Athena Exclamation' : null,
     ].filter(Boolean);
@@ -2137,7 +2567,7 @@ export class SagittariusEngine {
     if (!initialExposureEnabled.length) entryPathWarnings.push('No currently enabled configuration can create an initial real Hunter exposure');
     if (referenceGate.allowed && !executionGate.allowed) entryPathWarnings.push(`Real Hunter execution blocked by ${executionGate.reason}; reference feeders remain active`);
     const entryPathConfiguration = {
-      version:'EPC7-R59', authorityChain:'GAME_CLOCK->PRE_BOLT->ATB2->ARAYASHIKI->ATHENA->ATTACK->INFINITY_BREAK/AURORA', noBoltNoAttack:true, initialExposureEnabled, recoveryFollowOnEnabled:this.settings.recoveryHunterEnabled === true, warnings:entryPathWarnings,
+      version:'EPC11-R63', authorityChain:'GAME_CLOCK->COSMO_SHADOW->COSMO_GREEN->ATOMIC_THUNDER_BOLT->ATHENA->ATTACK->INFINITY_BREAK/AURORA + PROFIT_CLOSE->SCARLET_NEEDLE->HARD_SAFETY->INFINITY_BREAK/AURORA + COSMO_SHADOW->GEMINI->ANOTHER_DIMENSION->PLUS_ONE_NET_SHADOW_CLOSE->SAGITTARIUS_JUSTICE_ARROW->HARD_SAFETY->ATHENA_X1/AURORA', noBoltNoAttack:true, noBoltNoAttackExceptions:['SCARLET_NEEDLE_POST_PROFIT_CONTINUATION','SAGITTARIUS_JUSTICE_ARROW_POST_SHADOW_WIN'], cosmoGreenRequired:true, initialExposureEnabled, scarletNeedleContinuationEnabled:this.settings.scarletNeedleEnabled===true&&Number(this.settings.scarletNeedleMaxRepeats||0)>0, geminiEnabled:this.settings.geminiEnabled===true, anotherDimensionAttackEnabled:this.settings.geminiEnabled===true, justiceArrowContinuationEnabled:this.settings.justiceArrowEnabled===true, recoveryFollowOnEnabled:this.settings.recoveryHunterEnabled === true, warnings:entryPathWarnings,
       entryModeIsolation:'EMI1', referenceSignalEvaluationActive:referenceGate.allowed,
       realHunterExecutionAuthorized:executionGate.allowed, executionGateReason:executionGate.reason,
     };
@@ -2146,7 +2576,53 @@ export class SagittariusEngine {
     const infinityBreak = this.buildInfinityBreakSummary(entries);
     const atomicThunderBolt={...this.atomicThunderBolt?.summary?.(),episodes:opportunitySummary};
     const openHunters = p.open.map((e) => this.decorateEntry(e));
-    const openFeeders = entries.filter((e) => ACTIVE_FEEDER_CONCEPTS.has(e.conceptName) && openLike(e.status)).map((e) => this.decorateEntry(e));
+    // R60: the real Attack is the durable forward authority for Cosmos -> Bolt -> FIRE
+    // lineage. Reconstruct the reverse dashboard link from sourceTradeId so an
+    // interrupted best-effort shadow-row back-link can never hide causality after
+    // restart. The newest linked Attack wins when historical rows share a source.
+    const realEntryByShadowId = new Map();
+    for (const hunter of [...(p.hunters || [])].sort((a,b)=>Number(a.openedAtMs||0)-Number(b.openedAtMs||0))) {
+      const sourceId=String(hunter?.sourceTradeId||'');
+      if (!sourceId || !PORTFOLIO_CONCEPTS.has(hunter?.conceptName)) continue;
+      realEntryByShadowId.set(sourceId,hunter);
+    }
+    const openFeeders = entries.filter((e) => ACTIVE_FEEDER_CONCEPTS.has(e.conceptName) && openLike(e.status)).map((e) => {
+      const decorated=this.decorateEntry(e);
+      const linked=realEntryByShadowId.get(String(e.id));
+      if (!linked) return decorated;
+      return {
+        ...decorated,
+        athenaSelectedAttack:decorated.athenaSelectedAttack||linked.conceptName||null,
+        realEntryId:decorated.realEntryId||linked.id||null,
+      };
+    });
+    const anotherDimensionRows=[...this.anotherDimensionRecent.values()]
+      .filter((e)=>!e.archived)
+      .sort((a,b)=>Number(b.openedAtMs||0)-Number(a.openedAtMs||0))
+      .slice(0,ANOTHER_DIMENSION.maximumRecentResults)
+      .map((e)=>{
+        const decorated=this.decorateEntry(e);
+        const linked=realEntryByShadowId.get(String(e.id));
+        return linked?{...decorated,athenaSelectedAttack:'Sagittarius Justice Arrow',realEntryId:linked.id||null}:decorated;
+      });
+    const cosmoShadowTrades=[...openFeeders]
+      .sort((a,b)=>Number(b.openedAtMs||0)-Number(a.openedAtMs||0));
+    const geminiTrades=[...anotherDimensionRows];
+    // Gemini board statistics are reconstructed from the durable virtual-trade
+    // rows rather than process-local counters. A Railway restart therefore
+    // cannot make the Gemini table show trades while its W/L/P&L header resets
+    // to zero. The table is intentionally capped to the same bounded recent
+    // cohort as the rows rendered below.
+    const geminiClosed=geminiTrades.filter((e)=>e.status==='closed');
+    const geminiSummary={
+      version:GEMINI_UNIVERSE.version,policyRevision:GEMINI_UNIVERSE.policyRevision,name:'Gemini',enabled:this.settings.geminiEnabled===true,
+      referenceStakeCents:Number(this.settings.geminiReferenceStakeCents||0),minPriceCents:Number(this.settings.geminiMinPriceCents||0),maxPriceCents:Number(this.settings.geminiMaxPriceCents||0),
+      brokerOrderAuthority:false,portfolioCapitalAuthority:false,simulationPortfolioCapitalAuthority:false,attack:'Another Dimension',
+      total:geminiTrades.length,open:geminiTrades.filter((e)=>openLike(e.status)).length,closed:geminiClosed.length,
+      wins:geminiClosed.filter((e)=>Number(e.pnlCents||0)>0).length,losses:geminiClosed.filter((e)=>Number(e.pnlCents||0)<0).length,pnlCents:geminiClosed.reduce((sum,e)=>sum+Number(e.pnlCents||0),0),
+      avgEntryCents:geminiTrades.length?geminiTrades.reduce((sum,e)=>sum+Number(e.entryPriceCents||0),0)/geminiTrades.length:0,
+      avgCurrentCents:geminiTrades.length?geminiTrades.reduce((sum,e)=>sum+Number(e.currentPriceCents||e.exitPriceCents||e.entryPriceCents||0),0)/geminiTrades.length:0,
+    };
     const closedHunters = p.closed.map((e) => this.decorateEntry(e));
     const scanned = this.lastScanMarkets.slice(0, 100);
     const trackerSummary = trackerAggregate || {
@@ -2166,6 +2642,13 @@ export class SagittariusEngine {
       settings: { ...this.settings, allowLiveTrading: env.allowLiveTrading, liveReady: this.isLiveReady() },
       athenaExclamation:this.strategy?.athenaExclamation?.summary?.()||null,
       riskControls: {
+        resetSafetyVersion:'R60-HF1-SIMULATION-MUTATION-EPOCH-DRAIN',
+        simulationResetInProgress:Boolean(this.simulationResetPromise||this.simulationMutationGate?.blocked),
+        simulationMutationGate:this.simulationMutationGate?.snapshot?.()||null,
+        intelligenceHydration:{...(this.intelligenceHydration||{}),tradingBlocked:false},
+        athenaHistoricalMemoryLoad:{...(this.athenaCommander?.memoryLoad||{}),entryAuthorityBlockedUntilLoaded:false},
+        historicalIntelligenceBlocksTrading:false,
+        settingsPersistence:{...(this.settingsPersistence||{version:'SETTINGS-PERSISTENCE-R1',lastVerifiedAtMs:0,lastKeys:[],lastValues:{},lastError:null})},
         singleRealHunterPerExactTicker: this.settings.galacticExplosionEnabled !== true,
         exactTickerLockScope: this.settings.galacticExplosionEnabled === true ? GALACTIC_EXPLOSION.enabledLockScope : GALACTIC_EXPLOSION.disabledLockScope,
         galacticExplosion: GALACTIC_EXPLOSION.version,
@@ -2200,16 +2683,16 @@ export class SagittariusEngine {
         entryAdmissionUnknownProbeIntervalMs: ENTRY_ADMISSION_CONTROL.unknownProbeIntervalMs,
         entryAdmissionPrequeueMinimumGameTimeGate: true,
         entryAdmissionPrequeueMaximumGameTimeGate: true,
-        entryAdmissionPreBoltFeasibilityGate: true,
+        entryAdmissionImmediateGreenFeasibilityGate: true,
         entryAdmissionPreBoltExecutionMarginMs: ENTRY_ADMISSION_CONTROL.preBoltExecutionMarginMs,
-        entryAdmissionPostAtb2FreshClockGate: true,
+        entryAdmissionPostBoltFreshClockGate: true,
         postFireStrategicCooldownVeto: false,
         entryTimeWindow:'ETW1',
         minimumGameMinutes:Number(this.settings.minGameMinutes||0),
         maximumGameMinutes:Number(this.settings.maxGameMinutes||0),
         ultimateStopGuard: ULTIMATE_STOP_GUARD.version,
         stopLossWatchdog: STOP_LOSS_WATCHDOG.version,
-        stopLossWatchdogRole: 'early_economic_loss_classifier_inside_usg1',
+        stopLossWatchdogRole: 'observation_classifier_above_aurora_then_usg1_advisor_after_verified_touch',
         stopLossWatchdogPolicyRevision: STOP_LOSS_WATCHDOG.policyRevision,
         stopLossWatchdogStakeNormalized: STOP_LOSS_WATCHDOG.stakeNormalized,
         stopLossWatchdogStakeBasis: STOP_LOSS_WATCHDOG.stakeBasis,
@@ -2231,14 +2714,16 @@ export class SagittariusEngine {
         stopLossWatchdogSevereStallMs: STOP_LOSS_WATCHDOG.severeStallMs,
         stopLossWatchdogReferenceCatastrophicLossCents: STOP_LOSS_WATCHDOG.catastrophicLossCents,
         stopLossWatchdogCatastrophicStallMs: STOP_LOSS_WATCHDOG.catastrophicStallMs,
-        authorityChain:'GAME_CLOCK->PRE_BOLT->ATOMIC_THUNDER_BOLT->ARAYASHIKI->ATHENA->EXECUTION_ATTACK->INFINITY_BREAK/AURORA',
+        authorityChain:'GAME_CLOCK->COSMO_SHADOW->COSMO_GREEN->ATOMIC_THUNDER_BOLT->ATHENA->EXECUTION_ATTACK->INFINITY_BREAK/AURORA',
         noBoltNoAttack:true,
         atomicThunderBolt:ATOMIC_THUNDER_BOLT.version,
         atomicThunderBoltAuthority:ATOMIC_THUNDER_BOLT.authority,
         atomicThunderPatternGuardian:ATOMIC_THUNDER_PATTERN_GUARDIAN.version,
         atomicThunderPatternGuardianPolicyRevision:ATOMIC_THUNDER_PATTERN_GUARDIAN.policyRevision,
-        atomicThunderFirstPatternExamSeconds:Number(this.settings.atomicThunderFirstPatternExamSeconds??30),
-        atomicThunderFinalPatternExamSeconds:Number(this.settings.atomicThunderFinalPatternExamSeconds??120),
+        atomicThunderPatternGuardianAuthority:'RESEARCH_ONLY',
+        atomicThunderGreenTriggerCents:Number(this.settings.atomicThunderGreenTriggerCents??COSMO_SHADOW_TRADING.defaultGreenTriggerCents),
+        cosmoShadowTrading:COSMO_SHADOW_TRADING.version,
+        cosmoGreenPriceBasis:COSMO_SHADOW_TRADING.greenPriceBasis,
         athenaCommander:ATHENA_COMMANDER.version,
         athenaCommanderAuthority:ATHENA_COMMANDER.authority,
         athenaCommanderRole:ATHENA_COMMANDER.role,
@@ -2246,18 +2731,39 @@ export class SagittariusEngine {
         athenaTargetAwareAttackSelection:ATHENA_COMMANDER.targetAwareAttackSelection,
         athenaForcedAttackDiversification:ATHENA_COMMANDER.forcedAttackDiversification,
         athenaMatureNegativeExpectedValueMayFire:ATHENA_COMMANDER.matureNegativeExpectedValueMayFire,
-        athenaEconomicMemoryAuthority:ATHENA_COMMANDER.economicMemoryAuthority,
-        athenaEconomicMemoryDecisionAuthority:ATHENA_COMMANDER.economicMemoryDecisionAuthority,
-        athenaCertifiedEconomicMemoryRequiredWhenMature:ATHENA_COMMANDER.certifiedEconomicMemoryRequiredWhenMature,
         arayashiki:ARAYASHIKI.version,
         arayashikiPolicyRevision:ARAYASHIKI.policyRevision,
         arayashikiRole:ARAYASHIKI.role,
+        arayashikiStrategicAuthority:false,
         arayashikiNoEvidencePolicy:ARAYASHIKI.noEvidencePolicy,
         arayashikiCertificateTtlMs:ARAYASHIKI.certificateTtlMs,
         arayashikiRegimeContinuityRequired:ARAYASHIKI.regimeContinuityRequired,
         arayashikiPostFirePredictiveVeto:ARAYASHIKI.postFirePredictiveVeto,
         attackDoctrineRevalidationRequired:false,
-        attackExecutionOnlyAfterAthenaFire:true,
+        normalAttackExecutionOnlyAfterAthenaFire:true,
+        scarletNeedleStrategicAuthorityException:true,
+        gemini:GEMINI_UNIVERSE.version,
+        geminiPolicyRevision:GEMINI_UNIVERSE.policyRevision,
+        geminiEnabled:this.settings.geminiEnabled===true,
+        geminiEntryBand:[Number(this.settings.geminiMinPriceCents),Number(this.settings.geminiMaxPriceCents)],
+        geminiReferenceStakeCents:Number(this.settings.geminiReferenceStakeCents),
+        geminiBrokerOrderAuthority:false,
+        geminiPortfolioCapitalAuthority:false,
+        geminiSimulationPortfolioCapitalAuthority:false,
+        anotherDimension:ANOTHER_DIMENSION.version,
+        anotherDimensionPolicyRevision:ANOTHER_DIMENSION.policyRevision,
+        anotherDimensionShadowOnly:true,
+        anotherDimensionBrokerOrderAuthority:false,
+        anotherDimensionPortfolioCapitalAuthority:false,
+        anotherDimensionSimulationPortfolioCapitalAuthority:false,
+        anotherDimensionMinimumNetPerOriginalContractCents:Number(ANOTHER_DIMENSION.minimumNetPerOriginalContractCents),
+        anotherDimensionRuntime:{...(this.anotherDimensionStats||{}),active:Number(this.anotherDimensionOpenByTicker?.size||0),recent:Number(this.anotherDimensionRecent?.size||0),queue:this.anotherDimensionQueue?.snapshot?.()||{}},
+        justiceArrow:SAGITTARIUS_JUSTICE_ARROW.version,
+        justiceArrowPolicyRevision:SAGITTARIUS_JUSTICE_ARROW.policyRevision,
+        justiceArrowTrigger:SAGITTARIUS_JUSTICE_ARROW.trigger,
+        justiceArrowProfitAuthority:ATHENA_EXIT_INTELLIGENCE.version,
+        justiceArrowLossAuthority:AURORA_EXECUTION.version,
+        justiceArrowContinuation:{...(this.justiceArrowStats||{})},
         infinityBreak:INFINITY_BREAK.version,
         infinityBreakAuthority:INFINITY_BREAK.authority,
         infinityBreakMinimumNetPerOriginalContractCents:Number(this.settings.infinityBreakMinNetPerOriginalContractCents ?? INFINITY_BREAK.minimumNetPerOriginalContractCents),
@@ -2266,13 +2772,15 @@ export class SagittariusEngine {
         infinityBreakConfirmationWindowMs:Number(this.settings.infinityBreakConfirmationWindowMs ?? INFINITY_BREAK.confirmationWindowMs),
         noPostEntryTimeBasedForcedExit:true,
         legacyAtomicThunderCompatibilityOnly:true,
-        stopDoctrine: 'AURORA_FROZEN_DANGER_LINE_PLUS_R41_USG1_SLW1_R2',
+        stopDoctrine: 'AURORA_VERIFIED_FROZEN_DANGER_GATE_PLUS_USG1_SLW1_OBSERVER',
         auroraExecution: AURORA_EXECUTION.version,
         auroraPolicyRevision: AURORA_EXECUTION.policyRevision,
         auroraDamageControlPercent: Number(this.settings.auroraDamageControlPercent ?? AURORA_EXECUTION.defaultDamageControlPercent),
         auroraMaximumEconomicLossRatio: Number(this.settings.auroraDamageControlPercent ?? AURORA_EXECUTION.defaultDamageControlPercent)/100,
         auroraFrozenAtEntry: AURORA_EXECUTION.frozenAtEntry,
         auroraTrails: AURORA_EXECUTION.trails,
+        auroraNormalAutomatedLossExitGate:AURORA_EXECUTION.normalAutomatedLossExitGate,
+        auroraWatchdogAboveDangerLine:AURORA_EXECUTION.watchdogAboveDangerLine,
         stopGuardRecoveryLearning: STOP_GUARD_RECOVERY_LEARNING.version,
         stopGuardRecoveryLearningRole: STOP_GUARD_RECOVERY_LEARNING.role,
         stopGuardRecoveryLearningDecisionEvidenceMode: STOP_GUARD_RECOVERY_LEARNING.decisionEvidenceMode,
@@ -2288,6 +2796,7 @@ export class SagittariusEngine {
         feederSignalIntelligence: FEEDER_SIGNAL_INTELLIGENCE.version,
         feederSignalIntelligenceRole: FEEDER_SIGNAL_INTELLIGENCE.role,
         feederSignalIntelligenceDiagnosticsOnly: true,
+        feederSignalIntelligenceRuntime: 'DISABLED_R60_SHADOW_TABLE_REPLACES_QUOTE_RATE_FSI',
         feederSignalIntelligenceEntryAuthority: false,
         feederSignalIntelligenceExecutionAuthority: false,
         feederSignalIntelligenceAthenaDecisionAuthority: false,
@@ -2346,9 +2855,12 @@ export class SagittariusEngine {
         crashRecoveryRequiresActiveCosmo:false,
         crashRecoverySourceFeeders:[...COSMO_ROUTING.activeCosmos],
         scarletNeedle:SCARLET_NEEDLE.version,
-        scarletNeedleTriggerDropCents:SCARLET_NEEDLE.triggerDropCents,
-        scarletNeedleTriggerEditable:false,
-        scarletNeedleArmed:this.athenaCommander?.scarletNeedleArms?.size||0,
+        scarletNeedleContinuationAuthority:true,
+        scarletNeedleTrigger:SCARLET_NEEDLE.trigger,
+        scarletNeedleMaxRepeats:Number(this.settings.scarletNeedleMaxRepeats??SCARLET_NEEDLE.defaultMaxRepeats),
+        scarletNeedleRetracementTriggerEnabled:false,
+        scarletNeedleContinuation:{...(this.scarletContinuationStats||{})},
+        noBoltNoAttackExceptions:['SCARLET_NEEDLE_POST_PROFIT_CONTINUATION','SAGITTARIUS_JUSTICE_ARROW_POST_SHADOW_WIN'],
         cosmoRouting: COSMO_ROUTING.version,
         cosmoRoutingRole: COSMO_ROUTING.role,
         cosmoRoutingInitialEntryConsumers: [...COSMO_ROUTING.currentInitialEntryConsumers],
@@ -2356,9 +2868,6 @@ export class SagittariusEngine {
         cosmoRoutingFutureInitialEntryDefault: COSMO_ROUTING.defaultFutureInitialEntryConsumer,
         cosmoSourceDoesNotAuthorizeEntry: COSMO_ROUTING.sourceDoesNotAuthorizeEntry,
         athenaExclamation:ATHENA_EXCLAMATION.version,
-        athenaExclamationPolicyRevision:ATHENA_EXCLAMATION.policyRevision,
-        athenaExclamationDurableFormationJsonb:true,
-        athenaExclamationSingleConsumption:true,
         athenaExclamationEnabled:this.settings.athenaExclamationEnabled===true,
         athenaExclamationRole:'ATHENA_SUBORDINATE_META_EXECUTION_PATTERN',
         athenaExclamationStrategicAuthority:ATHENA_COMMANDER.version,
@@ -2412,7 +2921,7 @@ export class SagittariusEngine {
         athenaB2GuardianThreshold:ATHENA_B2.guardianThreshold,
         athenaB2GuardianModelHash:ATHENA_B2.guardianModelHash,
         athenaB2GuardianModelValid:ATHENA_B2.guardianModelValidation?.ok===true,
-        athenaConsumers: ['Athena Exclamation','Scarlet Needle','Momentum Hunter','Wave Surfer','Recovery Hunter','Crash Recovery Hunter','Lightning Plasma'],
+        athenaConsumers: ['Athena Exclamation','Momentum Hunter','Wave Surfer','Recovery Hunter','Crash Recovery Hunter','Lightning Plasma'],
         athenaFeedersExcluded: true,
         athenaExitAuthority: false,
         athenaB1ExitAuthority: false,
@@ -2525,7 +3034,7 @@ export class SagittariusEngine {
         feederUnrealizedCents: p.feederUnrealizedCents,
         simulationCashCents: p.simulationCashCents,
       },
-      conceptStats, feederSummary, entryPipeline, entryCandidateFunnel, entryPathConfiguration, auroraExecution, resourceUsage, openHunters, openFeeders, closedHunters,
+      conceptStats, feederSummary, entryPipeline, entryCandidateFunnel, entryPathConfiguration, auroraExecution, resourceUsage, openHunters, openFeeders, cosmoShadowTrades, gemini:geminiSummary, geminiTrades, anotherDimension:{...(this.anotherDimensionStats||{}),active:Number(this.anotherDimensionOpenByTicker?.size||0),recent:Number(this.anotherDimensionRecent?.size||0)}, justiceArrow:{...(this.justiceArrowStats||{})}, closedHunters,
       trackedMarkets: trackers, trackerSummary, patterns, recoveryTracking, sports,
       crashLearning, crashEpisodes, profitLearning, stopGuardRecoveryLearning, athena, atomicThunderBolt, infinityBreak, legacyAtomicThunder:{ version:ATOMIC_THUNDER.version, policyRevision:ATOMIC_THUNDER.policyRevision, legacyCompatibilityOnly:true, ...atomicThunder }, goldenEye:this.goldenEye?.summary?.() || {version:GOLDEN_EYE.version,ready:false,enabled:false},
       liveMarkets: scanned,
@@ -2541,23 +3050,49 @@ export class SagittariusEngine {
       ? this.openUnrealized(e, view.priceCents)
       : 0;
     const isFeeder = FEEDER_CONCEPTS.has(e.conceptName);
-    const referenceCount = isFeeder ? Number(e.count || 0) : 0;
-    const referencePnlCents = isFeeder
-      ? (Number(view.priceCents) - Number(e.entryPriceCents)) * referenceCount - 2 * Number(this.settings.simFeeCents || 2) * referenceCount
-      : null;
-    const favorableMoveCents = isFeeder ? Math.max(0, Number(view.priceCents) - Number(e.entryPriceCents)) : null;
-    const adverseMoveCents = isFeeder ? Math.max(0, Number(e.entryPriceCents) - Number(view.priceCents)) : null;
+    const isShadowAttack = SHADOW_ATTACK_CONCEPTS.has(e.conceptName);
+    const isShadow = isFeeder || isShadowAttack;
+    const referenceCount = isShadow ? Number(e.count || 0) : 0;
+    const shadowPrice=e.status==='closed'&&Number.isFinite(Number(e.exitPriceCents))?Number(e.exitPriceCents):Number(view.priceCents);
+    const shadowMoveCents = isShadow ? shadowPrice - Number(e.entryPriceCents) : null;
+    let referencePnlCents=null,shadowPnlCents=null;
+    if(isFeeder){
+      referencePnlCents=(Number(view.priceCents)-Number(e.entryPriceCents))*referenceCount-2*Number(this.settings.simFeeCents||2)*referenceCount;
+      shadowPnlCents=shadowMoveCents*referenceCount;
+    }else if(isShadowAttack){
+      if(e.status==='closed')referencePnlCents=shadowPnlCents=Number(e.pnlCents||0);
+      else{
+        const exitFee=String(e.mode||this.settings.mode||'SIMULATION').toUpperCase()==='LIVE'
+          ? kalshiGeneralTakerFeeEstimateCents({count:referenceCount,priceCents:Math.max(0,Math.min(100,Number(view.priceCents||0)))})
+          : Math.max(0,Number(e.entryConfig?.simFeeCents??this.settings.simFeeCents??0))*referenceCount;
+        referencePnlCents=shadowPnlCents=shadowMoveCents*referenceCount-Number(e.entryFeeCents||0)-exitFee;
+      }
+    }
+    const favorableMoveCents = isShadow ? Math.max(0, shadowMoveCents) : null;
+    const adverseMoveCents = isShadow ? Math.max(0, -shadowMoveCents) : null;
+    const greenTriggerCents = isFeeder ? Number(this.settings.atomicThunderGreenTriggerCents||COSMO_SHADOW_TRADING.defaultGreenTriggerCents) : null;
+    const atomicThunderBoltId = isFeeder ? (e.feederState?.atomicThunderBoltId||null) : null;
+    const shadowState = isFeeder ? (atomicThunderBoltId?'BOLT_SENT':shadowMoveCents>=greenTriggerCents?'GREEN':'TRACKING') : isShadowAttack ? (openLike(e.status)?'ANOTHER_DIMENSION':Number(e.pnlCents||0)>0?'WIN':Number(e.pnlCents||0)<0?'LOSS':'SCRATCH') : null;
     const sourceSignalPrice = e.conceptName === 'Dragon' ? e.entryConfig?.dragonSource?.signalPriceCents : (e.conceptName === 'Phoenix' ? e.entryConfig?.phoenixSource?.signalAskCents : (e.conceptName === 'Golden Dragon' ? e.entryConfig?.goldenDragonSource?.signalPriceCents : null));
     const signalPriceCents = Number.isFinite(Number(sourceSignalPrice)) ? Number(sourceSignalPrice) : null;
-    const referenceOriginCents = isFeeder ? Number(e.entryPriceCents) : null;
-    const referenceOrigin = isFeeder && ['Dragon','Golden Dragon'].includes(e.conceptName) ? 'crash_trough' : (e.conceptName==='Phoenix'?'phoenix_signal':(isFeeder ? 'feeder_entry' : null));
+    const referenceOriginCents = isShadow ? Number(e.entryPriceCents) : null;
+    const referenceOrigin = e.conceptName==='Dragon'?'dragon_signal':(e.conceptName==='Phoenix'?'phoenix_signal':(isShadowAttack?'another_dimension':(isFeeder?'feeder_entry':null)));
     const identity=EXECUTION_ATTACK_DISPLAY[e.conceptName]||null;
     const aurora=e?.entryConfig?.aurora?.version===AURORA_EXECUTION.version&&e.entryConfig.aurora.frozen===true?e.entryConfig.aurora:null;
     const postExit=e?.postExitState&&typeof e.postExitState==='object'?e.postExitState:{};
     const closedPostPrice=e?.status==='closed'&&Number.isFinite(Number(postExit.latestMarketPriceCents))?Number(postExit.latestMarketPriceCents):null;
+    const shadowRuntime=isShadowAttack?this.anotherDimensionRuntime?.get?.(String(e.id||'')):null;
+    const shadowEvaluation=shadowRuntime?.lastEvaluation||null;
+    const shadowPeak=isShadowAttack&&openLike(e.status)?Math.max(Number(e.peakPriceCents||e.entryPriceCents||0),Number(shadowRuntime?.peakPriceCents||0)):Number(e.peakPriceCents||0);
+    const shadowLow=isShadowAttack&&openLike(e.status)&&Number(shadowRuntime?.lowestPriceAfterEntryCents)>0?Number(shadowRuntime.lowestPriceAfterEntryCents):e.lowestPriceAfterEntryCents;
+    const shadowMae=isShadowAttack&&openLike(e.status)?Number(shadowRuntime?.maeCents??e.maeCents??0):Number(e.maeCents||0);
+    const shadowMaeAt=isShadowAttack&&openLike(e.status)?(shadowRuntime?.maeAtMs??e.maeAtMs):e.maeAtMs;
     return {
       ...e,
+      ...(isShadowAttack?{peakPriceCents:shadowPeak,lowestPriceAfterEntryCents:shadowLow,maeCents:shadowMae,maeAtMs:shadowMaeAt}:{}),
       currentPriceCents: e?.status==='closed'&&closedPostPrice!=null?closedPostPrice:view.priceCents,
+      currentBidCents:Number(view.q?.yesBid||view.priceCents||0)||null,
+      currentAskCents:Number(view.q?.yesAsk||0)||null,
       postExitCurrentPriceCents:closedPostPrice,
       postExitDeltaFromExitCents:Number.isFinite(Number(postExit.deltaFromExitCents))?Number(postExit.deltaFromExitCents):null,
       postExitBestPriceCents:Number.isFinite(Number(postExit.bestExecutableBidCents))?Number(postExit.bestExecutableBidCents):null,
@@ -2570,13 +3105,14 @@ export class SagittariusEngine {
       volume24h: view.q?.volume24h ?? e.volume24h,
       unrealizedCents: unrealized,
       positionPnlCents: Number(e.pnlCents || 0) + unrealized,
-      referencePnlCents, favorableMoveCents, adverseMoveCents, signalPriceCents, referenceOriginCents, referenceOrigin,
+      referencePnlCents, shadowPnlCents, shadowMoveCents, shadowState, greenTriggerCents, atomicThunderBoltId, athenaSelectedAttack:e.feederState?.athenaSelectedAttack||null, realEntryId:e.feederState?.realEntryId||null, favorableMoveCents, adverseMoveCents, signalPriceCents, referenceOriginCents, referenceOrigin,
+      universe:isShadowAttack?'Gemini':null,virtualExecution:isShadowAttack?shadowEvaluation:null,justiceArrowEntryId:isShadowAttack?(e.feederState?.justiceArrowEntryId||null):null,
       executionAttackName:identity?.name||e.conceptName,legacyConceptName:identity?.legacy||e.conceptName,retiredRuntimeConcept:RETIRED_PORTFOLIO_CONCEPTS.has(e.conceptName)||RETIRED_FEEDER_CONCEPTS.has(e.conceptName),aurora,
       quoteAgeMs: Number.isFinite(view.quoteAgeMs) ? view.quoteAgeMs : null,
       dataState: view.dataState,
       gameMinutes: e.gameStartTimeMs ? Math.max(0, Math.round((Date.now() - e.gameStartTimeMs) / 60000)) : null,
       liveStatus: view.q?.liveStatus || view.q?.status || '',
-      maeAfterEntryMs: e.maeAtMs == null ? null : Math.max(0, Number(e.maeAtMs) - Number(e.openedAtMs || 0)),
+      maeAfterEntryMs: (isShadowAttack?shadowMaeAt:e.maeAtMs) == null ? null : Math.max(0, Number(isShadowAttack?shadowMaeAt:e.maeAtMs) - Number(e.openedAtMs || 0)),
       recoveryToEntryMs: e.recoveryToEntryAtMs == null || e.closedAtMs == null ? null : Math.max(0, Number(e.recoveryToEntryAtMs) - Number(e.closedAtMs)),
       recoveryToGreenMs: e.recoveryToGreenAtMs == null || e.closedAtMs == null ? null : Math.max(0, Number(e.recoveryToGreenAtMs) - Number(e.closedAtMs)),
       profitGuard: guard,
@@ -2584,7 +3120,7 @@ export class SagittariusEngine {
   }
 
   buildConceptStatsFromAggregate(aggregate={}) {
-    const names=['Athena Exclamation','Scarlet Needle','Wave Surfer','Crash Recovery Hunter','Recovery Hunter','Momentum Hunter','Lightning Plasma','Pegasus','Dragon','Phoenix'];
+    const names=['Athena Exclamation','Scarlet Needle','Sagittarius Justice Arrow','Wave Surfer','Crash Recovery Hunter','Recovery Hunter','Momentum Hunter','Lightning Plasma','Pegasus','Dragon','Phoenix'];
     const portfolio=new Map((aggregate.portfolio||[]).map((r)=>[String(r.concept_name||''),r]));
     const signals=new Map((aggregate.signals||[]).map((r)=>[String(r.concept_name||''),r]));
     const linked=new Map((aggregate.linked||[]).map((r)=>[String(r.source_feeder||''),r]));
@@ -2608,7 +3144,7 @@ export class SagittariusEngine {
   }
 
   buildConceptStats(entries) {
-    const names = ['Athena Exclamation','Scarlet Needle','Wave Surfer','Crash Recovery Hunter','Recovery Hunter','Momentum Hunter','Lightning Plasma','Pegasus','Dragon','Phoenix'];
+    const names = ['Athena Exclamation','Scarlet Needle','Sagittarius Justice Arrow','Wave Surfer','Crash Recovery Hunter','Recovery Hunter','Momentum Hunter','Lightning Plasma','Pegasus','Dragon','Phoenix'];
     const out = [];
     for (const name of names) {
       if (ACTIVE_FEEDER_CONCEPTS.has(name)) {
@@ -2763,12 +3299,7 @@ export class SagittariusEngine {
       ()=>typeof this.db.crashEpisodes==='function'?this.db.crashEpisodes(this.settings.systemName,{limit:250}):[],
     ];
     const [trackedMarkets,patterns,sports,snapshots,audit,crashEpisodes]=await mapLimit(detailJobs,STATE_DB_FANOUT_MAX,(job)=>job()).catch(()=>[base.trackedMarkets||[],[],[],[],base.audit||[],[]]);
-    let feederSignalIntelligence=null;
-    try { feederSignalIntelligence=await this.feederSignalIntel?.diagnostics?.({recordLimit:400}); }
-    catch(error){
-      feederSignalIntelligence={version:FEEDER_SIGNAL_INTELLIGENCE.version,role:FEEDER_SIGNAL_INTELLIGENCE.role,healthy:false,error:String(error?.message||error),records:[],summary:{signals:0,tracking:0,complete:0}};
-      await this.db.audit('warning','feeder_signal_intel_diagnostics_error',{message:String(error?.message||error)}).catch(()=>{});
-    }
+    const feederSignalIntelligence={version:FEEDER_SIGNAL_INTELLIGENCE.version,role:FEEDER_SIGNAL_INTELLIGENCE.role,runtime:'DISABLED_R60_SHADOW_TABLE_REPLACES_QUOTE_RATE_FSI',healthy:true,records:[],recordsIncluded:0,recordsAvailable:0,summary:{signals:0,tracking:0,complete:0}};
     const boundedBase={...base,trackedMarkets,patterns,sports,snapshots,audit,crashEpisodes,closedHunters:Array.isArray(base.closedHunters)?base.closedHunters.slice(0,150):[]};
     return {...boundedBase,feederSignalIntelligence,diagnosticExport:{version:'DX2',hardMaximumBytes:2_000_000,targetMaximumBytes:1_850_000,serialization:'compact_json',priority:'safety_runtime_performance_open_positions_stop_guard_then_recent_research',operationalStateHistoricalRows:false,onDemandResearch:true,closedHuntersIncluded:boundedBase.closedHunters?.length||0,closedHuntersAvailable:base.closedHunters?.length||0,fsiRecordsIncluded:feederSignalIntelligence?.recordsIncluded||0,fsiRecordsAvailable:feederSignalIntelligence?.recordsAvailable||0}};
   }

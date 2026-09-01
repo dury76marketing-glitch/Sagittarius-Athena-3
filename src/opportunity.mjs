@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { ATOMIC_THUNDER_BOLT, ATOMIC_THUNDER_PATTERN_GUARDIAN, SCARLET_NEEDLE, LIGHTNING_PLASMA, ATHENA_EXCLAMATION, EXECUTION_ATTACK_DISPLAY, kalshiGeneralTakerFeeEstimateCents } from './doctrine.mjs';
+import { ATOMIC_THUNDER_BOLT, ATOMIC_THUNDER_PATTERN_GUARDIAN, COSMO_SHADOW_TRADING, INFINITY_BREAK, LIGHTNING_PLASMA, ATHENA_EXCLAMATION, EXECUTION_ATTACK_DISPLAY, kalshiGeneralTakerFeeEstimateCents } from './doctrine.mjs';
 
 const finite=(v,d=null)=>Number.isFinite(Number(v))?Number(v):d;
 const clamp=(v,lo=0,hi=100)=>Math.max(lo,Math.min(hi,Number(v)||0));
@@ -66,54 +66,6 @@ function zigzagTurns(points=[],threshold=ATOMIC_THUNDER_PATTERN_GUARDIAN.minimum
   return z;
 }
 function leg(a,b){return Number(b?.p||0)-Number(a?.p||0);}
-function countDownSteps(points=[]){let n=0;for(let i=1;i<points.length;i+=1)if(points[i].p<points[i-1].p)n+=1;return n;}
-function firstMaxIndex(points=[]){if(!points.length)return-1;let idx=0;for(let i=1;i<points.length;i+=1)if(points[i].p>points[idx].p)idx=i;return idx;}
-function preBoltUpsideDangerPatterns(points=[],g=ATOMIC_THUNDER_PATTERN_GUARDIAN){
-  const reasons=[];
-  if(points.length<5)return reasons;
-  const peakIndex=firstMaxIndex(points);if(peakIndex<2||peakIndex>=points.length-1)return reasons;
-  const peak=points[peakIndex],current=points.at(-1),before=points.slice(0,peakIndex+1),after=points.slice(peakIndex);
-  const priorLow=Math.min(...before.slice(0,-1).map(x=>x.p)),priorRise=peak.p-priorLow,drawdown=peak.p-current.p,downSteps=countDownSteps(after);
-
-  // P6 PEAK ENTRY -> NO EXTENSION -> CLIFF.
-  // A real ascent establishes the peak, price then spends measurable time in a
-  // narrow near-peak stall without extending, and the first material rollover
-  // begins before the Bolt. This intentionally works at any price band.
-  const nearPeakAfter=after.filter(x=>x.p>=peak.p-g.peakEntryStallBandCents);
-  const stallEnd=nearPeakAfter.at(-1);
-  const stallMs=stallEnd?Math.max(0,stallEnd.t-peak.t):0;
-  if(priorRise>=g.peakEntryMinimumPriorRiseCents&&stallMs>=g.peakEntryMinimumStallMs&&drawdown>=g.peakEntryRolloverDropCents&&downSteps>=g.peakEntryMinimumDownSteps){
-    reasons.push('peak_entry_no_extension_cliff');
-  }
-
-  // P7 MICRO BREAKOUT -> IMMEDIATE REJECTION -> CLIFF.
-  // Require an actually established prior high (multiple touches over time), a
-  // small breakout above it, then rejection below that old high with multiple
-  // post-peak down steps. A healthy breakout that holds above the old high is
-  // deliberately left clear.
-  if(peakIndex>=3){
-    const prior=points.slice(0,peakIndex),priorHigh=Math.max(...prior.map(x=>x.p));
-    const breakout=peak.p-priorHigh;
-    const priorTouches=prior.filter(x=>x.p>=priorHigh-g.microBreakoutPriorHighBandCents);
-    const touchSpan=priorTouches.length>=2?priorTouches.at(-1).t-priorTouches[0].t:0;
-    if(breakout>=g.microBreakoutMinimumCents&&breakout<=g.microBreakoutMaximumCents&&priorTouches.length>=g.microBreakoutPriorHighMinimumTouches&&touchSpan>=g.microBreakoutPriorHighMinimumSpanMs&&drawdown>=g.microBreakoutMinimumGivebackCents&&current.p<=priorHigh-g.microBreakoutPriorHighUndercutCents&&downSteps>=g.microBreakoutMinimumDownSteps){
-      reasons.push('micro_breakout_rejection_cliff');
-    }
-  }
-
-  // P8 EXTENDED HIGH-ZONE EXHAUSTION -> TERMINAL REVERSAL.
-  // High price alone is never sufficient. The path must first make a material
-  // ascent into the high zone, compress near the top for multiple observations,
-  // then reverse materially with repeated lower observations before the Bolt.
-  const compressionStart=Math.max(0,peakIndex-g.highZoneCompressionMinimumSamples+1);
-  const compression=points.slice(compressionStart,peakIndex+1);
-  const compressionRange=compression.length?Math.max(...compression.map(x=>x.p))-Math.min(...compression.map(x=>x.p)):Infinity;
-  const compressionSpan=compression.length>=2?compression.at(-1).t-compression[0].t:0;
-  if(peak.p>=g.highZoneMinimumCents&&priorRise>=g.highZoneMinimumAscentCents&&compression.length>=g.highZoneCompressionMinimumSamples&&compressionRange<=g.highZoneCompressionBandCents&&compressionSpan>=g.highZoneCompressionMinimumSpanMs&&drawdown>=g.highZoneTerminalReversalCents&&downSteps>=g.highZoneMinimumDownSteps){
-    reasons.push('high_zone_exhaustion_terminal_reversal');
-  }
-  return reasons;
-}
 export function atomicThunderDangerPattern({history=[],now=Date.now(),windowMs=ATOMIC_THUNDER_PATTERN_GUARDIAN.lookbackMs,crashSignal=null,crashState=null}={}){
   const points=recentPricePath(history,now,windowMs),turns=zigzagTurns(points);
   const reasons=[];const g=ATOMIC_THUNDER_PATTERN_GUARDIAN;
@@ -172,16 +124,12 @@ export function atomicThunderDangerPattern({history=[],now=Date.now(),windowMs=A
       if(ds[0]<=-g.materialFallCents&&ds[1]>=g.materialReboundCents&&ds[2]<=-g.materialFallCents&&ds[3]>=g.materialReboundCents&&ds[4]<=-g.materialFallCents){reasons.push('repeated_fall_rebound_cycle');break;}
     }
   }
-  // R5/P6-P8: new upside-origin danger families discovered in the five-log
-  // 2026-08-29 loss wave. They use only observations available before Bolt
-  // emission and therefore add no look-ahead or post-FIRE authority.
-  reasons.push(...preBoltUpsideDangerPatterns(points,g));
   return{contaminated:reasons.length>0,reasons:[...new Set(reasons)],points:points.length,turns:turns.slice(-12),windowMs};
 }
 
 function economicTargetForAttack({askCents=0,stakeCents=0,settings={}}={}){
   const ask=Math.max(1,finite(askCents,0)),stake=Math.max(1,finite(stakeCents,0));
-  const target=Math.max(0.01,finite(settings.infinityBreakMinNetPerOriginalContractCents,5));
+  const target=Math.max(0.01,finite(settings.infinityBreakMinNetPerOriginalContractCents,INFINITY_BREAK.defaultMinimumNetPerOriginalContractCents));
   const count=Math.max(1,Math.floor(stake/ask));
   let entryFeePerContract=0,exitFeePerContract=0,targetBid=ask+target;
   if(String(settings.mode||'SIMULATION').toUpperCase()==='LIVE'){
@@ -202,7 +150,6 @@ function enabledAttackBands(settings={},askCents=0,{recoveryContext=null,fieldCo
     ['Momentum Hunter','momentumHunterEnabled','momentumMinEntryCents','momentumMaxEntryCents','momentumStakeCents'],
     ['Wave Surfer','waveSurferEnabled','waveMinEntryCents','waveMaxEntryCents','waveStakeCents'],
     ['Crash Recovery Hunter','crashRecoveryHunterEnabled','crashRecoveryMinEntryCents','crashRecoveryMaxEntryCents','crashRecoveryStakeCents'],
-    ['Scarlet Needle','scarletNeedleEnabled','scarletNeedleMinEntryCents','scarletNeedleMaxEntryCents','scarletNeedleStakeCents'],
     ['Recovery Hunter','recoveryHunterEnabled','recoveryMinEntryCents','recoveryMaxEntryCents','recoveryStakeCents'],
     ['Lightning Plasma','lightningPlasmaEnabled','lightningPlasmaMinEntryCents','lightningPlasmaMaxEntryCents','lightningPlasmaFieldStakeCents'],
     ['Athena Exclamation','athenaExclamationEnabled','athenaExclamationMinEntryCents','athenaExclamationMaxEntryCents','athenaExclamationStakeCents'],
@@ -226,16 +173,17 @@ function enabledAttackBands(settings={},askCents=0,{recoveryContext=null,fieldCo
     return true;
   }).map(([concept,flag,min,max,stake])=>{
     const minEntryCents=finite(settings[min],0),maxEntryCents=finite(settings[max],100),stakeCents=finite(settings[stake],0);
-    if(concept==='Scarlet Needle'){
-      const signalReferenceCents=finite(askCents,0);
-      const triggerPriceCents=Math.max(0,signalReferenceCents-SCARLET_NEEDLE.triggerDropCents);
-      const plannedEntryCents=Math.min(triggerPriceCents,maxEntryCents);
-      const target=economicTargetForAttack({askCents:Math.max(1,plannedEntryCents),stakeCents,settings});
-      return{concept,display:EXECUTION_ATTACK_DISPLAY[concept]?.name||concept,minEntryCents,maxEntryCents,stakeCents,delayedEntry:true,triggerDropCents:SCARLET_NEEDLE.triggerDropCents,signalReferenceCents,triggerPriceCents,plannedEntryCents,...target};
-    }
     const target=economicTargetForAttack({askCents,stakeCents,settings});
     return{concept,display:EXECUTION_ATTACK_DISPLAY[concept]?.name||concept,minEntryCents,maxEntryCents,stakeCents,delayedEntry:false,plannedEntryCents:askCents,...target};
   });
+}
+
+export function cosmoGreenSources(cosmos=[], bidCents=0, thresholdCents=COSMO_SHADOW_TRADING.defaultGreenTriggerCents){
+  const bid=finite(bidCents,0),threshold=Math.max(1,Math.floor(finite(thresholdCents,COSMO_SHADOW_TRADING.defaultGreenTriggerCents)));
+  return (cosmos||[]).filter(x=>openLike(x?.status)||x?.active===true).map(source=>{
+    const entry=finite(source?.entryPriceCents,0),move=bid>0&&entry>0?bid-entry:-Infinity;
+    return{shadowTradeId:String(source?.id||''),conceptName:String(source?.conceptName||source?.name||''),ticker:String(source?.ticker||''),eventTicker:String(source?.eventTicker||source?.ticker||''),entryPriceCents:entry,currentExecutableBidCents:bid,moveCents:Number.isFinite(move)?move:null,greenThresholdCents:threshold,green:Number.isFinite(move)&&move+1e-9>=threshold,priorBoltId:source?.feederState?.atomicThunderBoltId||null,openedAtMs:finite(source?.openedAtMs,0)};
+  }).filter(x=>x.shadowTradeId&&x.entryPriceCents>0);
 }
 
 export function atomicThunderBoltFeatures({q,history=[],settings={},cosmos=[],crashSignal=null,recoveryContext=null,fieldContext=null,now=Date.now()}={}){
@@ -257,6 +205,10 @@ export function atomicThunderBoltFeatures({q,history=[],settings={},cosmos=[],cr
   const upwardTicks=usable.slice(-6).reduce((n,x,i,a)=>i&&askOf(x)>askOf(a[i-1])?n+1:n,0);
   const lowerLowCount=usable.slice(-8).reduce((n,x,i,a)=>i&&askOf(x)<askOf(a[i-1])?n+1:n,0);
   const cosmosNames=[...new Set((cosmos||[]).filter(x=>openLike(x?.status)||x?.active===true).map(x=>String(x?.conceptName||x?.name||'')).filter(Boolean))];
+  const greenTriggerCents=Math.max(1,Math.floor(finite(settings.atomicThunderGreenTriggerCents,COSMO_SHADOW_TRADING.defaultGreenTriggerCents)));
+  const cosmoShadows=cosmoGreenSources(cosmos,bid,greenTriggerCents);
+  const greenSources=cosmoShadows.filter(x=>x.green===true);
+  const strongestGreenMoveCents=greenSources.length?Math.max(...greenSources.map(x=>finite(x.moveCents,0))):0;
   const externalCrash=crashSignal&&typeof crashSignal==='object'?{
     episodeId:crashSignal.episodeId||null,crashDepthCents:finite(crashSignal.crashDepthCents,crashDepth),troughCents:finite(crashSignal.troughCents,troughAfterPeak),
     reboundCents:finite(crashSignal.reboundCents,rebound),reclaimRate:finite(crashSignal.reclaimRate,reclaim),stableObservations:finite(crashSignal.stableObservations,0),upwardTicks:finite(crashSignal.upwardTicks,upwardTicks),lowerLowCount:finite(crashSignal.lowerLowCount,lowerLowCount),reboundLostCount:finite(crashSignal.reboundLostCount,0),
@@ -297,8 +249,9 @@ export function atomicThunderBoltFeatures({q,history=[],settings={},cosmos=[],cr
     stableObservations:externalCrash?.stableObservations??Math.min(usable.length,8),upwardTicks:externalCrash?.upwardTicks??upwardTicks,lowerLowCount:externalCrash?.lowerLowCount??lowerLowCount,reboundLostCount:externalCrash?.reboundLostCount??0,
     currentUpwardTicks:upwardTicks,currentLowerLowCount:lowerLowCount,currentCrashDepthCents:crashDepth,currentReboundCents:rebound,currentReclaimRate:reclaim,
     crashEpisodeId:externalCrash?.episodeId||null,gameMinutes,cosmoSources:cosmosNames,cosmoCount:cosmosNames.length,
+    cosmoShadowTrades:cosmoShadows,greenSources,greenSourceCount:greenSources.length,greenTriggerCents,strongestGreenMoveCents,
     recoveryContext:recoveryContext||null,fieldContext:structuralFieldContext,eligibleAttacks:eligibleBands,sourceScore,
-    targetNetPerOriginalContractCents:Math.max(0.01,finite(settings.infinityBreakMinNetPerOriginalContractCents,5)),minimumRequiredGrossMoveCents:minimumGross,targetFeasibilityScore,
+    targetNetPerOriginalContractCents:Math.max(0.01,finite(settings.infinityBreakMinNetPerOriginalContractCents,INFINITY_BREAK.defaultMinimumNetPerOriginalContractCents)),minimumRequiredGrossMoveCents:minimumGross,targetFeasibilityScore,
     marketObservedAtMs:finite(q?.quoteAtMs,finite(q?.updatedAtMs,now)),calculatedAtMs:now,
   };
 }
@@ -310,20 +263,18 @@ export function atomicThunderBoltDecision(features={},settings={}){
   const economicallyFeasible=features.eligibleAttacks.filter(x=>x?.targetFeasible!==false);
   if(!economicallyFeasible.length)return{detected:false,reason:'economic_target_unreachable',score:0};
   if(features.spreadCents>Number(settings.maxSpreadCents??3))return{detected:false,reason:'shared_spread_safety',score:0};
-  if(features.historySamples<ATOMIC_THUNDER_BOLT.minimumHistorySamples)return{detected:false,reason:'insufficient_history',score:0};
-  const directional=Math.max(features.velocity5CentsPerSec,features.velocity15CentsPerSec,features.velocity30CentsPerSec)>0;
-  const movement=Math.max(Math.abs(features.recentMove30Cents),features.reboundCents,features.momentumRiseCents,features.waveFavorableMoveCents);
-  const structural=features.cosmoCount>0||features.crashDepthCents>=2||features.recoveryContext?.eligible===true||Number(features.fieldContext?.independentEventCount||0)>=2;
-  if(movement<1&&!directional&&!structural)return{detected:false,reason:'no_short_horizon_impulse',score:features.sourceScore||0};
+  if(!Array.isArray(features.greenSources)||features.greenSources.length===0)return{detected:false,reason:'no_cosmo_green_move',score:0};
+  const move=Math.max(0,finite(features.strongestGreenMoveCents,0));
+  const direction=Math.max(0,finite(features.velocity5CentsPerSec,0),finite(features.velocity15CentsPerSec,0),finite(features.velocity30CentsPerSec,0));
   const targetFeasibility=clamp(features.targetFeasibilityScore??50);
-  const score=clamp(28+(features.sourceScore||0)*0.38+Math.min(13,movement*2.5)+Math.min(8,features.cosmoCount*3)+targetFeasibility*0.22-Math.min(15,features.lowerLowCount*3));
-  return{detected:true,reason:'opportunity_nominated',score:Number(score.toFixed(2))};
+  const score=clamp(55+Math.min(20,move*5)+Math.min(8,features.greenSourceCount*3)+Math.min(7,direction*35)+targetFeasibility*0.10);
+  return{detected:true,reason:'cosmo_green',score:Number(score.toFixed(2))};
 }
 
 export class AtomicThunderBoltEngine{
   constructor({market,getSettings,db,systemName='SAGITTARIUS',sourceRelease='',audit=async()=>{},onOpportunityCompleted=null,onCandidateStage=null}={}){
     this.market=market;this.getSettings=getSettings||(()=>({}));this.db=db;this.systemName=systemName;this.sourceRelease=sourceRelease;this.audit=audit;this.onOpportunityCompleted=typeof onOpportunityCompleted==='function'?onOpportunityCompleted:null;this.onCandidateStage=typeof onCandidateStage==='function'?onCandidateStage:null;
-    this.activeByTicker=new Map();this.preBolts=new Map();this.patternBlockedByTicker=new Map();this.shadowEpisodes=new Map();this.shadowByTicker=new Map();this.detected=0;this.expired=0;this.lastBolt=null;this.counterfactualCompleted=0;this.preBoltStarted=0;this.preExamPassed=0;this.patternBlocked=0;this.finalExamPassed=0;this.lastPatternBlock=null;
+    this.activeByTicker=new Map();this.preBolts=new Map();this.patternBlockedByTicker=new Map();this.boltedShadowIds=new Set();this.shadowEpisodes=new Map();this.shadowByTicker=new Map();this.detected=0;this.expired=0;this.lastBolt=null;this.counterfactualCompleted=0;this.preBoltStarted=0;this.preExamPassed=0;this.patternBlocked=0;this.finalExamPassed=0;this.lastPatternBlock=null;
     // R51-HF2: counterfactual completion used to be launched directly from
     // every quote. Multiple quotes could complete the same episode before the
     // first database round-trip removed it, multiplying DB work thousands of
@@ -352,7 +303,7 @@ export class AtomicThunderBoltEngine{
     let restored=0,incomplete=0;const settings=this.getSettings();
     for(const ep of rows||[]){
       const decision=String(ep?.athenaDecision?.decision||'');
-      if(ep?.attackSelected==='Scarlet Needle'||ep?.athenaDecision?.scarletNeedle?.version===SCARLET_NEEDLE.version)continue;
+      if(ep?.attackSelected==='Scarlet Needle')continue;
       if(!['WATCH','REJECT','EXPIRED'].includes(decision)||ep?.entryId)continue;
       const age=Math.max(0,now-Number(ep.updatedAtMs||ep.boltAtMs||0));
       if(age>ATOMIC_THUNDER_BOLT.maximumOpportunityAgeMs){
@@ -373,14 +324,9 @@ export class AtomicThunderBoltEngine{
     return{restored,incomplete};
   }
   async detect(q,{cosmos=[],crashSignal=null,crashState=null,recoveryContext=null,fieldContext=null,now=Date.now()}={}){
-    // Bound active signal memory independently from scanner cardinality.
     for(const [ticker,active] of [...this.activeByTicker])if(now>Number(active?.expiresAtMs||0)){this.activeByTicker.delete(ticker);this.expired+=1;}
     while(this.activeByTicker.size>=ATOMIC_THUNDER_BOLT.maximumActiveBolts){const first=this.activeByTicker.keys().next().value;this.activeByTicker.delete(first);this.expired+=1;}
-    while(this.preBolts.size>=ATOMIC_THUNDER_PATTERN_GUARDIAN.maximumActivePreBolts){const first=this.preBolts.keys().next().value;this.preBolts.delete(first);}
-    while(this.patternBlockedByTicker.size>=ATOMIC_THUNDER_PATTERN_GUARDIAN.maximumActivePreBolts){const first=this.patternBlockedByTicker.keys().next().value;this.patternBlockedByTicker.delete(first);}
     const settings=this.getSettings();
-    const configuredFirstExamMs=Math.max(1,Math.floor(finite(settings.atomicThunderFirstPatternExamSeconds,30)))*1000;
-    const configuredFinalExamMs=Math.max(configuredFirstExamMs+1000,Math.floor(finite(settings.atomicThunderFinalPatternExamSeconds,120))*1000);
     const history=this.market?.getHistory?.(q?.ticker)||[];
     const features=atomicThunderBoltFeatures({q,history,settings,cosmos,crashSignal,recoveryContext,fieldContext,now});
     const d=atomicThunderBoltDecision(features,settings);
@@ -388,93 +334,39 @@ export class AtomicThunderBoltEngine{
     if(!ticker)return null;
     const active=this.activeByTicker.get(ticker);
     if(active&&now<=Number(active.expiresAtMs||0)){active.features=features;active.score=d.score??active.score;active.updatedAtMs=now;return active;}
-    let pre=this.preBolts.get(ticker);
-    let blocked=this.patternBlockedByTicker.get(ticker);
-    // R59/ATB2-R4: contamination is sticky for the damaged market regime, but
-    // never forever. A real CI1 EPISODE_RESET is a causal regime boundary and
-    // therefore ends the old blocked opportunity even when the broad Atomic
-    // Thunder nomination never briefly toggles false. This is deliberately not
-    // a TTL: only an observed regime transition (or nomination reset below) may
-    // release the marker.
-    const currentRegimeResetAtMs=finite(crashState?.lastResetAtMs,0);
-    const blockedRegimeResetAtMs=finite(blocked?.regimeResetAtMs,0);
-    if(blocked&&currentRegimeResetAtMs>Math.max(blockedRegimeResetAtMs,finite(blocked?.atMs,0))){
-      this.patternBlockedByTicker.delete(ticker);
-      this.candidateStage({candidateId:blocked.id,stage:'REGIME_RESET',status:'PASS',reason:'ci1_episode_reset_new_regime',ticker,eventTicker:features.eventTicker});
-      await this.audit('atomic_thunder_pattern_block_released_new_regime',{candidateId:blocked.id,ticker,eventTicker:features.eventTicker,blockedAtMs:blocked.atMs||null,priorRegimeResetAtMs:blockedRegimeResetAtMs||null,newRegimeResetAtMs:currentRegimeResetAtMs}).catch(()=>{});
-      blocked=null;
+    if(!d.detected)return null;
+    const candidates=(features.greenSources||[]).filter(x=>!x.priorBoltId&&!this.boltedShadowIds.has(String(x.shadowTradeId||''))).sort((a,b)=>finite(b.moveCents,0)-finite(a.moveCents,0)||finite(a.openedAtMs,0)-finite(b.openedAtMs,0));
+    const trigger=candidates[0]||null;
+    if(!trigger)return null;
+    if(typeof this.db?.upsertOpportunityEpisode!=='function'||typeof this.db?.updateEntry!=='function'){
+      await this.audit('atomic_thunder_bolt_persistence_failed',{ticker,shadowTradeId:trigger.shadowTradeId,reason:'persistence_writer_missing'},'error').catch(()=>{});return null;
     }
-    // A contamination kill is sticky for the current Atomic Thunder opportunity.
-    // The ticker may start a new PRE-BOLT only after the underlying nomination
-    // resets OR a proven CI1 regime boundary above, preventing simple
-    // crash/rebound rehabilitation while allowing a genuinely new regime.
-    if(!d.detected){
-      if(blocked)this.patternBlockedByTicker.delete(ticker);
-      if(pre&&now-pre.startedAtMs>=Number(pre.finalExamMs||configuredFinalExamMs))this.preBolts.delete(ticker);
-      return null;
-    }
-    const patternWindowMs=Number(pre?.patternLookbackMs||configuredFinalExamMs);
-    const pattern=atomicThunderDangerPattern({history,now,windowMs:patternWindowMs,crashSignal,crashState});
-    if(pattern.contaminated){
-      if(pre)this.preBolts.delete(ticker);
-      if(!blocked){
-        const marker={id:pre?.id||randomUUID(),ticker,atMs:now,regimeResetAtMs:currentRegimeResetAtMs||0,reasons:pattern.reasons,preBoltAgeMs:pre?Math.max(0,now-pre.startedAtMs):0};
-        this.patternBlockedByTicker.set(ticker,marker);this.patternBlocked+=1;this.lastPatternBlock=marker;
-        if(!pre)this.candidateStage({candidateId:marker.id,stage:'UNIQUE_OPPORTUNITY',status:'PASS',reason:'atomic_thunder_opportunity_nominated',ticker,eventTicker:features.eventTicker});
-        this.candidateStage({candidateId:marker.id,stage:'PATTERN_BLOCKED',status:'BLOCKED',reason:pattern.reasons[0]||'dangerous_price_path',reasons:pattern.reasons,ticker,eventTicker:features.eventTicker});
-        await this.audit('atomic_thunder_pre_bolt_pattern_blocked',{ticker,eventTicker:features.eventTicker,reasons:pattern.reasons,preBoltAgeMs:marker.preBoltAgeMs}).catch(()=>{});
-      }
-      return null;
-    }
-    if(blocked)return null;
-    // Preserve the existing durable-Bolt fail-closed invariant before we spend
-    // the configured qualification interval observing a candidate. If the writer is unavailable there
-    // can never be an executable Bolt, so the PRE-BOLT is not started.
-    if(typeof this.db?.upsertOpportunityEpisode!=='function'){
-      await this.audit('atomic_thunder_bolt_persistence_failed',{ticker,reason:'persistence_writer_missing'},'error').catch(()=>{});
-      return null;
-    }
-    pre=this.preBolts.get(ticker);
-    if(!pre){
-      pre={id:randomUUID(),ticker,eventTicker:features.eventTicker,startedAtMs:now,firstExamMs:configuredFirstExamMs,finalExamMs:configuredFinalExamMs,patternLookbackMs:configuredFinalExamMs,preExamPassed:false,features,score:d.score,updatedAtMs:now};this.preBolts.set(ticker,pre);this.preBoltStarted+=1;
-      this.candidateStage({candidateId:pre.id,stage:'UNIQUE_OPPORTUNITY',status:'PASS',reason:'atomic_thunder_opportunity_nominated',ticker,eventTicker:features.eventTicker});
-      this.candidateStage({candidateId:pre.id,stage:'PRE_BOLT',status:'PASS',reason:'pre_bolt_started',ticker,eventTicker:features.eventTicker});
-      await this.audit('atomic_thunder_pre_bolt_started',{preBoltId:pre.id,ticker,eventTicker:features.eventTicker,score:d.score,firstExamMs:pre.firstExamMs,finalExamMs:pre.finalExamMs}).catch(()=>{});
-      return null;
-    }
-    pre.features=features;pre.score=d.score;pre.updatedAtMs=now;
-    const age=Math.max(0,now-pre.startedAtMs);
-    if(!pre.preExamPassed&&age>=Number(pre.firstExamMs||configuredFirstExamMs)){
-      pre.preExamPassed=true;pre.preExamPassedAtMs=now;this.preExamPassed+=1;
-      this.candidateStage({candidateId:pre.id,stage:'FIRST_EXAM_PASS',status:'PASS',reason:'first_pattern_exam_clear',ticker,eventTicker:features.eventTicker});
-      await this.audit('atomic_thunder_pre_bolt_first_exam_passed',{preBoltId:pre.id,ticker,eventTicker:features.eventTicker,ageMs:age,firstExamMs:pre.firstExamMs}).catch(()=>{});
-    }
-    if(age<Number(pre.finalExamMs||configuredFinalExamMs))return null;
-    this.preBolts.delete(ticker);this.finalExamPassed+=1;
-    this.candidateStage({candidateId:pre.id,stage:'FINAL_EXAM_PASS',status:'PASS',reason:'final_pattern_exam_clear',ticker,eventTicker:features.eventTicker});
-    // Only after the configured final pattern-clear examination do we materialize
-    // the existing five-second executable Bolt consumed by Arayashiki/Athena.
-    const id=randomUUID();
-    const preBoltClearance={version:ATOMIC_THUNDER_PATTERN_GUARDIAN.version,policyRevision:ATOMIC_THUNDER_PATTERN_GUARDIAN.policyRevision,status:'CLEARED',preBoltId:pre.id,startedAtMs:pre.startedAtMs,firstExamMs:pre.firstExamMs,firstExamPassedAtMs:pre.preExamPassedAtMs||null,finalExamMs:pre.finalExamMs,finalExamPassedAtMs:now,patternLookbackMs:pre.patternLookbackMs,contaminated:false};
-    const core={version:ATOMIC_THUNDER_BOLT.version,policyRevision:ATOMIC_THUNDER_BOLT.policyRevision,id,systemName:this.systemName,sourceRelease:this.sourceRelease,ticker:features.ticker,eventTicker:features.eventTicker,side:'YES',sport:features.sport,detectedAtMs:now,expiresAtMs:now+ATOMIC_THUNDER_BOLT.maximumOpportunityAgeMs,score:d.score,preBoltClearance,features};
-    const fingerprint=createHash('sha256').update(JSON.stringify(core)).digest('hex');
-    const bolt={...core,fingerprint,updatedAtMs:now};
-    if(typeof this.db?.upsertOpportunityEpisode!=='function'){
-      this.candidateStage({candidateId:pre.id,stage:'BOLT',status:'BLOCKED',reason:'persistence_writer_missing',ticker,eventTicker:features.eventTicker});
-      await this.audit('atomic_thunder_bolt_persistence_failed',{boltId:id,ticker:features.ticker,reason:'persistence_writer_missing'},'error').catch(()=>{});
-      return null;
-    }
+    let unlock=null;
     try{
+      if(typeof this.db?.acquireHunterTickerLock==='function')unlock=await this.db.acquireHunterTickerLock(this.systemName,`atomic-green:${trigger.shadowTradeId}`);
+      if(typeof this.db?.acquireHunterTickerLock==='function'&&!unlock)return null;
+      const freshSource=typeof this.db?.entryById==='function'?await this.db.entryById(trigger.shadowTradeId).catch(()=>null):null;
+      if(freshSource?.feederState?.atomicThunderBoltId){this.boltedShadowIds.add(String(trigger.shadowTradeId));return null;}
+      const deterministic=createHash('sha256').update(`${this.systemName}|COSMO_GREEN|${trigger.shadowTradeId}`).digest('hex');
+      const id=`ATG-${deterministic.slice(0,32)}`;
+      const greenTrigger={version:COSMO_SHADOW_TRADING.version,event:COSMO_SHADOW_TRADING.atomicThunderEvent,shadowTradeId:trigger.shadowTradeId,cosmo:trigger.conceptName,shadowEntryPriceCents:trigger.entryPriceCents,currentExecutableBidCents:trigger.currentExecutableBidCents,moveCents:trigger.moveCents,requiredMoveCents:trigger.greenThresholdCents,crossedAtMs:now};
+      const preBoltClearance={version:'ATB3',policyRevision:ATOMIC_THUNDER_BOLT.policyRevision,status:'IMMEDIATE_GREEN',preBoltId:id,startedAtMs:now,firstExamMs:0,finalExamMs:0,finalExamPassedAtMs:now,contaminated:false,researchOnlyLegacyPatternGuardian:true};
+      const core={version:ATOMIC_THUNDER_BOLT.version,policyRevision:ATOMIC_THUNDER_BOLT.policyRevision,id,systemName:this.systemName,sourceRelease:this.sourceRelease,ticker:features.ticker,eventTicker:features.eventTicker,side:'YES',sport:features.sport,detectedAtMs:now,expiresAtMs:now+ATOMIC_THUNDER_BOLT.maximumOpportunityAgeMs,score:d.score,greenTrigger,preBoltClearance,features};
+      const fingerprint=createHash('sha256').update(JSON.stringify(core)).digest('hex');
+      const bolt={...core,fingerprint,updatedAtMs:now};
       await this.db.upsertOpportunityEpisode({id,systemName:this.systemName,sourceRelease:this.sourceRelease,cohortId:String(settings.resetTimestampMs||''),ticker:features.ticker,eventTicker:features.eventTicker,side:'YES',sport:features.sport,boltAtMs:now,boltSnapshot:bolt,updatedAtMs:now});
+      const baseState=freshSource?.feederState&&typeof freshSource.feederState==='object'?freshSource.feederState:{};
+      try{await this.db.updateEntry(trigger.shadowTradeId,{feederState:{...baseState,shadowTradeVersion:COSMO_SHADOW_TRADING.version,greenAtMs:now,greenMoveCents:trigger.moveCents,atomicThunderBoltId:id,atomicThunderBoltAtMs:now},updatedAtMs:now});}
+      catch(error){await this.audit('cosmo_shadow_bolt_link_persistence_failed',{shadowTradeId:trigger.shadowTradeId,boltId:id,message:String(error?.message||error)},'error').catch(()=>{});throw error;}
+      this.boltedShadowIds.add(String(trigger.shadowTradeId));while(this.boltedShadowIds.size>8192)this.boltedShadowIds.delete(this.boltedShadowIds.values().next().value);
+      this.activeByTicker.set(features.ticker,bolt);this.detected+=1;this.lastBolt=bolt;
+      this.candidateStage({candidateId:id,boltId:id,stage:'COSMO_GREEN',status:'PASS',reason:'shadow_trade_crossed_green_threshold',ticker:features.ticker,eventTicker:features.eventTicker,shadowTradeId:trigger.shadowTradeId,cosmo:trigger.conceptName,moveCents:trigger.moveCents});
+      this.candidateStage({candidateId:id,boltId:id,stage:'BOLT',status:'PASS',reason:'immediate_cosmo_green_bolt',ticker:features.ticker,eventTicker:features.eventTicker});
+      await this.audit('atomic_thunder_cosmo_green_bolt',{boltId:id,ticker:features.ticker,eventTicker:features.eventTicker,shadowTradeId:trigger.shadowTradeId,cosmo:trigger.conceptName,shadowEntryPriceCents:trigger.entryPriceCents,currentExecutableBidCents:trigger.currentExecutableBidCents,moveCents:trigger.moveCents,greenTriggerCents:trigger.greenThresholdCents,score:d.score,eligibleAttacks:features.eligibleAttacks.map(x=>x.concept)}).catch(()=>{});
+      return bolt;
     }catch(error){
-      this.candidateStage({candidateId:pre.id,stage:'BOLT',status:'BLOCKED',reason:'persistence_failed',ticker,eventTicker:features.eventTicker});
-      await this.audit('atomic_thunder_bolt_persistence_failed',{boltId:id,ticker:features.ticker,message:String(error?.message||error)},'error').catch(()=>{});
-      return null;
-    }
-    this.activeByTicker.set(features.ticker,bolt);this.detected+=1;this.lastBolt=bolt;
-    this.candidateStage({candidateId:pre.id,boltId:id,stage:'BOLT',status:'PASS',reason:'bolt_emitted',ticker:features.ticker,eventTicker:features.eventTicker});
-    await this.audit('atomic_thunder_bolt_detected',{boltId:id,preBoltId:pre.id,ticker:features.ticker,eventTicker:features.eventTicker,score:d.score,askCents:features.askCents,gameMinutes:features.gameMinutes,eligibleAttacks:features.eligibleAttacks.map(x=>x.concept)}).catch(()=>{});
-    return bolt;
+      await this.audit('atomic_thunder_bolt_persistence_failed',{ticker,shadowTradeId:trigger.shadowTradeId,message:String(error?.message||error)},'error').catch(()=>{});return null;
+    }finally{if(unlock)try{await unlock();}catch{}}
   }
   consume(boltId,ticker){const b=this.activeByTicker.get(String(ticker||''));if(b&&String(b.id)===String(boltId))this.activeByTicker.delete(String(ticker));}
   noteDecision(bolt,decision){
@@ -592,5 +484,5 @@ export class AtomicThunderBoltEngine{
     }
     return this.counterfactualPending.size===0&&this.counterfactualActive.size===0&&!this.counterfactualWorkerPromise;
   }
-  summary(){const s=this.getSettings();return{version:ATOMIC_THUNDER_BOLT.version,role:ATOMIC_THUNDER_BOLT.role,authority:ATOMIC_THUNDER_BOLT.authority,noBoltNoAttack:true,patternGuardian:{version:ATOMIC_THUNDER_PATTERN_GUARDIAN.version,policyRevision:ATOMIC_THUNDER_PATTERN_GUARDIAN.policyRevision,mappedFamilies:ATOMIC_THUNDER_PATTERN_GUARDIAN.mappedFamilies,firstExamSeconds:Math.max(1,Math.floor(finite(s.atomicThunderFirstPatternExamSeconds,30))),finalExamSeconds:Math.max(2,Math.floor(finite(s.atomicThunderFinalPatternExamSeconds,120))),timingFrozenPerPreBolt:true,activePreBolts:this.preBolts.size,blockedAwaitingSignalReset:this.patternBlockedByTicker.size,preBoltStarted:this.preBoltStarted,preExamPassed:this.preExamPassed,patternBlocked:this.patternBlocked,finalExamPassed:this.finalExamPassed,lastPatternBlock:this.lastPatternBlock},detected:this.detected,expired:this.expired,active:this.activeByTicker.size,counterfactualTracking:this.shadowEpisodes.size,counterfactualCompleted:this.counterfactualCompleted,counterfactualPersistence:{version:COUNTERFACTUAL_PERSISTENCE.version,maxConcurrency:COUNTERFACTUAL_PERSISTENCE.maximumConcurrency,maxPending:COUNTERFACTUAL_PERSISTENCE.maximumPending,active:this.counterfactualActive.size,pending:this.counterfactualPending.size,totalQueued:this.counterfactualTotalQueued,totalCoalesced:this.counterfactualTotalCoalesced,totalFailed:this.counterfactualTotalFailed,totalBackpressure:this.counterfactualTotalBackpressure,maxObservedPending:this.counterfactualMaxObservedPending,lastError:this.counterfactualLastError},lastBolt:this.lastBolt};}
+  summary(){const s=this.getSettings();return{version:ATOMIC_THUNDER_BOLT.version,role:ATOMIC_THUNDER_BOLT.role,authority:ATOMIC_THUNDER_BOLT.authority,noBoltNoAttack:true,greenTrigger:{version:COSMO_SHADOW_TRADING.version,event:COSMO_SHADOW_TRADING.atomicThunderEvent,triggerCents:Math.max(1,Math.floor(finite(s.atomicThunderGreenTriggerCents,COSMO_SHADOW_TRADING.defaultGreenTriggerCents))),priceBasis:COSMO_SHADOW_TRADING.greenPriceBasis,oneBoltPerShadowTrade:true,boltedShadowTrades:this.boltedShadowIds.size},patternGuardian:{version:ATOMIC_THUNDER_PATTERN_GUARDIAN.version,policyRevision:ATOMIC_THUNDER_PATTERN_GUARDIAN.policyRevision,authority:'RESEARCH_ONLY',strategicVeto:false,activePreBolts:0,patternBlocked:0},detected:this.detected,expired:this.expired,active:this.activeByTicker.size,counterfactualTracking:this.shadowEpisodes.size,counterfactualCompleted:this.counterfactualCompleted,counterfactualPersistence:{version:COUNTERFACTUAL_PERSISTENCE.version,maxConcurrency:COUNTERFACTUAL_PERSISTENCE.maximumConcurrency,maxPending:COUNTERFACTUAL_PERSISTENCE.maximumPending,active:this.counterfactualActive.size,pending:this.counterfactualPending.size,totalQueued:this.counterfactualTotalQueued,totalCoalesced:this.counterfactualTotalCoalesced,totalFailed:this.counterfactualTotalFailed,totalBackpressure:this.counterfactualTotalBackpressure,maxObservedPending:this.counterfactualMaxObservedPending,lastError:this.counterfactualLastError},lastBolt:this.lastBolt};}
 }

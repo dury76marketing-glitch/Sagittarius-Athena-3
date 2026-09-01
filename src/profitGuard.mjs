@@ -23,6 +23,11 @@ function gameMinutesAtHunterEntry(entry) {
   return Math.max(0,Math.floor((opened-frozenStart)/60000));
 }
 
+function isFrozenAuroraEntry(entry) {
+  const aurora=entry?.entryConfig?.aurora;
+  return Boolean(aurora?.version===AURORA_EXECUTION.version&&aurora?.frozen===true&&n(aurora.dangerPriceCents)>=0&&n(aurora.stopDistanceCents)>0);
+}
+
 function stopLossForEntry(entry) {
   const aurora=entry?.entryConfig?.aurora;
   if(aurora?.version===AURORA_EXECUTION.version&&aurora?.frozen===true&&n(aurora.stopDistanceCents)>0) return n(aurora.stopDistanceCents);
@@ -270,7 +275,7 @@ export function profitGuardDecision(entry, q, settings) {
 }
 
 export class ProfitGuard {
-  constructor({ db, kalshi, market, learning, athena = null, getSettings, onOpportunityCompleted = null }) {
+  constructor({ db, kalshi, market, learning, athena = null, getSettings, onOpportunityCompleted = null, onPositionClosed = null }) {
     this.db = db;
     this.kalshi = kalshi;
     this.market = market;
@@ -282,6 +287,7 @@ export class ProfitGuard {
     this.athena = athena;
     this.getSettings = getSettings;
     this.onOpportunityCompleted = typeof onOpportunityCompleted === 'function' ? onOpportunityCompleted : null;
+    this.onPositionClosed = typeof onPositionClosed === 'function' ? onPositionClosed : null;
     this.states = new Map();
     // Atomic Thunder confirmation state is process-local and deliberately
     // fail-closed. A restart requires two new distinct fresh-book confirmations
@@ -418,15 +424,16 @@ export class ProfitGuard {
     const boltId=String(entry?.entryConfig?.athenaFire?.boltId||'');
     if(!boltId||typeof this.db?.opportunityEpisode!=='function'||typeof this.db?.upsertOpportunityEpisode!=='function')return null;
     const prior=await this.db.opportunityEpisode(boltId).catch(()=>null);if(!prior)return null;
-    const reason=String(entry?.closeReason||'');const pnl=n(entry?.pnlCents);const mae=n(entry?.maeCents);const targetPerContract=n(entry?.entryConfig?.infinityBreak?.minimumNetPerOriginalContractCents,5);
+    const reason=String(entry?.closeReason||'');const pnl=n(entry?.pnlCents);const mae=n(entry?.maeCents);const targetPerContract=n(entry?.entryConfig?.infinityBreak?.minimumNetPerOriginalContractCents,n(entry?.entryConfig?.athenaFire?.economicTarget?.netPerOriginalContractCents,n(entry?.entryConfig?.economicTarget?.netPerOriginalContractCents,5)));
     let label='EXPIRED_NO_IMPULSE';
     if(reason==='infinity_break')label=mae<=targetPerContract+1e-9?'CLEAN_BOLT':'TOXIC_LATE_BOLT';
+    else if(String(entry?.conceptName||'')==='Sagittarius Justice Arrow'&&reason==='athena_x1_exit'&&pnl>0)label='CLEAN_BOLT';
     else if(/aurora|hard_stop|stop_loss|ultimate_stop/i.test(reason)||pnl<0)label='FALSE_BOLT';
     const doneAt=Number(closedAtMs||entry?.closedAtMs||Date.now());
     const outcome={
       version:'ATHENA-OPPORTUNITY-OUTCOME-V1',labelPolicy:'OEL1-ECONOMIC-PATH',closeReason:reason,realizedPnlCents:pnl,maeCents:mae,
       peakPriceCents:n(entry?.peakPriceCents),entryPriceCents:n(entry?.entryPriceCents),exitPriceCents:n(entry?.exitPriceCents),
-      timeOpenMs:Math.max(0,doneAt-n(entry?.openedAtMs,doneAt)),infinityBreak:Boolean(reason==='infinity_break'),auroraExit:/aurora|hard_stop|stop_loss|ultimate_stop/i.test(reason),
+      timeOpenMs:Math.max(0,doneAt-n(entry?.openedAtMs,doneAt)),infinityBreak:Boolean(reason==='infinity_break'),athenaX1:Boolean(reason==='athena_x1_exit'),auroraExit:/aurora|hard_stop|stop_loss|ultimate_stop/i.test(reason),
       targetNetPerOriginalContractCents:targetPerContract,completedAtMs:doneAt,
     };
     const merged={...prior,outcome,outcomeLabel:label,trackingComplete:true,updatedAtMs:Date.now()};
@@ -564,7 +571,40 @@ export class ProfitGuard {
     }
   }
 
-  async persistStopLossWatchdog(entry, state, guardState, q) {
+  notifyPositionClosed(entry) {
+    if (!this.onPositionClosed || !entry?.id) return false;
+    const snapshot=structuredClone(entry);
+    queueMicrotask(()=>{
+      Promise.resolve(this.onPositionClosed(snapshot)).catch((error)=>{
+        void this.audit('position_closed_handoff_failed',{id:snapshot.id,ticker:snapshot.ticker,concept:snapshot.conceptName,closeReason:snapshot.closeReason,message:String(error?.message||error)},'error').catch(()=>{});
+      });
+    });
+    return true;
+  }
+
+  async verifyFrozenAuroraTouch(entry, q, dangerLineCents) {
+    const danger=Math.max(0,n(dangerLineCents));
+    const now=Date.now();
+    await this.market.ensureFreshBook(entry.ticker, STOP_LOSS_WATCHDOG.maximumBookAgeMs).catch(()=>null);
+    const freshQ=this.market.getQuote(entry.ticker)||q;
+    const book=this.market.getBook?.(entry.ticker);
+    const bookMs=n(book?.updatedAtMs,n(freshQ?.updatedAtMs));
+    const ageMs=bookMs>0?now-bookMs:Infinity;
+    const bid=n(freshQ?.yesBid),ask=n(freshQ?.yesAsk);
+    const bookFresh=Boolean(book&&bookMs>0&&ageMs>=-STOP_LOSS_WATCHDOG.maximumFutureBookSkewMs&&ageMs<=STOP_LOSS_WATCHDOG.maximumBookAgeMs&&!freshQ?.bookInvalid&&bid>0&&ask>0&&bid<=ask);
+    const exec=bookFresh?this.market.executableBid?.(entry.ticker,1,1):null;
+    const executable=Boolean(exec&&n(exec.filled)>=1&&n(exec.avgCents)>0);
+    const executableBidCents=executable?n(exec.avgCents):0;
+    const confirmed=Boolean(bookFresh&&executable&&bid<=danger+1e-9&&executableBidCents<=danger+1e-9);
+    let reason='verified_executable_touch';
+    if(!bookFresh)reason='book_not_fresh_or_valid';
+    else if(!executable)reason='no_executable_bid';
+    else if(bid>danger+1e-9)reason='fresh_bid_above_danger';
+    else if(executableBidCents>danger+1e-9)reason='executable_bid_above_danger';
+    return {confirmed,reason,quote:freshQ,bookMs,bookAgeMs:ageMs,bidCents:bid,askCents:ask,executableBidCents,dangerLineCents:danger,verifiedAtMs:now};
+  }
+
+  async persistStopLossWatchdog(entry, state, guardState, q, { nonBlocking = false } = {}) {
     const persisted = { ...state, phase:guardState, updatedAtMs:Date.now() };
     const container = stopGuardContainerWithWatchdog(entry, persisted);
     await this.db.updateEntry(entry.id, {
@@ -590,7 +630,9 @@ export class ProfitGuard {
       stopLossWatchdogConsecutiveDown:n(state.consecutiveDown),
       stopPriceCents:Math.max(0,n(entry.entryPriceCents)-stopLossForEntry(entry,this.getSettings())),
     });
-    return { handled:true, result:{ protected:true, action:'stop_loss_watchdog', guardState } };
+    return nonBlocking
+      ? { handled:false, observed:true, result:{ protected:true, action:'stop_loss_watchdog_observation', guardState } }
+      : { handled:true, result:{ protected:true, action:'stop_loss_watchdog', guardState } };
   }
 
   async clearStopLossWatchdog(entry, q, state, reason='recovered_below_reset') {
@@ -611,7 +653,7 @@ export class ProfitGuard {
     return { handled:false, cleared:true };
   }
 
-  async handleStopLossWatchdog(entry, q, settings) {
+  async handleStopLossWatchdog(entry, q, settings, { observationOnly = false } = {}) {
     if (FEEDER_CONCEPTS.has(entry.conceptName) || Boolean(q?.result) || finalMarket(q)) return { handled:false };
     const bid0=n(q?.yesBid);
     if (bid0<=0) return { handled:false };
@@ -699,7 +741,7 @@ export class ProfitGuard {
     state={...state,structureStrong,historicalStrong,historicalWeak,liveDeteriorating,crashDeteriorating};
 
     if(!bookFresh){
-      return this.persistStopLossWatchdog(entry,state,'SLW1_DATA_HOLD',freshQ);
+      return this.persistStopLossWatchdog(entry,state,'SLW1_DATA_HOLD',freshQ,{nonBlocking:observationOnly});
     }
 
     const enoughFresh=n(state.observationCount)>=STOP_LOSS_WATCHDOG.minimumFreshObservations;
@@ -735,13 +777,17 @@ export class ProfitGuard {
         zone:'EARLY_WATCHDOG',penetrationCents:0,minBidCents:n(state.minBidCents,bid),lastBidCents:bid,lastObservedQuoteMs:n(freshQ?.updatedAtMs,observedBookMs),
         profile,profileUpdatedAtMs:n(state.profileUpdatedAtMs),structureStrong:false,watchdog:state,
       };
-      await this.audit('slw1_dead_market_detected',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,reason,bidCents:bid,currentLossCents:observedLoss,peakLossCents:n(state.peakLossCents),observations:n(state.observationCount),lowerLowCount:n(state.lowerLowCount),consecutiveDown:n(state.consecutiveDown),watchdogAgeMs,historicalStrong,historicalWeak,structureStrong,liveDeteriorating,crashDeteriorating,learningRate:profile?.smoothedRecoveryRate??null,learningObservations:profile?.totalObservations??0,learningEvidenceVersion:profile?.evidenceVersion??STOP_GUARD_RECOVERY_LEARNING.version,crashPhase:String(crash.phase||'NORMAL'),crashLowerLowCount:n(crash.lowerLowCount)},'warning');
+      await this.audit('slw1_dead_market_detected',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,reason,bidCents:bid,currentLossCents:observedLoss,peakLossCents:n(state.peakLossCents),observations:n(state.observationCount),lowerLowCount:n(state.lowerLowCount),consecutiveDown:n(state.consecutiveDown),watchdogAgeMs,historicalStrong,historicalWeak,structureStrong,liveDeteriorating,crashDeteriorating,learningRate:profile?.smoothedRecoveryRate??null,learningObservations:profile?.totalObservations??0,learningEvidenceVersion:profile?.evidenceVersion??STOP_GUARD_RECOVERY_LEARNING.version,crashPhase:String(crash.phase||'NORMAL'),crashLowerLowCount:n(crash.lowerLowCount),observationOnly},'warning');
+      if(observationOnly){
+        await this.audit('slw1_dead_market_observed_above_aurora',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,reason,bidCents:bid,dangerLineCents:danger,policy:'OBSERVATION_ONLY_UNTIL_VERIFIED_AURORA_TOUCH'},'warning');
+        return this.persistStopLossWatchdog(entry,{...state,deadMarketReason:reason,deadMarketObservedAtMs:now},'SLW1_OBSERVE_ONLY_DEAD',freshQ,{nonBlocking:true});
+      }
       return this.commitStopGuardExit(entry,freshQ,merged,reason);
     }
 
     const recoveryGrace=!structureStrong&&observedLoss>=lossThresholds.severeLossCents&&watchdogAgeMs<weakOverrideAgeMs;
     const guardState=structureStrong?'SLW1_ALIVE':recoveryGrace?(historicalStrong?'SLW1_HISTORY_GRACE':'SLW1_RECOVERY_GRACE'):'SLW1_DANGER';
-    return this.persistStopLossWatchdog(entry,state,guardState,freshQ);
+    return this.persistStopLossWatchdog(entry,state,guardState,freshQ,{nonBlocking:observationOnly});
   }
 
   async persistStopGuardHold(entry, q, state, guardState) {
@@ -782,6 +828,15 @@ export class ProfitGuard {
   }
 
   async commitStopGuardExit(entry, q, state, exitReason) {
+    if(isFrozenAuroraEntry(entry)&&!n(state?.auroraTouchVerifiedAtMs)){
+      const verification=await this.verifyFrozenAuroraTouch(entry,q,n(state?.dangerLineCents,entry?.entryConfig?.aurora?.dangerPriceCents));
+      if(!verification.confirmed){
+        await this.audit('aurora_loss_exit_blocked_without_verified_touch',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,exitReason,dangerLineCents:verification.dangerLineCents,bidCents:verification.bidCents,executableBidCents:verification.executableBidCents,reason:verification.reason},'warning');
+        return {handled:true,result:{protected:true,action:'aurora_touch_unverified_hold',guardState:'AURORA_TOUCH_UNVERIFIED'}};
+      }
+      q=verification.quote||q;
+      state={...state,auroraTouchVerifiedAtMs:verification.verifiedAtMs,auroraTouchBookMs:verification.bookMs,auroraTouchBidCents:verification.bidCents,auroraTouchExecutableBidCents:verification.executableBidCents,auroraTouchVerification:'FRESH_EXECUTABLE_BOOK'};
+    }
     const bid = n(q?.yesBid, n(entry.currentPriceCents));
     const danger = n(state.dangerLineCents);
     const committedState = {
@@ -836,14 +891,31 @@ export class ProfitGuard {
 
   async handleUltimateStopGuard(entry, q, settings, rawDecision = null) {
     if (FEEDER_CONCEPTS.has(entry.conceptName) || Boolean(q?.result) || finalMarket(q)) return { handled:false };
-    const bid = n(q?.yesBid);
+    let bid = n(q?.yesBid);
     if (bid <= 0) return { handled:false };
 
     let state = stopGuardState(entry);
     const stopLoss = stopLossForEntry(entry);
     const configuredDanger = Math.max(0, n(entry.entryPriceCents) - stopLoss);
     const danger = state ? n(state.dangerLineCents, configuredDanger) : configuredDanger;
-    const touched = rawDecision?.action === 'hard_stop' || bid <= danger;
+    const frozenAurora=isFrozenAuroraEntry(entry);
+    let touchVerification=null;
+    let touched = rawDecision?.action === 'hard_stop' || bid <= danger;
+    if(!state&&frozenAurora){
+      if(bid>danger+1e-9){
+        const watchdog=await this.handleStopLossWatchdog(entry,q,settings,{observationOnly:true});
+        if(watchdog.cleared)return watchdog;
+        return {handled:false,observed:watchdog.observed===true};
+      }
+      touchVerification=await this.verifyFrozenAuroraTouch(entry,q,danger);
+      if(!touchVerification.confirmed){
+        await this.audit('aurora_touch_rejected_unverified',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,dangerLineCents:danger,observedBidCents:bid,freshBidCents:touchVerification.bidCents,executableBidCents:touchVerification.executableBidCents,bookAgeMs:touchVerification.bookAgeMs,reason:touchVerification.reason},'warning');
+        return {handled:true,result:{protected:true,action:'aurora_touch_unverified_hold',guardState:'AURORA_TOUCH_UNVERIFIED'}};
+      }
+      q=touchVerification.quote||q;
+      bid=touchVerification.bidCents;
+      touched=true;
+    }
     if (!state && !touched) {
       const watchdog = await this.handleStopLossWatchdog(entry, q, settings);
       if (watchdog.handled || watchdog.cleared) return watchdog;
@@ -891,6 +963,7 @@ export class ProfitGuard {
         recoveryLearningEpisodeVersion:null,
         recoveryLearningCoverageKind:'causal_from_trigger',
         watchdog:stopLossWatchdogState(entry) || entry?.stopGuardState?.watchdog || null,
+        ...(touchVerification?.confirmed?{auroraTouchVerifiedAtMs:touchVerification.verifiedAtMs,auroraTouchBookMs:touchVerification.bookMs,auroraTouchBidCents:touchVerification.bidCents,auroraTouchExecutableBidCents:touchVerification.executableBidCents,auroraTouchVerification:'FRESH_EXECUTABLE_BOOK'}:{}),
       };
       await this.audit('usg1_armed', {
         id:entry.id, ticker:entry.ticker, concept:entry.conceptName,
@@ -900,6 +973,7 @@ export class ProfitGuard {
         learningObservations:profile?.totalObservations ?? 0,
         learningSpecificity:profile?.specificity ?? null,
         learningEvidenceVersion:profile?.evidenceVersion ?? STOP_GUARD_RECOVERY_LEARNING.version,
+        auroraTouchVerified:frozenAurora?Boolean(state.auroraTouchVerifiedAtMs):null,
       });
       const learningEpisode=await this.beginStopGuardLearningEpisode(entry,'USG1',{triggerPriceCents:bid,triggerLossCents:Math.max(0,-n(this.aggregateExecutableNetCents(entry,Math.max(1,remainingCount(entry)),bid,settings))),dangerLineCents:danger,coverageKind:'causal_from_trigger',atMs:now});
       if(learningEpisode) state={...state,recoveryLearningEpisodeVersion:STOP_GUARD_RECOVERY_LEARNING.version,recoveryLearningCoverageKind:learningEpisode.coverageKind||'causal_from_trigger'};
@@ -2735,6 +2809,7 @@ export class ProfitGuard {
       });
       if (remaining <= 1e-9) this.atomicThunderStates.delete(entry.id);
     }
+    if(remaining<=1e-9&&pnl>0&&this.isInfinityBreakExitDecision(closedEntry,decision))this.notifyPositionClosed(closedEntry);
     return { closed: remaining <= 1e-9, remaining, filled, fillPriceCents: px, pnlCents: pnl, patch };
   }
 
@@ -3481,6 +3556,13 @@ export class ProfitGuard {
     if (stopGuardFirst.handled) return stopGuardFirst.result;
     if (stopGuardFirst.cleared) d = profitGuardDecision(entry, q, s);
     if (d.action === 'hard_stop') {
+      if(isFrozenAuroraEntry(entry)){
+        const verification=await this.verifyFrozenAuroraTouch(entry,q,n(entry?.entryConfig?.aurora?.dangerPriceCents,entry.stopPriceCents));
+        if(!verification.confirmed){
+          await this.audit('aurora_direct_hard_stop_blocked_without_verified_touch',{id:entry.id,ticker:entry.ticker,concept:entry.conceptName,dangerLineCents:verification.dangerLineCents,bidCents:verification.bidCents,executableBidCents:verification.executableBidCents,reason:verification.reason},'warning');
+          return {protected:true,action:'aurora_touch_unverified_hold'};
+        }
+      }
       // Defensive fail-safe only: every ordinary hard-stop touch is intercepted
       // by U-SG1 above. If a future incompatible decision bypasses U-SG1, retain
       // the original immediate liquidation behavior rather than fail open.

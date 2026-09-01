@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ProfitGuard, profitGuardDecision } from '../src/profitGuard.mjs';
 import { LearningEngine, advanceProfitLearningState, recommendProfitRetentionRatio, recommendProfitRunnerGivebackCents, profitEpisodeMetrics, advanceStopGuardRecoveryState, stopGuardEntryBand, stopGuardDropBucket, stopGuardGameBucket, stopGuardRecoveryProfileKeys } from '../src/learning.mjs';
-import { ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, stopLossWatchdogThresholdsForStakeCents, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE, ATOMIC_THUNDER } from '../src/doctrine.mjs';
+import { ULTIMATE_STOP_GUARD, STOP_LOSS_WATCHDOG, stopLossWatchdogThresholdsForStakeCents, STOP_GUARD_RECOVERY_LEARNING, ULTIMATE_PROFIT_GUARD, APEX_PROFIT_GUARD, PROTECTED_RUNNER_INTELLIGENCE, PROFIT_LEARNING_INTELLIGENCE, ATHENA_EXIT_INTELLIGENCE, GOLDEN_EYE, ATOMIC_THUNDER, INFINITY_BREAK, AURORA_EXECUTION } from '../src/doctrine.mjs';
 import { Database } from '../src/db.mjs';
 import { entryConfigSnapshot } from '../src/strategy.mjs';
 import { advanceAthenaExitState } from '../src/athenaExit.mjs';
@@ -54,7 +54,7 @@ test('a committed LIVE exit remains sticky until owned quantity is flattened',as
   assert.equal(updates.at(-1).p.closeReason,'manual_cashout');
 });
 
-function guardHarness({bid=86,full=true,filled=100,executableAvg=null,entryOverrides={},stopProfile=null,lossWatchdogProfile=null,apgEnabled=false,pri1Enabled=false,pri1R2Enabled=false,x1Enabled=false,atomicThunderEnabled=false,retentionProfile=null,crashState=null,athena=null}={}){
+function guardHarness({bid=86,full=true,filled=100,executableAvg=null,entryOverrides={},stopProfile=null,lossWatchdogProfile=null,apgEnabled=false,pri1Enabled=false,pri1R2Enabled=false,x1Enabled=false,atomicThunderEnabled=false,retentionProfile=null,crashState=null,athena=null,onPositionClosed=null}={}){
   const now=Date.now();
   const row={...base,id:'guard-1',systemName:'SAGITTARIUS',ownerId:'sagittarius-main',mode:'SIMULATION',status:'open',entryPriceCents:80,currentPriceCents:80,peakPriceCents:80,stopLossCents:35,count:100,remainingCount:100,pnlCents:0,entryFeeCents:200,profitHarvestPeakPnlCents:0,stopGuardState:{},profitGuardState:{},apexProfitGuardState:{},entryConfig:atomicThunderEnabled?{profitAuthority:'GOLDEN-EYE-V1',profitLearning:'PLI1',atomicThunder:{version:ATOMIC_THUNDER.version,policyRevision:ATOMIC_THUNDER.policyRevision,enabledAtEntry:true,minimumNetPerOriginalContractCents:1,requiredFreshConfirmations:2,maximumBookAgeMs:1000,confirmationWindowMs:3000,fullPositionOnly:true,lossAuthority:'U-SG1'}}:x1Enabled?{profitAuthority:'ATHENA-X1',profitLearning:'PLI1',profitAuthorityRevision:'ATHENA-X1-R1',athena:{version:'ATHENA-B1',score:50,classification:'NEUTRAL'}}:pri1R2Enabled?{profitAuthority:'PRI1',profitLearning:'PLI1',profitAuthorityRevision:'PRI1-R2'}:pri1Enabled?{profitAuthority:'PRI1',profitLearning:'PLI1'}:undefined,openedAtMs:now-60000,updatedAtMs:now-1000,...entryOverrides};
   const rows=new Map([[row.id,row]]); const audits=[]; const atomicEvents=[];
@@ -79,7 +79,7 @@ function guardHarness({bid=86,full=true,filled=100,executableAvg=null,entryOverr
     executableBid:(_ticker,count)=>({filled:Math.min(count,executableFilled),full:fullDepth&&executableFilled+1e-9>=count,avgCents:executableAverage==null?quote.yesBid:executableAverage,bestCents:quote.yesBid}),
   };
   const learning={hardStops:0,profitExitMarks:[],profitObservations:[],async onHardStop(){this.hardStops++;},async stopGuardProfile(){return stopProfile;},async lossWatchdogProfile(){return lossWatchdogProfile;},profitLearningState(){return null;},async observeProfitOpportunity(_entry,o){this.profitObservations.push(structuredClone(o));return null;},profitRetentionProfileCached(){return retentionProfile||{retentionRatio:0.92,specificity:'cold_start',promoted:false,totalObservations:0,oneTickPullbacks:0,oneTickRecoveries:0,continuationRate:.5,collapseRate:.25,confidence:'low'};},crashState(){return crashState?structuredClone(crashState):null;},async profitRetentionProfile(){return this.profitRetentionProfileCached();},async markProfitExit(entry,o){this.profitExitMarks.push({entry:structuredClone(entry),o:structuredClone(o)});}};
-  const guard=new ProfitGuard({db,kalshi:{getPositions:async()=>[{ticker:row.ticker,position_fp:row.remainingCount}]},market,learning,athena,getSettings:()=>({...settings,simFeeCents:2,systemName:'SAGITTARIUS',ownerId:'sagittarius-main',atomicThunderEnabled,atomicThunderMinNetPerOriginalContractCents:1,atomicThunderRequiredConfirmations:2,atomicThunderMaximumBookAgeMs:1000,atomicThunderConfirmationWindowMs:3000})});
+  const guard=new ProfitGuard({db,kalshi:{getPositions:async()=>[{ticker:row.ticker,position_fp:row.remainingCount}]},market,learning,athena,onPositionClosed,getSettings:()=>({...settings,simFeeCents:2,systemName:'SAGITTARIUS',ownerId:'sagittarius-main',atomicThunderEnabled,atomicThunderMinNetPerOriginalContractCents:1,atomicThunderRequiredConfirmations:2,atomicThunderMaximumBookAgeMs:1000,atomicThunderConfirmationWindowMs:3000})});
   if (!apgEnabled) guard.evaluateApexProfitGuard=async()=>null; // Legacy U-PG3 unit tests isolate the U-PG3 lane; R30 tests enable APG1 explicitly.
   return {
     guard,db,rows,audits,atomicEvents,learning,
@@ -93,6 +93,144 @@ function guardHarness({bid=86,full=true,filled=100,executableAvg=null,entryOverr
     row:()=>structuredClone(rows.get('guard-1')),
   };
 }
+
+
+
+function r61FrozenAuroraEntry({entryPriceCents=44,dangerPriceCents=29,bid=32,count=100,watchdog=null,infinity=false}={}){
+  const stopDistanceCents=entryPriceCents-dangerPriceCents;
+  return {
+    ...base,id:'guard-1',systemName:'SAGITTARIUS',ownerId:'sagittarius-main',mode:'SIMULATION',status:'open',
+    entryPriceCents,currentPriceCents:entryPriceCents,peakPriceCents:entryPriceCents,stopPriceCents:dangerPriceCents,stopLossCents:stopDistanceCents,
+    count,remainingCount:count,pnlCents:0,entryFeeCents:2*count,openedAtMs:Date.now()-600000,updatedAtMs:Date.now()-1000,
+    stopGuardState:watchdog?{watchdog}:{},profitGuardState:{},apexProfitGuardState:{},
+    entryConfig:{
+      aurora:{version:AURORA_EXECUTION.version,policyRevision:AURORA_EXECUTION.policyRevision,frozen:true,dangerPriceCents,stopDistanceCents,damageControlPercent:45},
+      ...(infinity?{infinityBreak:{version:INFINITY_BREAK.version,policyRevision:INFINITY_BREAK.policyRevision,enabledAtEntry:true,minimumNetPerOriginalContractCents:1,requiredFreshConfirmations:2,maximumBookAgeMs:1000,confirmationWindowMs:3000,fullPositionOnly:true,lossAuthority:'AURORA_EXECUTION'}}:{}),
+    },
+  };
+}
+
+test('R61 Aurora gate: one cent above the frozen danger line cannot activate normal automated loss authority',async()=>{
+  const h=guardHarness({bid:30,entryOverrides:r61FrozenAuroraEntry({entryPriceCents:44,dangerPriceCents:29,bid:30})});
+  const out=await h.guard.handleUltimateStopGuard(h.row(),{yesBid:30,yesAsk:31,updatedAtMs:Date.now(),status:'active',result:''},{...settings});
+  assert.equal(out.handled,false);
+  assert.equal(h.row().status,'open');
+  assert.equal(h.row().stopGuardState?.version,undefined);
+  assert.equal(h.audits.some(x=>x.event==='usg1_exit_committed'),false);
+});
+
+test('R61 Aurora gate: SLW1 may classify a dead market above Aurora but remains observation-only and cannot sell',async()=>{
+  const now=Date.now();
+  const weakProfile={totalObservations:10,smoothedRecoveryRate:0.05,specificity:'test',evidenceVersion:'TEST'};
+  const watchdog={
+    version:STOP_LOSS_WATCHDOG.version,phase:'SLW1_DANGER',armedAtMs:now-STOP_LOSS_WATCHDOG.weakHistoryGraceMs-1000,
+    lastObservedBookMs:now-2000,observationCount:3,lastBidCents:33,minBidCents:33,lowerLowCount:2,consecutiveDown:2,
+    stableObservations:0,upwardTicks:0,reboundFromTroughCents:0,currentLossCents:1500,peakLossCents:1500,
+    profile:weakProfile,profileUpdatedAtMs:now,structureStrong:false,
+  };
+  const h=guardHarness({bid:32,entryOverrides:r61FrozenAuroraEntry({watchdog})});
+  let commits=0;const original=h.guard.commitStopGuardExit.bind(h.guard);h.guard.commitStopGuardExit=async(...args)=>{commits++;return original(...args);};
+  const out=await h.guard.handleUltimateStopGuard(h.row(),{yesBid:32,yesAsk:33,updatedAtMs:Date.now(),status:'active',result:''},{...settings});
+  assert.equal(out.handled,false);
+  assert.equal(out.observed,true);
+  assert.equal(commits,0);
+  assert.equal(h.row().status,'open');
+  assert.equal(h.row().stopGuardState.watchdog.phase,'SLW1_OBSERVE_ONLY_DEAD');
+  assert.ok(h.audits.some(x=>x.event==='slw1_dead_market_observed_above_aurora'));
+});
+
+test('R61 Aurora gate: exact fresh executable touch activates U-SG1 with durable verified-touch evidence',async()=>{
+  const h=guardHarness({bid:29,entryOverrides:r61FrozenAuroraEntry()});
+  const out=await h.guard.handleUltimateStopGuard(h.row(),{yesBid:29,yesAsk:30,updatedAtMs:Date.now(),status:'active',result:''},{...settings});
+  assert.equal(out.handled,true);
+  assert.equal(h.row().status,'open');
+  const st=h.row().stopGuardState;
+  assert.equal(st.version,ULTIMATE_STOP_GUARD.version);
+  assert.ok(st.auroraTouchVerifiedAtMs>0);
+  assert.equal(st.auroraTouchBidCents,29);
+  assert.equal(st.auroraTouchExecutableBidCents,29);
+  assert.equal(st.auroraTouchVerification,'FRESH_EXECUTABLE_BOOK');
+});
+
+test('R61 Aurora gate: stale or contradictory below-line observation cannot activate loss authority when fresh executable truth is above Aurora',async()=>{
+  const h=guardHarness({bid:32,entryOverrides:r61FrozenAuroraEntry()});
+  const stale={yesBid:28,yesAsk:29,updatedAtMs:Date.now()-60_000,status:'active',result:'',bookInvalid:false};
+  const out=await h.guard.handleUltimateStopGuard(h.row(),stale,{...settings});
+  assert.equal(out.handled,true);
+  assert.equal(out.result.action,'aurora_touch_unverified_hold');
+  assert.equal(h.row().status,'open');
+  assert.equal(h.row().stopGuardState?.version,undefined);
+  const a=h.audits.find(x=>x.event==='aurora_touch_rejected_unverified');
+  assert.ok(a);
+  assert.equal(a.data.reason,'fresh_bid_above_danger');
+  assert.equal(a.data.freshBidCents,32);
+});
+
+test('R61 Aurora gate: a fresh executable gap through the emergency extension exits through U-SG1 at available market truth',async()=>{
+  const h=guardHarness({bid:14,entryOverrides:r61FrozenAuroraEntry()});
+  const out=await h.guard.handleUltimateStopGuard(h.row(),{yesBid:14,yesAsk:15,updatedAtMs:Date.now(),status:'active',result:''},{...settings});
+  assert.equal(out.handled,true);
+  assert.equal(out.result.closed,true);
+  assert.equal(h.row().status,'closed');
+  assert.equal(h.row().closeReason,'hard_stop_loss');
+  assert.equal(h.row().exitPriceCents,14);
+  assert.equal(h.row().stopGuardState.exitReason,'emergency_boundary');
+  assert.ok(h.row().stopGuardState.auroraTouchVerifiedAtMs>0);
+});
+
+test('R61 Aurora gate: commitStopGuardExit defensively refuses a frozen-Aurora loss exit without current verified touch',async()=>{
+  const h=guardHarness({bid:32,entryOverrides:r61FrozenAuroraEntry()});
+  const state={version:ULTIMATE_STOP_GUARD.version,phase:'USG1_ARMED',armedAtMs:Date.now()-1000,dangerLineCents:29,stopLossCents:15,zone:'RECOVERY',penetrationCents:1};
+  const fakeBelow={yesBid:28,yesAsk:29,updatedAtMs:Date.now()-60_000,status:'active',result:''};
+  const out=await h.guard.commitStopGuardExit(h.row(),fakeBelow,state,'critical_structure_failed');
+  assert.equal(out.handled,true);
+  assert.equal(out.result.action,'aurora_touch_unverified_hold');
+  assert.equal(h.row().status,'open');
+  assert.ok(h.audits.some(x=>x.event==='aurora_loss_exit_blocked_without_verified_touch'));
+});
+
+test('R61 Aurora gate: Infinity Break remains independent and can close profitably while price is safely above Aurora',async()=>{
+  const h=guardHarness({bid:49,entryOverrides:r61FrozenAuroraEntry({infinity:true})});
+  let out=await h.guard.protect(h.row());
+  assert.equal(out.closed??false,false);
+  assert.equal(h.row().status,'open');
+  h.setBid(49);
+  out=await h.guard.protect(h.row());
+  assert.equal(out.closed,true);
+  assert.equal(h.row().status,'closed');
+  assert.equal(h.row().closeReason,'infinity_break');
+  assert.ok(h.row().pnlCents>0);
+  assert.equal(h.audits.some(x=>x.event==='usg1_exit_committed'),false);
+});
+
+test('R61 post-profit handoff: only a fully closed positive Infinity fill notifies Scarlet continuation and the callback is non-blocking',async()=>{
+  const handed=[];let callbackStarted=0,callbackCompleted=0,releaseCallback;
+  const callbackBarrier=new Promise(resolve=>{releaseCallback=resolve;});
+  const h=guardHarness({bid:49,onPositionClosed:async(entry)=>{callbackStarted++;handed.push(entry);await callbackBarrier;callbackCompleted++;},entryOverrides:r61FrozenAuroraEntry({infinity:true,count:10})});
+  const decision={action:'infinity_break',reason:'infinity_break',infinityBreak:INFINITY_BREAK.version,peakPriceCents:49,stopPriceCents:29};
+  const first=await h.guard.applyExitFill(h.row(),decision,{fillCount:5,fillPriceCents:49,exitFeeCents:10});
+  assert.equal(first.closed,false);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(callbackStarted,0);
+  const remainder=h.row();
+  const second=await h.guard.applyExitFill(remainder,decision,{fillCount:5,fillPriceCents:49,exitFeeCents:10});
+  assert.equal(second.closed,true);
+  assert.ok(h.row().pnlCents>0);
+  assert.equal(callbackStarted,1);
+  assert.equal(callbackCompleted,0,'unfinished Scarlet handoff must never block the durable economic close');
+  assert.equal(handed[0].closeReason,'infinity_break');
+  assert.ok(handed[0].pnlCents>0);
+  assert.equal(handed[0].remainingCount,0);
+  releaseCallback();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(callbackCompleted,1);
+
+  const lossHanded=[];
+  const loss=guardHarness({bid:20,onPositionClosed:async(entry)=>{lossHanded.push(entry);},entryOverrides:r61FrozenAuroraEntry({infinity:true,count:10})});
+  await loss.guard.applyExitFill(loss.row(),{action:'hard_stop',reason:'hard_stop_loss',peakPriceCents:44,stopPriceCents:29},{fillCount:10,fillPriceCents:20,exitFeeCents:20});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(lossHanded.length,0);
+});
 
 test('U-PG3 constants preserve the approved price-native breathing room but make break-even telemetry-only',()=>{
   assert.equal(ULTIMATE_PROFIT_GUARD.version,'U-PG3');
@@ -1364,7 +1502,7 @@ test('R33 Gate 1 PLI1 promotes runner breathing room in contract-cent units only
   assert.equal(recommendProfitRunnerGivebackCents({totalObservations:30,oneTickPullbacks:20,oneTickRecoveries:3,collapseCount:20,avgPostExitRegretRate:0}),2);
 });
 
-test("R38 Gate 1 creation-time snapshot freezes GE1-R2 only on new real Hunters while legacy X1/PRI1 stay compatible",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const strategy=await readFile(new URL('../src/strategy.mjs',import.meta.url),'utf8');assert.equal(RELEASE,'SAGITTARIUS-R59-BIG-WAVE-CHOKE-RECOVERY-2026-08-29');assert.equal(D.ATOMIC_THUNDER_BOLT.entryAuthority,false);assert.equal(D.ATHENA_COMMANDER.entryDecisionAuthority,true);assert.equal(D.INFINITY_BREAK.authority,'PROFIT_EXIT');assert.equal(D.AURORA_EXECUTION.lossAuthority,'U-SG1');assert.ok(strategy.includes('validateAthenaFireCommand'));});
+test("R38 Gate 1 creation-time snapshot freezes GE1-R2 only on new real Hunters while legacy X1/PRI1 stay compatible",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const strategy=await readFile(new URL('../src/strategy.mjs',import.meta.url),'utf8');assert.equal(RELEASE,'SAGITTARIUS-R63-GEMINI-ANOTHER-DIMENSION-LIVE-PARITY-2026-08-31');assert.equal(D.ATOMIC_THUNDER_BOLT.entryAuthority,false);assert.equal(D.ATHENA_COMMANDER.entryDecisionAuthority,true);assert.equal(D.INFINITY_BREAK.authority,'PROFIT_EXIT');assert.equal(D.AURORA_EXECUTION.lossAuthority,'U-SG1');assert.ok(strategy.includes('validateAthenaFireCommand'));});
 
 test('R33 Gate 2 +1c net is CAPITAL_SAFE telemetry only and a normal one-tick pullback cannot scratch the runner',async()=>{
   const h=guardHarness({bid:85,pri1R2Enabled:true}); // 80 entry + 4c fees => +1c net/original.

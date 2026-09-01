@@ -1,11 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { originalSettings } from '../src/config.mjs';
 import { PHOENIX_COSMO, ACTIVE_FEEDER_CONCEPTS, COSMO_ROUTING, LIGHTNING_PLASMA } from '../src/doctrine.mjs';
 import { PhoenixCosmoEngine, phoenixSignalActive, revalidatePhoenixQualification } from '../src/phoenix.mjs';
 import { StrategyEngine, activeCosmoSources } from '../src/strategy.mjs';
 import { createFeederSignalIntelState } from '../src/feederSignalIntel.mjs';
 import { atomicThunderBoltFeatures } from '../src/opportunity.mjs';
+import { MarketHub, MARKET_TRUTH_REVISION } from '../src/market.mjs';
 
 const settings=()=>({...originalSettings(),phoenixEnabled:true,phoenixReferenceStakeCents:3000,phoenixMinPriceCents:10,phoenixMaxPriceCents:50,maxSpreadCents:3,systemName:'SAGITTARIUS',ownerId:'test-owner',mode:'SIMULATION'});
 const q=(bid,ask,t,{ticker='PX',recentTrades=20,eventTicker='EV',status='open'}={})=>({ticker,eventTicker,yesBid:bid,yesAsk:ask,recentTrades,status,updatedAtMs:t,title:'Phoenix test market',volume24h:1000});
@@ -54,7 +56,7 @@ test('R55 Phoenix lower low resets origin and prevents bounce-inside-collapse fa
   e.observe(q(30,31,t),t);e.observe(q(31,32,t+3000),t+3000);e.observe(q(32,33,t+6000),t+6000);
   const reset=e.observe(q(27,28,t+7000),t+7000);assert.equal(reset.reason,'new_local_low');
   e.observe(q(28,29,t+10000),t+10000);e.observe(q(29,30,t+13000),t+13000);
-  const x=e.observe(q(30,31,t+16000),t+16000);assert.notEqual(x.qualified,true); // only +3 from the new 27c origin
+  const x=e.observe(q(30,31,t+16000),t+16000);assert.notEqual(x.qualified,true);
 });
 
 test('R55 Phoenix refuses inactive, illiquid, wide-spread and out-of-band candidates',()=>{
@@ -116,4 +118,65 @@ test('R55 frozen Athena B2 feeder context ignores Phoenix while preserving Pegas
   st.recordAthenaR2FeederContext({id:'G',conceptName:'Pegasus',ticker:'PX',eventTicker:'EV',entryPriceCents:25,openedAtMs:2,entryConfig:{}});
   st.recordAthenaR2FeederContext({id:'D',conceptName:'Dragon',ticker:'PX',eventTicker:'EV',entryPriceCents:20,openedAtMs:3,entryConfig:{dragonSource:{signalPriceCents:24}}});
   assert.deepEqual(st.athenaR2FeederHistory.map(x=>x.conceptName),['Pegasus','Dragon']);
+});
+
+// R63-MHF1 cross-runtime market-truth tripwires. These live in the existing
+// Phoenix surface so the strict 44-authored-file deployment budget stays intact.
+const hubForMarketTruth=()=>new MarketHub({kalshi:{getOrderbook:async()=>null},wsUrl:'',fallbackWsUrl:'',getCredentials:()=>null});
+const seedTruth=(hub,ticker='T',at=1_000)=>hub.seed({ticker,yesBid:79,yesAsk:80,updatedAtMs:at,quoteAtMs:at,status:'active',result:'',recentTrades:0});
+const snap=(ticker,sid,seq,at=1_000)=>({type:'orderbook_snapshot',sid,seq,msg:{market_ticker:ticker,yes_dollars_fp:[['0.79','10']],no_dollars_fp:[['0.20','10']],ts_ms:at}});
+const delta=(ticker,sid,seq,side='yes',price='0.79',amount=1,at=1_001)=>({type:'orderbook_delta',sid,seq,msg:{market_ticker:ticker,side,price_dollars:price,delta_fp:amount,ts_ms:at}});
+
+test('R63-MHF1 market truth revision is explicit and orderbook subscription pins native NO-leg pricing',async()=>{
+  assert.equal(MARKET_TRUTH_REVISION,'R63-MHF1-HF2A-MARKET-TRUTH-RESTORATION-2026-08-31');
+  const src=await readFile(new URL('../src/market.mjs',import.meta.url),'utf8');
+  assert.match(src,/channels:\s*\['orderbook_delta'\][^\n]*use_yes_price:false/);
+});
+
+test('R63-MHF1 trade and lifecycle activity cannot refresh bid-ask truth or heal an invalid executable book',()=>{
+  const hub=hubForMarketTruth();seedTruth(hub,'T',1_000);hub.quotes.set('T',{...hub.getQuote('T'),bookInvalid:true});
+  hub.handle({type:'trade',msg:{market_ticker:'T',yes_price_dollars:'0.81',ts_ms:9_000}});
+  assert.equal(hub.getQuote('T').quoteAtMs,1_000);assert.equal(hub.getQuote('T').updatedAtMs,1_000);assert.equal(hub.getQuote('T').bookInvalid,true);
+  hub.handle({type:'market_lifecycle_v2',msg:{market_ticker:'T',event_type:'activated',ts_ms:10_000}});
+  assert.equal(hub.getQuote('T').quoteAtMs,1_000);assert.equal(hub.getQuote('T').updatedAtMs,1_000);assert.equal(hub.getQuote('T').bookInvalid,true);
+});
+
+test('R63-MHF1 ticker quote updates may refresh quote truth but cannot heal sequence-invalid book truth',()=>{
+  const hub=hubForMarketTruth();seedTruth(hub,'T',1_000);hub.quotes.set('T',{...hub.getQuote('T'),bookInvalid:true});
+  hub.handle({type:'ticker',msg:{market_ticker:'T',yes_bid_dollars:'0.80',yes_ask_dollars:'0.81',ts_ms:2_000}});
+  assert.equal(hub.getQuote('T').yesBid,80);assert.equal(hub.getQuote('T').quoteAtMs,2_000);assert.equal(hub.getQuote('T').bookInvalid,true);
+});
+
+test('R63-MHF1 one SID cursor accepts ordinary multi-ticker interleaving and ignores old duplicate sequences',()=>{
+  const hub=hubForMarketTruth();seedTruth(hub,'A');seedTruth(hub,'B');
+  hub.handle(snap('A',7,1));hub.handle(snap('B',7,2));hub.handle(delta('A',7,3));hub.handle(delta('B',7,4));
+  assert.equal(hub.resourceSnapshot().bookIntegrity.sequenceGaps,0);assert.equal(hub.getBook('A').seq,3);assert.equal(hub.getBook('B').seq,4);
+  const before=hub.getBook('A').yesBids[0].count;hub.handle(delta('A',7,3,'yes','0.79',50));
+  assert.equal(hub.getBook('A').yesBids[0].count,before);assert.equal(hub.resourceSnapshot().bookIntegrity.ignoredOldSequences,1);
+});
+
+test('R63-MHF1 genuine SID gap invalidates the entire stream and recovers by bounded get_snapshot without reconnect',()=>{
+  const hub=hubForMarketTruth();for(const t of ['A','B'])seedTruth(hub,t);hub.setWanted(['A','B']);
+  const sent=[];hub.ws={readyState:1,send:x=>sent.push(JSON.parse(x)),close:()=>assert.fail('gap recovery must not reconnect')};hub.connected=true;
+  hub.handle(snap('A',9,10));hub.handle(snap('B',9,11));hub.handle(delta('A',9,13));
+  assert.equal(hub.getQuote('A').bookInvalid,true);assert.equal(hub.getQuote('B').bookInvalid,true);
+  assert.equal(hub.resourceSnapshot().bookIntegrity.sequenceGaps,1);assert.equal(hub.resourceSnapshot().bookIntegrity.recoveringStreams,1);
+  assert.equal(sent.length,1);assert.equal(sent[0].cmd,'update_subscription');assert.equal(sent[0].params.action,'get_snapshot');assert.deepEqual(new Set(sent[0].params.market_tickers),new Set(['A','B']));
+  hub.handle(snap('A',9,14));assert.equal(hub.getQuote('A').bookInvalid,false);assert.equal(hub.getQuote('B').bookInvalid,true);
+  hub.handle(delta('A',9,15));assert.equal(hub.getBook('A').seq,15,'restored ticker may resume while another ticker awaits snapshot');
+  hub.handle(snap('B',9,16));assert.equal(hub.resourceSnapshot().bookIntegrity.recoveringStreams,0);assert.equal(hub.resourceSnapshot().bookIntegrity.pendingSnapshots,0);assert.equal(hub.getQuote('B').bookInvalid,false);
+});
+
+test('R63-MHF1 missing SID or sequence invalidates the known subscription instead of mutating executable depth',()=>{
+  const hub=hubForMarketTruth();for(const t of ['A','B'])seedTruth(hub,t);hub.handle(snap('A',12,1));hub.handle(snap('B',12,2));
+  const before=hub.getBook('A').yesBids[0].count;hub.handle({type:'orderbook_delta',msg:{market_ticker:'A',side:'yes',price_dollars:'0.79',delta_fp:100,ts_ms:2_000}});
+  assert.equal(hub.getBook('A').yesBids[0].count,before);assert.equal(hub.getQuote('A').bookInvalid,true);assert.equal(hub.getQuote('B').bookInvalid,true);
+});
+
+test('R63-MHF1 disconnect invalidates WS-derived books but preserves independently REST-verified book truth',()=>{
+  const hub=hubForMarketTruth();seedTruth(hub,'WS');seedTruth(hub,'REST');hub.handle(snap('WS',4,1));
+  hub.books.set('REST',{ticker:'REST',yesBids:[{priceCents:79,count:10}],noBids:[{priceCents:20,count:10}],updatedAtMs:1_500,source:'REST',sid:null,seq:null,sequenceValid:true,invalidReason:null});hub.applyBook('REST');
+  hub.invalidateWsBooks('test_disconnect');
+  assert.equal(hub.getQuote('WS').bookInvalid,true);assert.equal(hub.executableBid('WS',1),null);assert.equal(hub.getQuote('REST').bookInvalid,false);assert.equal(hub.executableBid('REST',1).full,true);
+  assert.equal(hub.resourceSnapshot().marketTruthRevision,MARKET_TRUTH_REVISION);
 });

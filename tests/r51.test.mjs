@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { originalSettings, CANONICAL_NUMERIC_SETTINGS } from '../src/config.mjs';
+import { originalSettings, CANONICAL_NUMERIC_SETTINGS, sanitizeRuntimeSettings } from '../src/config.mjs';
 import { ATOMIC_THUNDER_BOLT, ATHENA_COMMANDER, ARAYASHIKI, INFINITY_BREAK, AURORA_EXECUTION, SCARLET_NEEDLE } from '../src/doctrine.mjs';
 import { AtomicThunderBoltEngine, atomicThunderBoltDecision, atomicThunderBoltFeatures } from '../src/opportunity.mjs';
 import { AthenaCommander, compileAthenaAttackMemory, rankAthenaAttacks } from '../src/athena.mjs';
@@ -9,6 +9,7 @@ import { sealAthenaFireCommand, verifyAthenaFireCommandHash } from '../src/autho
 import { sealArayashikiCertificate } from '../src/arayashiki.mjs';
 import { StrategyEngine, validateAthenaFireCommand, entryConfigSnapshot } from '../src/strategy.mjs';
 import { ProfitGuard } from '../src/profitGuard.mjs';
+import { SagittariusEngine, SimulationMutationGate } from '../src/engine.mjs';
 
 const nowQuote = (ticker='T', bid=54, ask=55) => {
   const now=Date.now(); const start=now-45*60_000;
@@ -52,6 +53,11 @@ function r56SurvivalContext(q,baseFeatures={},extra={}){
   return {cosmos:[],crashState:{version:'CI1',phase:'NORMAL',episodeId:null,episodeIndex:0,crashDepthCents:0,reboundCents:0,reclaimRate:0,stableObservations:8,upwardTicks:3,lowerLowCount:0,reboundLostCount:0,entryReady:false,crashStartedAtMs:0,lastResetAtMs:0,lastObservationAtMs:now,updatedAtMs:now,lastBidCents:Number(q.yesBid),lastAskCents:Number(q.yesAsk)},survivalFeatures:{...baseFeatures,ticker:q.ticker,eventTicker:q.eventTicker,bidCents:Number(q.yesBid),askCents:Number(q.yesAsk),spreadCents:Number(q.yesAsk)-Number(q.yesBid),historySamples:Math.max(8,Number(baseFeatures.historySamples||0)),historyWindowMs:Math.max(30000,Number(baseFeatures.historyWindowMs||0)),velocity5CentsPerSec:.1,velocity15CentsPerSec:.08,velocity30CentsPerSec:.04,accelerationCentsPerSec2:.002,recentMove30Cents:2,upwardTicks:3,lowerLowCount:0,reboundLostCount:0,marketObservedAtMs:now,calculatedAtMs:now},...extra};
 }
 
+
+function greenShadow(ticker='T',entryPriceCents=53,conceptName='Pegasus',id=`shadow-${ticker}`){
+  return {id,conceptName,ticker,eventTicker:ticker,status:'open',entryPriceCents,openedAtMs:Date.now()-10_000,feederState:{}};
+}
+
 function fakeMarket(q=nowQuote()){
   const quote={...q};
   return {
@@ -86,8 +92,7 @@ function command(settings,concept,q=nowQuote(),overrides={}){
   const target=Number(settings.infinityBreakMinNetPerOriginalContractCents??INFINITY_BREAK.defaultMinimumNetPerOriginalContractCents);const simFee=Number(settings.simFeeCents||0);const requiredGrossMoveCents=target+2*simFee;const requiredTargetBidCents=Number(q.yesAsk)+requiredGrossMoveCents;
   const economicTarget={version:'ATHENA-A3-ECONOMIC-TARGET-V1',netPerOriginalContractCents:target,requiredTargetBidCents,requiredGrossMoveCents,estimatedEntryFeePerContractCents:simFee,estimatedExitFeePerContractCents:simFee,targetFeasibilityScore:90,targetHitProbability:0.8,breakEvenTargetHitProbability:0.5,expectedNetPerOriginalContractCents:1,economicEvidence:10,economicQualified:true};
   const survivalCertificate=sealArayashikiCertificate({version:ARAYASHIKI.version,policyRevision:ARAYASHIKI.policyRevision,role:ARAYASHIKI.role,status:'CERTIFIED',ticker:q.ticker,eventTicker:q.eventTicker,boltId:'bolt-1',boltFingerprint:'fp',selectedAttack:concept,examinedAtMs:now,expiresAtMs:now+5000,survivalScore:100,requiredSurvivalScore:70,evidenceCoverage:{quote:true,history:true,crashState:true,regimeContinuity:true},hardBlocks:[],warnings:[],evidence:['test_fixture'],regime:{id:`${q.ticker}:NORMAL:0`,boundaryAtMs:0,sourceContinuity:{regimeBoundaryMs:0,total:0,valid:0,invalid:0,sources:[]}},market:{bidCents:q.yesBid,askCents:q.yesAsk,spreadCents:q.yesAsk-q.yesBid,observedAtMs:now,ageMs:0,historySamples:8,historyWindowMs:30000},crashState:{version:'CI1',phase:'NORMAL',lastObservationAtMs:now,updatedAtMs:now}});
-  const defaultAeCandidate=concept==='Athena Exclamation'?{id:`AE1:${settings.systemName}:${q.ticker}:${now-2000}`,ticker:q.ticker,eventTicker:q.eventTicker,status:'CANDIDATE',saintCount:3,combination:['Momentum Hunter','Wave Surfer','Crash Recovery Hunter'],createdAtMs:now-1000,firstVoteAtMs:now-3000,thirdVoteAtMs:now-1000,expiresAtMs:now+60_000}:null;
-  const core={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,boltId:'bolt-1',boltFingerprint:'fp',systemName:settings.systemName,sourceRelease:'R52-TEST',decidedAtMs:now,expiresAtMs:now+5000,ticker:q.ticker,eventTicker:q.eventTicker,side:'YES',selectedAttack:concept,selectedAttackDisplay:concept,stakeCents:settings[stakeKey],fieldBudgetCents:concept==='Lightning Plasma'?settings[stakeKey]:null,maxRays:concept==='Lightning Plasma'?settings.lightningPlasmaMaxStrikes:null,operatorMinEntryCents:settings[minKey],operatorMaxEntryCents:settings[maxKey],entryPriceCents:q.yesAsk,authorizedMaxEntryCents:q.yesAsk,maxSpreadCents:settings.maxSpreadCents,auroraDamageControlPercent:settings.auroraDamageControlPercent,infinityBreakPolicyVersion:INFINITY_BREAK.version,economicTarget,survivalCertificate,ranking:[{concept,score:90}],decisionEvidence:{features:{askCents:q.yesAsk,bidCents:q.yesBid},recoveryContext:recovery,fieldContext:defaultAeCandidate?{athenaExclamationCandidate:defaultAeCandidate}:null},...overrides};
+  const core={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,boltId:'bolt-1',boltFingerprint:'fp',systemName:settings.systemName,sourceRelease:'R52-TEST',decidedAtMs:now,expiresAtMs:now+5000,ticker:q.ticker,eventTicker:q.eventTicker,side:'YES',selectedAttack:concept,selectedAttackDisplay:concept,stakeCents:settings[stakeKey],fieldBudgetCents:concept==='Lightning Plasma'?settings[stakeKey]:null,maxRays:concept==='Lightning Plasma'?settings.lightningPlasmaMaxStrikes:null,operatorMinEntryCents:settings[minKey],operatorMaxEntryCents:settings[maxKey],entryPriceCents:q.yesAsk,authorizedMaxEntryCents:q.yesAsk,maxSpreadCents:settings.maxSpreadCents,auroraDamageControlPercent:settings.auroraDamageControlPercent,infinityBreakPolicyVersion:INFINITY_BREAK.version,economicTarget,survivalCertificate,ranking:[{concept,score:90}],decisionEvidence:{features:{askCents:q.yesAsk,bidCents:q.yesBid},recoveryContext:recovery,fieldContext:null},...overrides};
   if(overrides.boltId||overrides.selectedAttack||overrides.ticker||overrides.eventTicker){
     const cert=sealArayashikiCertificate({...survivalCertificate,boltId:String(core.boltId),selectedAttack:String(core.selectedAttack),ticker:String(core.ticker),eventTicker:String(core.eventTicker)});
     core.survivalCertificate=cert;
@@ -118,10 +123,10 @@ test('R51 Bolt requires a real short-horizon impulse; price band alone cannot cr
   assert.equal(atomicThunderBoltDecision(f,s).detected,false);
 });
 
-test('R51 Bolt is signal-only and fails closed when durable opportunity persistence is unavailable',async()=>{
-  const s=r51Settings();const market=fakeMarket();const audits=[];
+test('R60 Bolt is signal-only and fails closed when durable shadow/Bolt persistence is unavailable',async()=>{
+  const s=r51Settings({atomicThunderGreenTriggerCents:1});const market=fakeMarket();const audits=[];
   const bolt=new AtomicThunderBoltEngine({market,getSettings:()=>s,db:{},audit:async(e,d)=>audits.push({e,d})});
-  const out=await bolt.detect(nowQuote());
+  const q=nowQuote('T',54,55);const out=await bolt.detect(q,{cosmos:[greenShadow('T',53)]});
   assert.equal(out,null);assert.equal(bolt.summary().detected,0);assert.ok(audits.some(x=>x.e==='atomic_thunder_bolt_persistence_failed'));
   assert.equal(ATOMIC_THUNDER_BOLT.entryAuthority,false);assert.equal(ATOMIC_THUNDER_BOLT.orderAuthority,false);
 });
@@ -153,13 +158,14 @@ test('R51 new path ignores hostile legacy predictive thresholds after valid Athe
 
 for(const concept of ['Momentum Hunter','Wave Surfer','Crash Recovery Hunter','Athena Exclamation'])test(`R51 Athena FIRE executes ${concept} without a second strategic veto`,async()=>{const settings=r51Settings(concept==='Athena Exclamation'?{athenaExclamationEnabled:true}:{});const f=strategyFixture({settings});const c=command(f.settings,concept,f.quote);const e=await f.s.createHunter(concept,f.quote,c.stakeCents,0,{athenaFireCommand:c});assert.ok(e,concept);assert.equal(e.conceptName,concept);assert.equal(e.entryConfig.athenaFire.selectedAttack,concept);assert.equal(e.entryConfig.infinityBreak.version,INFINITY_BREAK.version);assert.equal(e.entryConfig.aurora.damageControlPercent,45);});
 
-test('R58 Scarlet Needle FIRE cannot be re-vetoed by the shared cooldown after Athena has sealed the command',async()=>{
-  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleStakeCents:20_000,scarletNeedleMinEntryCents:10,scarletNeedleMaxEntryCents:89,hunterCooldownMinutes:45});
+test('R61 Scarlet continuation bypasses ordinary cooldown only after a profitable close while hard execution safety stays active',async()=>{
+  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleMaxRepeats:1,scarletNeedleStakeCents:20_000,scarletNeedleMinEntryCents:10,scarletNeedleMaxEntryCents:89,hunterCooldownMinutes:45});
   const q=nowQuote('SN-COOLDOWN',76,77),recent={id:'recent-wave',systemName:settings.systemName,ownerId:settings.ownerId,conceptName:'Wave Surfer',ticker:'OLD',eventTicker:q.eventTicker,marketTitle:'prior',mode:'SIMULATION',status:'closed',entryPriceCents:60,exitPriceCents:65,currentPriceCents:65,peakPriceCents:65,stopPriceCents:40,stopLossCents:20,count:10,remainingCount:0,pnlCents:10,openedAtMs:Date.now()-60_000,closedAtMs:Date.now()-30_000,updatedAtMs:Date.now()-30_000};
   const f=strategyFixture({settings,quote:q,initial:[recent]});
-  const upstream=await f.s.hunterEventAdmissionState(q);assert.equal(upstream.cooldownBlocked,true,'cooldown remains meaningful before FIRE');
-  const c=command(settings,'Scarlet Needle',q,{boltId:'sn-cooldown-fire'});const e=await f.s.createHunter('Scarlet Needle',q,c.stakeCents,0,{athenaFireCommand:c});
-  assert.ok(e,'sealed Scarlet Needle FIRE must not be vetoed a second time by cooldown');
+  const upstream=await f.s.hunterEventAdmissionState(q);assert.equal(upstream.cooldownBlocked,true,'ordinary cooldown remains meaningful before normal strategic FIRE');
+  const parent={id:'winner-cooldown',systemName:settings.systemName,ownerId:settings.ownerId,conceptName:'Momentum Hunter',ticker:q.ticker,eventTicker:q.eventTicker,side:'YES',sport:'Tennis',mode:'SIMULATION',status:'closed',remainingCount:0,pnlCents:100,exitPriceCents:76,closeReason:'infinity_break',closedAtMs:Date.now()-5,entryConfig:{}};
+  const e=await f.s.executeScarletContinuation(q,parent,{authorizationId:'SCARLET-CONTINUATION:winner-cooldown:1',rootEntryId:parent.id,repeatIndex:1,maxRepeats:1,authorizedAtMs:Date.now()});
+  assert.ok(e,`post-profit Scarlet continuation must not be re-vetoed by ordinary cooldown: ${JSON.stringify({audits:f.db.audits,pipeline:f.s.entryPipelineSummary()})}`);assert.equal(e.entryConfig.scarletContinuation.ordinaryCooldownBypassed,true);
   const pipeline=f.s.entryPipelineSummary();assert.equal(pipeline.byStage['STATIC_POLICY:BLOCKED']||0,0);assert.ok((pipeline.byStage['EXECUTION_POLICY:PASS']||0)>=1);
 });
 
@@ -259,13 +265,13 @@ test('R51 full SIM chain freezes configurable Aurora damage control and exits on
   const ep=await f.db.opportunityEpisode(c.boltId);assert.equal(ep.trackingComplete,true);assert.equal(ep.outcomeLabel,'FALSE_BOLT');assert.equal(ep.outcome.auroraExit,true);
 });
 
-test('R52 Bolt radar adapts nomination feasibility to the configured Infinity economic target',()=>{
-  const now=Date.now(),q=nowQuote('TARGET-RADAR',54,55);
+test('R60 green Bolt preserves target-aware Infinity feasibility without turning price motion alone into authority',()=>{
+  const now=Date.now(),q=nowQuote('TARGET-RADAR',54,55),cosmos=[greenShadow('TARGET-RADAR',53)];
   const history=[{t:now-30_000,bid:44,ask:45},{t:now-15_000,bid:48,ask:49},{t:now-5_000,bid:53,ask:54},{t:now,bid:54,ask:55}];
   const low=r51Settings({infinityBreakMinNetPerOriginalContractCents:5,waveSurferEnabled:false,recoveryHunterEnabled:false,crashRecoveryHunterEnabled:false,athenaExclamationEnabled:false,lightningPlasmaEnabled:false});
-  const lf=atomicThunderBoltFeatures({q,history,settings:low,now});const ld=atomicThunderBoltDecision(lf,low);
-  assert.equal(lf.eligibleAttacks[0].requiredTargetBidCents,64);assert.equal(lf.eligibleAttacks[0].targetFeasible,true);assert.equal(ld.detected,true);
-  const impossible={...low,infinityBreakMinNetPerOriginalContractCents:50};const hf=atomicThunderBoltFeatures({q,history,settings:impossible,now});const hd=atomicThunderBoltDecision(hf,impossible);
+  const lf=atomicThunderBoltFeatures({q,history,settings:low,cosmos,now});const ld=atomicThunderBoltDecision(lf,low);
+  assert.equal(lf.eligibleAttacks[0].requiredTargetBidCents,64);assert.equal(lf.eligibleAttacks[0].targetFeasible,true);assert.equal(ld.detected,true);assert.equal(ld.reason,'cosmo_green');
+  const impossible={...low,infinityBreakMinNetPerOriginalContractCents:50};const hf=atomicThunderBoltFeatures({q,history,settings:impossible,cosmos,now});const hd=atomicThunderBoltDecision(hf,impossible);
   assert.equal(hf.eligibleAttacks[0].requiredTargetBidCents,109);assert.equal(hf.eligibleAttacks[0].targetFeasible,false);assert.equal(hd.detected,false);assert.equal(hd.reason,'economic_target_unreachable');
 });
 
@@ -286,12 +292,12 @@ test('R58 legacy mixed economics stays a bounded cold-start prior until ATB2+A8 
   assert.ok(momentum.economicDecisionWeight<=0.10+1e-9);assert.ok(ae.economicDecisionWeight<=0.10+1e-9,'legacy negative history cannot dominate certified cold start');
 });
 
-test('R56-HF1 mature negative legacy EV no longer pre-vetoes, while missing A8 evidence still fails closed',async()=>{
-  const settings=r51Settings({infinityBreakMinNetPerOriginalContractCents:5,momentumHunterEnabled:false,waveSurferEnabled:false,recoveryHunterEnabled:false,crashRecoveryHunterEnabled:false,lightningPlasmaEnabled:false,athenaExclamationEnabled:true});
-  const rows=[];for(let i=0;i<8;i++)rows.push({id:`bad-${i}`,conceptName:'Athena Exclamation',status:'closed',closeReason:'hard_stop_loss',pnlCents:-900,count:100,entryFeeCents:200,maeCents:24,entryPriceCents:50,sourceFeeder:'Pegasus',closedAtMs:100+i,entryConfig:{sport:'Tennis',release:'R51-HIST',infinityBreak:{minimumNetPerOriginalContractCents:5},gameClockAuthority:{elapsedMinutes:45}}});
-  const db=fakeDb(rows);const athena=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R52'});await athena.init();
-  const now=Date.now(),bolt={id:'bad-bolt',ticker:'BAD',eventTicker:'BAD',sport:'Tennis',score:99,detectedAtMs:now,expiresAtMs:now+5000,features:{askCents:50,bidCents:49,spreadCents:1,sport:'Tennis',gameMinutes:45,cosmoSources:['Pegasus'],cosmoCount:1,velocity15CentsPerSec:1,momentumRiseCents:5,momentumPullbackCents:0,waveFavorableMoveCents:5,crashDepthCents:5,reboundCents:5,reclaimRate:1,upwardTicks:5,lowerLowCount:0,targetFeasibilityScore:95,eligibleAttacks:[{concept:'Athena Exclamation',targetFeasible:true,targetFeasibilityScore:95,requiredTargetBidCents:59,requiredGrossMoveCents:9,estimatedEntryFeePerContractCents:2,estimatedExitFeePerContractCents:2}]}};
-  const d=await athena.decide(bolt,{fieldContext:{goldSaintCount:5,independentEventCount:5}});assert.equal(d.decision,'SURVIVAL_REJECT');assert.equal(d.fireCommand,null);assert.ok(d.survivalCertificate.hardBlocks.includes('ci1_state_missing'));assert.deepEqual(d.ranking,[],'Arayashiki rejection must occur before Athena ranking');
+test('R60 mature negative legacy EV is ranking-only and missing A8 evidence cannot veto a valid green Bolt',async()=>{
+  const settings=r51Settings({infinityBreakMinNetPerOriginalContractCents:5,momentumHunterEnabled:true,waveSurferEnabled:false,recoveryHunterEnabled:false,crashRecoveryHunterEnabled:false,lightningPlasmaEnabled:false,athenaExclamationEnabled:false});
+  const rows=[];for(let i=0;i<12;i++)rows.push({id:`bad-${i}`,conceptName:'Momentum Hunter',status:'closed',closeReason:'hard_stop_loss',pnlCents:-900,count:100,entryFeeCents:200,maeCents:24,entryPriceCents:50,sourceFeeder:'Pegasus',closedAtMs:100+i,entryConfig:{sport:'Tennis',release:'R51-HIST',infinityBreak:{minimumNetPerOriginalContractCents:5},gameClockAuthority:{elapsedMinutes:45}}});
+  const db=fakeDb(rows);const athena=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R60'});await athena.init();
+  const now=Date.now(),bolt={id:'green-bolt',ticker:'BAD',eventTicker:'BAD',sport:'Tennis',score:99,detectedAtMs:now,expiresAtMs:now+5000,greenTrigger:{shadowTradeId:'shadow-BAD',cosmo:'Pegasus',moveCents:1},features:{askCents:50,bidCents:49,spreadCents:1,sport:'Tennis',gameMinutes:45,cosmoSources:['Pegasus'],cosmoCount:1,greenSources:[{shadowTradeId:'shadow-BAD',conceptName:'Pegasus',green:true,moveCents:1}],velocity15CentsPerSec:1,momentumRiseCents:5,momentumPullbackCents:0,waveFavorableMoveCents:5,crashDepthCents:5,reboundCents:5,reclaimRate:1,upwardTicks:5,lowerLowCount:0,targetFeasibilityScore:95,eligibleAttacks:[{concept:'Momentum Hunter',targetFeasible:true,targetFeasibilityScore:95,requiredTargetBidCents:59,requiredGrossMoveCents:9,estimatedEntryFeePerContractCents:2,estimatedExitFeePerContractCents:2}]}};
+  const d=await athena.decide(bolt,{});assert.equal(d.decision,'FIRE');assert.ok(d.fireCommand);assert.equal(d.survivalCertificate,null);assert.equal(d.fireCommand.decisionEvidence.predictiveReVetoAllowed,false);assert.equal(d.fireCommand.decisionEvidence.historyRole,'RANKING_ONLY_NO_VETO');
 });
 
 test('R52 fixed economic mission is frozen into FIRE and a target edit before execution fails closed',()=>{
@@ -394,114 +400,160 @@ test('R52 post-exit research survives Reset Simulation archive boundaries and st
 });
 
 
-test('R53 Scarlet Needle has a doctrine-locked exact 10c retracement and only normal operator attack controls',()=>{
+test('R61 Scarlet Needle V2 is post-profit continuation only and exposes an operator repeat limit',()=>{
   const s=originalSettings();
-  assert.equal(SCARLET_NEEDLE.version,'SCARLET-NEEDLE-V1');
-  assert.equal(SCARLET_NEEDLE.triggerDropCents,10);
-  assert.equal(SCARLET_NEEDLE.triggerEditable,false);
-  assert.equal(s.scarletNeedleEnabled,false,'new persisted deployments must fail safe OFF until the operator enables Needle');
-  for(const k of ['scarletNeedleStakeCents','scarletNeedleMinEntryCents','scarletNeedleMaxEntryCents'])assert.equal(CANONICAL_NUMERIC_SETTINGS.includes(k),true,k);
-  assert.equal(CANONICAL_NUMERIC_SETTINGS.includes('scarletNeedleDropCents'),false,'the 10c doctrine cannot become an editable setting');
-  const snap=entryConfigSnapshot({...s,scarletNeedleEnabled:true},'Scarlet Needle');
-  assert.equal(snap.model.structuralRole,'ATHENA_DELAYED_RETRACEMENT_ONLY');
-  assert.equal(snap.model.triggerDropCents,10);
-  assert.equal(snap.model.triggerEditable,false);
+  assert.equal(SCARLET_NEEDLE.version,'SCARLET-NEEDLE-V2');
+  assert.equal(SCARLET_NEEDLE.trigger,'POST_PROFIT_INFINITY_CLOSE');
+  assert.equal(SCARLET_NEEDLE.normalStrategicDiscoveryBypass,true);
+  assert.equal(SCARLET_NEEDLE.fullExecutionSafetyRequired,true);
+  assert.equal(Object.hasOwn(SCARLET_NEEDLE,'triggerDropCents'),false,'the old retracement trigger must be gone');
+  for(const k of ['scarletNeedleStakeCents','scarletNeedleMinEntryCents','scarletNeedleMaxEntryCents','scarletNeedleMaxRepeats'])assert.equal(CANONICAL_NUMERIC_SETTINGS.includes(k),true,k);
+  assert.equal(CANONICAL_NUMERIC_SETTINGS.includes('scarletNeedleDropCents'),false);
+  assert.equal(s.scarletNeedleMaxRepeats,SCARLET_NEEDLE.defaultMaxRepeats);
+  assert.equal(sanitizeRuntimeSettings({...s,scarletNeedleMaxRepeats:999}).scarletNeedleMaxRepeats,SCARLET_NEEDLE.maximumConfigurableRepeats);
+  assert.equal(sanitizeRuntimeSettings({...s,scarletNeedleMaxRepeats:-5}).scarletNeedleMaxRepeats,0);
+  assert.equal(sanitizeRuntimeSettings({...s,scarletNeedleMaxRepeats:3.9}).scarletNeedleMaxRepeats,3);
+  const snap=entryConfigSnapshot({...s,scarletNeedleEnabled:true,scarletNeedleMaxRepeats:4},'Scarlet Needle');
+  assert.equal(snap.model.structuralRole,'POST_PROFIT_CONTINUATION_ONLY');
+  assert.equal(snap.model.maxRepeats,4);
+  assert.equal(entryConfigSnapshot({...s,scarletNeedleEnabled:true,scarletNeedleMaxRepeats:999},'Scarlet Needle').model.maxRepeats,SCARLET_NEEDLE.maximumConfigurableRepeats);
+  assert.equal(Object.hasOwn(snap.model,'triggerDropCents'),false);
 });
 
-test('R53 Atomic Thunder can nominate Scarlet Needle prospectively without turning it into an immediate Athena strike',()=>{
+test('R61 Scarlet Needle is absent from normal Cosmos/Bolt/Athena strategic selection',()=>{
   const settings=r51Settings({
     scarletNeedleEnabled:true,scarletNeedleMinEntryCents:10,scarletNeedleMaxEntryCents:89,
     momentumHunterEnabled:false,waveSurferEnabled:false,recoveryHunterEnabled:false,crashRecoveryHunterEnabled:false,lightningPlasmaEnabled:false,athenaExclamationEnabled:false,
   });
-  const now=Date.now(),q=nowQuote('SN-BOLT',86,87);
-  const history=[
-    {t:now-30_000,bid:80,ask:81},{t:now-15_000,bid:82,ask:83},{t:now-5_000,bid:85,ask:86},{t:now,bid:86,ask:87},
-  ];
-  const f=atomicThunderBoltFeatures({q,history,settings,now});
-  const needle=f.eligibleAttacks.find(x=>x.concept==='Scarlet Needle');
-  assert.ok(needle);assert.equal(needle.delayedEntry,true);assert.equal(needle.signalReferenceCents,87);assert.equal(needle.triggerPriceCents,77);assert.equal(needle.triggerDropCents,10);
-  assert.equal(atomicThunderBoltDecision(f,settings).detected,true);
-  assert.equal(rankAthenaAttacks({score:80,features:f},settings,null,{}).some(x=>x.concept==='Scarlet Needle'),false,'Needle may never be selected as an immediate Bolt-time FIRE');
+  const now=Date.now(),q=nowQuote('SN-NORMAL',60,61),history=[{t:now-30_000,bid:52,ask:53},{t:now-15_000,bid:55,ask:56},{t:now-5_000,bid:59,ask:60},{t:now,bid:60,ask:61}];
+  const f=atomicThunderBoltFeatures({q,history,settings,cosmos:[greenShadow(q.ticker,50)],now});
+  assert.equal(f.eligibleAttacks.some(x=>x.concept==='Scarlet Needle'),false);
+  assert.equal(rankAthenaAttacks({score:100,features:f},settings,null,{}).some(x=>x.concept==='Scarlet Needle'),false);
+  assert.equal(atomicThunderBoltDecision(f,settings).detected,false,'Scarlet alone cannot make a normal Bolt executable');
 });
 
-test('R53 Scarlet Needle freezes the Bolt ask, resists above the line, and Athena emits a fresh sealed FIRE at exactly 10c down',async()=>{
-  const settings=r51Settings({
-    scarletNeedleEnabled:true,scarletNeedleStakeCents:20_000,scarletNeedleMinEntryCents:10,scarletNeedleMaxEntryCents:89,
-    momentumHunterEnabled:false,waveSurferEnabled:false,recoveryHunterEnabled:false,crashRecoveryHunterEnabled:false,lightningPlasmaEnabled:false,athenaExclamationEnabled:false,
+test('R61 a fabricated normal Athena FIRE cannot open Scarlet Needle outside continuation authority',async()=>{
+  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleStakeCents:20_000,scarletNeedleMinEntryCents:10,scarletNeedleMaxEntryCents:89,hunterCooldownMinutes:45});
+  const q=nowQuote('SN-FORGED',60,61),f=strategyFixture({settings,quote:q});
+  const c=command(settings,'Scarlet Needle',q,{boltId:'forged-normal-scarlet'});
+  const e=await f.s.createHunter('Scarlet Needle',q,c.stakeCents,0,{athenaFireCommand:c});
+  assert.equal(e,null);assert.equal(f.db.inserted.length,0);
+  assert.ok(f.db.audits.some(x=>x.event==='scarlet_continuation_execution_blocked'&&x.data?.reason==='scarlet_continuation_authority_required'));
+});
+
+test('R61 profitable close continuation reuses the complete Hunter safety chain and freezes lineage, Infinity and a fresh Aurora',async()=>{
+  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleMaxRepeats:3,scarletNeedleStakeCents:20_000,scarletNeedleMinEntryCents:10,scarletNeedleMaxEntryCents:89,hunterCooldownMinutes:45,auroraDamageControlPercent:45});
+  const q=nowQuote('SN-CONT',60,61),f=strategyFixture({settings,quote:q});
+  const parent={id:'winner-1',systemName:settings.systemName,ownerId:settings.ownerId,conceptName:'Momentum Hunter',ticker:q.ticker,eventTicker:q.eventTicker,side:'YES',sport:'Tennis',mode:'SIMULATION',status:'closed',remainingCount:0,pnlCents:321,exitPriceCents:60,closeReason:'infinity_break',closedAtMs:Date.now()-10,entryConfig:{}};
+  const entry=await f.s.executeScarletContinuation(q,parent,{authorizationId:'SCARLET-CONTINUATION:winner-1:1',rootEntryId:parent.id,repeatIndex:1,maxRepeats:3,authorizedAtMs:Date.now()});
+  assert.ok(entry,`continuation entry blocked: ${JSON.stringify({audits:f.db.audits,pipeline:f.s.entryPipelineSummary()})}`);assert.equal(entry.conceptName,'Scarlet Needle');assert.equal(entry.ticker,parent.ticker);assert.equal(entry.eventTicker,parent.eventTicker);
+  assert.equal(entry.entryConfig.model.structuralRole,'POST_PROFIT_CONTINUATION_ONLY');assert.equal(entry.entryConfig.model.maxRepeats,3);
+  assert.equal(entry.entryConfig.scarletContinuation.parentEntryId,parent.id);assert.equal(entry.entryConfig.scarletContinuation.rootEntryId,parent.id);assert.equal(entry.entryConfig.scarletContinuation.repeatIndex,1);assert.equal(entry.entryConfig.scarletContinuation.maxRepeatsAtEntry,3);
+  assert.equal(entry.entryConfig.athenaFire.authorityMode,SCARLET_NEEDLE.strategicEntryAuthority);assert.equal(entry.entryConfig.athenaFire.authorizedMaxEntryCents,q.yesAsk,'continuation may not chase beyond the first safe ask');assert.equal(verifyAthenaFireCommandHash(entry.entryConfig.athenaFire),true);
+  assert.equal(entry.entryConfig.infinityBreak.version,INFINITY_BREAK.version);assert.equal(entry.entryConfig.aurora.version,AURORA_EXECUTION.version);assert.equal(entry.entryConfig.aurora.frozen,true);
+  assert.ok(f.db.locks.some(x=>String(x).includes(q.ticker)),'existing cross-process execution locks remain in force');
+});
+
+test('R61 engine consumes each profitable close exactly once and persists durable Scarlet continuation authorization',async()=>{
+  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleMaxRepeats:3});const q=nowQuote('SN-HANDOFF',60,61),db=fakeDb(),market=fakeMarket(q);
+  let calls=0;const engine=Object.create(SagittariusEngine.prototype);engine.settings=settings;engine.db=db;engine.market=market;engine.scarletContinuationInFlight=new Set();engine.scarletContinuationStats=null;
+  engine.strategy={async executeScarletContinuation(_q,parent,ctx){calls+=1;return{id:`sn-open-${calls}`,conceptName:'Scarlet Needle',ticker:parent.ticker,eventTicker:parent.eventTicker,entryPriceCents:61,openedAtMs:Date.now(),entryConfig:{athenaFire:{authorityMode:SCARLET_NEEDLE.strategicEntryAuthority},scarletContinuation:{rootEntryId:ctx.rootEntryId,parentEntryId:parent.id,repeatIndex:ctx.repeatIndex,maxRepeatsAtEntry:ctx.maxRepeats}}};}};
+  const parent={id:'winner-handoff',systemName:settings.systemName,ownerId:settings.ownerId,conceptName:'Wave Surfer',ticker:q.ticker,eventTicker:q.eventTicker,side:'YES',sport:'Tennis',mode:'SIMULATION',status:'closed',remainingCount:0,pnlCents:100,exitPriceCents:60,closeReason:'infinity_break',closedAtMs:Date.now()-5,entryConfig:{}};
+  const first=await engine.handleScarletContinuation(parent);assert.equal(first.status,'OPENED');assert.equal(calls,1);const ep=await db.opportunityEpisode(first.authorizationId);assert.equal(ep.entryId,'sn-open-1');assert.equal(ep.athenaDecision.scarletNeedleContinuation.status,'OPENED');
+  const replay=await engine.handleScarletContinuation(parent);assert.equal(replay.status,'DUPLICATE_SUPPRESSED');assert.equal(calls,1,'durable close authorization must never execute twice');
+});
+
+test('R61 Scarlet continuation repeats are chain-local, stop at the operator maximum, and never retry a terminal unsafe handoff',async()=>{
+  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleMaxRepeats:2});const q=nowQuote('SN-REPEAT',60,61),db=fakeDb(),market=fakeMarket(q);let calls=0;
+  const engine=Object.create(SagittariusEngine.prototype);engine.settings=settings;engine.db=db;engine.market=market;engine.scarletContinuationInFlight=new Set();engine.scarletContinuationStats=null;engine.strategy={async executeScarletContinuation(){calls+=1;return null;}};
+  const blockedParent={id:'winner-blocked',systemName:settings.systemName,ownerId:settings.ownerId,conceptName:'Momentum Hunter',ticker:q.ticker,eventTicker:q.eventTicker,side:'YES',sport:'Tennis',mode:'SIMULATION',status:'closed',remainingCount:0,pnlCents:100,exitPriceCents:60,closeReason:'infinity_break',closedAtMs:Date.now()-5,entryConfig:{}};
+  const blocked=await engine.handleScarletContinuation(blockedParent);assert.equal(blocked.status,'BLOCKED');assert.equal(blocked.reason,'hard_safety_or_execution_blocked');assert.equal(calls,1);
+  const replay=await engine.handleScarletContinuation(blockedParent);assert.equal(replay.status,'DUPLICATE_SUPPRESSED');assert.equal(calls,1,'blocked continuation is one-shot and must not chase forever');
+  const maxed={...blockedParent,id:'scarlet-maxed',conceptName:'Scarlet Needle',entryConfig:{scarletContinuation:{rootEntryId:'root-winner',repeatIndex:2,maxRepeatsAtEntry:2}}};
+  const stop=await engine.handleScarletContinuation(maxed);assert.equal(stop.status,'MAX_REPEATS_REACHED');assert.equal(stop.repeatIndex,3);assert.equal(stop.maxRepeats,2);assert.equal(calls,1);
+});
+
+test('R61 Scarlet continuation fails closed on owner/mode mismatch before any market or execution work',async()=>{
+  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleMaxRepeats:2});const db=fakeDb();let refreshes=0,calls=0;const engine=Object.create(SagittariusEngine.prototype);engine.settings=settings;engine.db=db;engine.scarletContinuationInFlight=new Set();engine.scarletContinuationStats=null;engine.market={async refreshTickerVerified(){refreshes+=1;return null;}};engine.strategy={async executeScarletContinuation(){calls+=1;return null;}};
+  const base={id:'foreign',systemName:settings.systemName,ownerId:'other-owner',conceptName:'Momentum Hunter',ticker:'T',eventTicker:'T',mode:'SIMULATION',status:'closed',remainingCount:0,pnlCents:100,closeReason:'infinity_break',closedAtMs:Date.now()};
+  assert.equal((await engine.handleScarletContinuation(base)).reason,'owner_or_system_mismatch');
+  assert.equal((await engine.handleScarletContinuation({...base,id:'mode',ownerId:settings.ownerId,mode:'LIVE'})).reason,'mode_changed_since_parent_close');
+  assert.equal(refreshes,0);assert.equal(calls,0);
+});
+
+test('R60-HF1 SimulationMutationGate drains entered work and permanently rejects stale pre-reset epochs',async()=>{
+  const gate=new SimulationMutationGate();
+  const stale=gate.capture();
+  const releaseEntered=gate.enter(stale);assert.equal(typeof releaseEntered,'function');assert.equal(gate.snapshot().active,1);
+  let drained=false;const blocking=gate.blockAndDrain().then(()=>{drained=true;});
+  await Promise.resolve();assert.equal(gate.snapshot().blocked,true);assert.equal(drained,false,'reset must wait for work already inside the mutation boundary');
+  releaseEntered();await blocking;assert.equal(drained,true);assert.equal(gate.snapshot().active,0);
+  gate.release();assert.equal(gate.enter(stale),null,'a task captured before reset may never commit after reset');
+  const fresh=gate.capture(),releaseFresh=gate.enter(fresh);assert.equal(typeof releaseFresh,'function');releaseFresh();
+});
+
+test('R60-HF1 Reset Simulation archives economics but preserves tracker history, MarketHub history and Athena memory',async()=>{
+  const gate=new SimulationMutationGate(),histories=new Map([['T',[{t:1,bid:50,ask:51},{t:2,bid:51,ask:52}]]]);
+  const memory={version:'MEM',profiles:{x:{evidence:9}}};let archived=0,saved=0,clearTrackersCalled=0;
+  const engine=Object.create(SagittariusEngine.prototype);
+  Object.assign(engine,{
+    settings:{mode:'SIMULATION',systemName:'SAGITTARIUS',resetTimestampMs:null},simulationMutationGate:gate,simulationResetPromise:null,
+    athenaCommander:{memory,async cancelAllScarletNeedleArms(){}},market:{histories},
+    db:{async archiveSimulation(){archived++;return 7;},async clearTrackers(){clearTrackersCalled++;throw new Error('must not clear trackers');},async saveSettings(){saved++;},async audit(){}},
+    refreshCrashPriorityTickers(){},invalidateStateSnapshot(){},
   });
-  const db=fakeDb(),athena=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R53-TEST'});await athena.init();
-  const now=Date.now(),signalQ=nowQuote('SN-87',86,87),history=[{t:now-30_000,bid:80,ask:81},{t:now-15_000,bid:83,ask:84},{t:now-5_000,bid:85,ask:86},{t:now,bid:86,ask:87}];
-  const features=atomicThunderBoltFeatures({q:signalQ,history,settings,now});
-  const bolt={version:ATOMIC_THUNDER_BOLT.version,policyRevision:ATOMIC_THUNDER_BOLT.policyRevision,id:'sn-source-bolt',fingerprint:'sn-fingerprint',systemName:settings.systemName,sourceRelease:'R53-TEST',ticker:signalQ.ticker,eventTicker:signalQ.eventTicker,side:'YES',sport:'Tennis',detectedAtMs:now,expiresAtMs:now+5000,score:80,features};
-  const arm=await athena.armScarletNeedle(bolt,{openEntriesOnTicker:[]});assert.ok(arm);assert.equal(arm.signalReferenceCents,87);assert.equal(arm.triggerPriceCents,77);
-  const primary=await athena.decide(bolt,{...r56SurvivalContext(signalQ,features,{openEntriesOnTicker:[]}),scarletNeedleArm:arm});assert.equal(primary.decision,'WATCH');assert.equal(primary.reason,'scarlet_needle_armed');
-  const above=await athena.evaluateScarletNeedle(nowQuote('SN-87',77,78),r56SurvivalContext(nowQuote('SN-87',77,78),features,{openEntriesOnTicker:[]}));assert.equal(above,null,'78c is only a 9c drop from the frozen 87c reference');
-  const trigger=await athena.evaluateScarletNeedle(nowQuote('SN-87',76,77),r56SurvivalContext(nowQuote('SN-87',76,77),features,{openEntriesOnTicker:[]}));assert.ok(trigger);assert.equal(trigger.decision.decision,'FIRE');assert.equal(trigger.decision.reason,'scarlet_needle_10c_retracement_trigger');
-  const c=trigger.decision.fireCommand;assert.equal(c.selectedAttack,'Scarlet Needle');assert.equal(c.entryPriceCents,77);assert.equal(c.authorizedMaxEntryCents,77);assert.equal(c.decisionEvidence.scarletNeedle.signalReferenceCents,87);assert.equal(c.decisionEvidence.scarletNeedle.triggerPriceCents,77);assert.equal(c.decisionEvidence.scarletNeedle.observedDropCents,10);assert.equal(verifyAthenaFireCommandHash(c),true);
+  const beforeHistory=structuredClone(histories.get('T'));const beforeMemory=engine.athenaCommander.memory;
+  const n=await engine.resetSimulation();
+  assert.equal(n,7);assert.equal(archived,1);assert.equal(saved,1);assert.equal(clearTrackersCalled,0);
+  assert.deepEqual(histories.get('T'),beforeHistory);assert.equal(engine.athenaCommander.memory,beforeMemory);assert.equal(gate.snapshot().blocked,false);
 });
 
-test('R53 Scarlet Needle executes only through the normal Hunter safety chain and freezes Needle/Infinity/Aurora provenance',async()=>{
-  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleStakeCents:20_000,scarletNeedleMinEntryCents:10,scarletNeedleMaxEntryCents:89});
-  const db=fakeDb(),athena=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R53-TEST'});await athena.init();
-  const now=Date.now(),signalQ=nowQuote('SN-EXEC',86,87),features=atomicThunderBoltFeatures({q:signalQ,history:[{t:now-30_000,bid:80,ask:81},{t:now-15_000,bid:83,ask:84},{t:now-5_000,bid:85,ask:86},{t:now,bid:86,ask:87}],settings,now});
-  const bolt={version:ATOMIC_THUNDER_BOLT.version,policyRevision:ATOMIC_THUNDER_BOLT.policyRevision,id:'sn-exec-source',fingerprint:'sn-exec-fp',systemName:settings.systemName,sourceRelease:'R53-TEST',ticker:signalQ.ticker,eventTicker:signalQ.eventTicker,side:'YES',sport:'Tennis',detectedAtMs:now,expiresAtMs:now+5000,score:80,features};
-  const arm=await athena.armScarletNeedle(bolt,{openEntriesOnTicker:[]});assert.ok(arm);
-  const triggerQ=nowQuote('SN-EXEC',76,77),trigger=await athena.evaluateScarletNeedle(triggerQ,r56SurvivalContext(triggerQ,features,{openEntriesOnTicker:[]}));assert.ok(trigger);
-  const market=fakeMarket(triggerQ),strategy=new StrategyEngine({db,kalshi:{},market,learning:{},getSettings:()=>settings,getLiveReady:()=>false,refreshGameClock:refreshClock,random:()=>0});
-  const entry=await strategy.executeAthenaFire(triggerQ,trigger.bolt,trigger.decision,{openEntriesOnTicker:[]});assert.ok(entry);await athena.noteScarletNeedleExecution(arm.id,entry);
-  assert.equal(entry.conceptName,'Scarlet Needle');assert.equal(entry.entryConfig.model.triggerDropCents,10);assert.equal(entry.entryConfig.model.triggerEditable,false);assert.equal(entry.entryConfig.entryQualification.scarletNeedle.signalReferenceCents,87);assert.equal(entry.entryConfig.entryQualification.scarletNeedle.triggerPriceCents,77);assert.equal(entry.entryConfig.infinityBreak.version,INFINITY_BREAK.version);assert.equal(entry.entryConfig.aurora.version,AURORA_EXECUTION.version);assert.equal(athena.summary().scarletNeedle.armed,0);
-  const ep=await db.opportunityEpisode(arm.id);assert.equal(ep.entryId,entry.id);assert.equal(ep.athenaDecision.scarletNeedle.status,'EXECUTED');
+test('R60-HF1 Reset Simulation waits for an in-flight SIM mutation before crossing the archive boundary',async()=>{
+  const gate=new SimulationMutationGate(),token=gate.capture(),release=gate.enter(token);let archiveStarted=false;
+  const engine=Object.create(SagittariusEngine.prototype);
+  Object.assign(engine,{
+    settings:{mode:'SIMULATION',systemName:'SAGITTARIUS',resetTimestampMs:null},simulationMutationGate:gate,simulationResetPromise:null,
+    athenaCommander:{async cancelAllScarletNeedleArms(){}},market:{histories:new Map([['T',[]]])},
+    db:{async archiveSimulation(){archiveStarted=true;return 1;},async saveSettings(){},async audit(){}},refreshCrashPriorityTickers(){},invalidateStateSnapshot(){},
+  });
+  const reset=engine.resetSimulation();await Promise.resolve();assert.equal(gate.snapshot().blocked,true);assert.equal(archiveStarted,false);
+  release();assert.equal(await reset,1);assert.equal(archiveStarted,true);assert.equal(gate.snapshot().blocked,false);
 });
 
-test('R53 Scarlet Needle arm survives restart independently of the 5-second Bolt lifetime and is not consumed by counterfactual restart cleanup',async()=>{
-  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleMinEntryCents:10,scarletNeedleMaxEntryCents:89,momentumHunterEnabled:false,waveSurferEnabled:false,recoveryHunterEnabled:false,crashRecoveryHunterEnabled:false,lightningPlasmaEnabled:false,athenaExclamationEnabled:false});
-  const db=fakeDb(),a1=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R53-TEST'});await a1.init();const now=Date.now(),q=nowQuote('SN-RESTORE',86,87);
-  const features=atomicThunderBoltFeatures({q,history:[{t:now-30_000,bid:80,ask:81},{t:now-15_000,bid:83,ask:84},{t:now-5_000,bid:85,ask:86},{t:now,bid:86,ask:87}],settings,now});
-  const bolt={version:ATOMIC_THUNDER_BOLT.version,policyRevision:ATOMIC_THUNDER_BOLT.policyRevision,id:'sn-restart-source',fingerprint:'sn-restart-fp',systemName:settings.systemName,sourceRelease:'R53-TEST',ticker:q.ticker,eventTicker:q.eventTicker,side:'YES',sport:'Tennis',detectedAtMs:now-60_000,expiresAtMs:now-55_000,score:80,features};
-  const arm=await a1.armScarletNeedle(bolt,{openEntriesOnTicker:[]});assert.ok(arm);db.episodes.get(arm.id).updatedAtMs=now-60_000;
-  const a2=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R53-TEST'});await a2.init();assert.equal(a2.summary().scarletNeedle.armed,0,'Railway-safe init must not wait for delayed-arm history');await a2.hydrateScarletNeedleArms();assert.equal(a2.summary().scarletNeedle.armed,1);assert.deepEqual(a2.scarletNeedleTickers(),['SN-RESTORE']);
-  const atb=new AtomicThunderBoltEngine({market:fakeMarket(q),getSettings:()=>settings,db,systemName:settings.systemName,sourceRelease:'R53-TEST'});const restored=await atb.init(now);assert.equal(restored.incomplete,0);assert.equal((await db.opportunityEpisode(arm.id)).athenaDecision.scarletNeedle.status,'ARMED');
+test('R60-HF1 Athena can FIRE from live GREEN geometry while historical memory is still loading',async()=>{
+  let releaseHistory;const historyWait=new Promise((resolve)=>{releaseHistory=resolve;});const persisted=[];
+  const settings=r51Settings({momentumHunterEnabled:true,waveSurferEnabled:false,recoveryHunterEnabled:false,crashRecoveryHunterEnabled:false,scarletNeedleEnabled:false,athenaExclamationEnabled:false,lightningPlasmaEnabled:false});
+  const db={athenaEconomicEntries:async()=>historyWait,athenaEconomicOpportunityEpisodes:async()=>historyWait,async upsertOpportunityEpisode(ep){persisted.push(structuredClone(ep));},async audit(){}};
+  const athena=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R60-HF1'});
+  await athena.init({background:true});assert.equal(athena.summary().memory.load.state,'LOADING');assert.equal(athena.summary().memory.entryAuthorityBlockedUntilLoaded,false);
+  const now=Date.now(),bolt={id:'learning-live-bolt',ticker:'LEARN-LIVE',eventTicker:'LEARN-LIVE',sport:'Tennis',score:90,detectedAtMs:now,expiresAtMs:now+5000,greenTrigger:{shadowTradeId:'shadow-live',cosmo:'Pegasus',moveCents:1},features:{askCents:55,bidCents:54,spreadCents:1,sport:'Tennis',gameMinutes:45,cosmoSources:['Pegasus'],cosmoCount:1,greenSources:[{shadowTradeId:'shadow-live',conceptName:'Pegasus',green:true,moveCents:1}],targetFeasibilityScore:95,eligibleAttacks:[{concept:'Momentum Hunter',targetFeasible:true,targetFeasibilityScore:95,requiredTargetBidCents:60,requiredGrossMoveCents:5,estimatedEntryFeePerContractCents:2,estimatedExitFeePerContractCents:2}]}};
+  const decision=await athena.decide(bolt,{});assert.equal(decision.decision,'FIRE');assert.equal(decision.selectedAttack,'Momentum Hunter');assert.ok(decision.fireCommand);assert.equal(persisted.length,1);
+  releaseHistory([]);await athena.memoryRefreshPromise;assert.equal(athena.summary().memory.load.state,'READY');
 });
 
-test('R53 Scarlet Needle waits behind another real Attack when Galactic Explosion is OFF without consuming the armed retracement',async()=>{
-  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleStakeCents:20_000,scarletNeedleMinEntryCents:10,scarletNeedleMaxEntryCents:89,galacticExplosionEnabled:false});
-  const db=fakeDb(),athena=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R53-TEST'});await athena.init();
-  const now=Date.now(),q=nowQuote('SN-TOPO',86,87),features=atomicThunderBoltFeatures({q,history:[{t:now-30_000,bid:80,ask:81},{t:now-15_000,bid:83,ask:84},{t:now-5_000,bid:85,ask:86},{t:now,bid:86,ask:87}],settings,now});
-  const bolt={version:ATOMIC_THUNDER_BOLT.version,policyRevision:ATOMIC_THUNDER_BOLT.policyRevision,id:'sn-topo-source',fingerprint:'sn-topo-fp',systemName:settings.systemName,sourceRelease:'R53-TEST',ticker:q.ticker,eventTicker:q.eventTicker,side:'YES',sport:'Tennis',detectedAtMs:now,expiresAtMs:now+5000,score:80,features};
-  const arm=await athena.armScarletNeedle(bolt,{openEntriesOnTicker:[]});assert.ok(arm);
-  const blocker={id:'wave-open',conceptName:'Wave Surfer',ticker:q.ticker,eventTicker:q.eventTicker,status:'open'};
-  const held=await athena.evaluateScarletNeedle(nowQuote('SN-TOPO',76,77),r56SurvivalContext(nowQuote('SN-TOPO',76,77),features,{openEntriesOnTicker:[blocker]}));assert.equal(held,null);assert.equal(athena.summary().scarletNeedle.armed,1);
-  settings.galacticExplosionEnabled=true;
-  const released=await athena.evaluateScarletNeedle(nowQuote('SN-TOPO',76,77),r56SurvivalContext(nowQuote('SN-TOPO',76,77),features,{openEntriesOnTicker:[blocker]}));assert.ok(released);assert.equal(released.decision.decision,'FIRE');
+test('R60-HF1 Athena historical-memory failure is visible but cannot suppress GREEN FIRE authority',async()=>{
+  const settings=r51Settings({momentumHunterEnabled:true,waveSurferEnabled:false,recoveryHunterEnabled:false,crashRecoveryHunterEnabled:false,scarletNeedleEnabled:false,athenaExclamationEnabled:false,lightningPlasmaEnabled:false});
+  const db={async athenaEconomicEntries(){throw new Error('history unavailable');},async athenaEconomicOpportunityEpisodes(){throw new Error('history unavailable');},async upsertOpportunityEpisode(){},async audit(){}};
+  const athena=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R60-HF1'});await athena.init({background:true});await new Promise((resolve)=>setImmediate(resolve));
+  assert.equal(athena.summary().memory.load.state,'FAILED');assert.match(athena.summary().memory.load.lastError,/history unavailable/);
+  const now=Date.now(),bolt={id:'learning-failed-bolt',ticker:'LEARN-FAIL',eventTicker:'LEARN-FAIL',sport:'Tennis',score:90,detectedAtMs:now,expiresAtMs:now+5000,greenTrigger:{shadowTradeId:'shadow-fail',cosmo:'Pegasus',moveCents:1},features:{askCents:55,bidCents:54,spreadCents:1,sport:'Tennis',gameMinutes:45,cosmoSources:['Pegasus'],cosmoCount:1,greenSources:[{shadowTradeId:'shadow-fail',conceptName:'Pegasus',green:true,moveCents:1}],targetFeasibilityScore:95,eligibleAttacks:[{concept:'Momentum Hunter',targetFeasible:true,targetFeasibilityScore:95,requiredTargetBidCents:60,requiredGrossMoveCents:5,estimatedEntryFeePerContractCents:2,estimatedExitFeePerContractCents:2}]}};
+  const decision=await athena.decide(bolt,{});assert.equal(decision.decision,'FIRE');assert.equal(decision.selectedAttack,'Momentum Hunter');assert.ok(decision.fireCommand);
 });
 
-test('R53 Scarlet Needle losing process adopts a winner entry and can never re-arm over durable cross-process execution',async()=>{
-  const settings=r51Settings({scarletNeedleEnabled:true,scarletNeedleStakeCents:20_000,scarletNeedleMinEntryCents:10,scarletNeedleMaxEntryCents:89});
-  const db=fakeDb(),a1=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R53-TEST'});await a1.init();
-  const now=Date.now(),q=nowQuote('SN-RACE',86,87),features=atomicThunderBoltFeatures({q,history:[{t:now-30_000,bid:80,ask:81},{t:now-15_000,bid:83,ask:84},{t:now-5_000,bid:85,ask:86},{t:now,bid:86,ask:87}],settings,now});
-  const bolt={version:ATOMIC_THUNDER_BOLT.version,policyRevision:ATOMIC_THUNDER_BOLT.policyRevision,id:'sn-race-source',fingerprint:'sn-race-fp',systemName:settings.systemName,sourceRelease:'R53-TEST',ticker:q.ticker,eventTicker:q.eventTicker,side:'YES',sport:'Tennis',detectedAtMs:now,expiresAtMs:now+5000,score:80,features};
-  const arm=await a1.armScarletNeedle(bolt,{openEntriesOnTicker:[]});assert.ok(arm);
-  const a2=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R53-TEST'});await a2.init();await a2.hydrateScarletNeedleArms();assert.equal(a2.summary().scarletNeedle.armed,1);
-  const ep=await db.opportunityEpisode(arm.id);await db.upsertOpportunityEpisode({...ep,entryId:'winner-entry',entryAtMs:now+100,athenaDecision:{...(ep.athenaDecision||{}),decision:'FIRE',scarletNeedle:{...(ep.athenaDecision?.scarletNeedle||{}),status:'TRIGGERED'}},updatedAtMs:now+100});
-  const adopted=await a2.noteScarletNeedleExecution(arm.id,null);assert.equal(adopted,true);assert.equal(a2.summary().scarletNeedle.armed,0);
-  const after=await db.opportunityEpisode(arm.id);assert.equal(after.entryId,'winner-entry');assert.equal(after.athenaDecision.scarletNeedle.status,'EXECUTED');assert.equal(after.athenaDecision.scarletNeedle.crossProcessAdopted,true);
-});
-
-test('R59 AE1-HF1 durable three-Saint candidate executes once through Athena FIRE, freezes lineage, and is consumed',async()=>{
-  const settings=r51Settings({athenaExclamationEnabled:true,athenaExclamationMinEntryCents:10,athenaExclamationMaxEntryCents:89});
-  const q=nowQuote('AE-HF1-ONCE',54,55),f=strategyFixture({settings,quote:q}),now=Date.now();
-  let durable={id:`AE1:${settings.systemName}:${q.ticker}:${now-3000}`,version:'ATHENA-EXCLAMATION-AE1',policyRevision:'AE1-R3-DURABLE-FORMATION-SINGLE-CONSUMPTION',status:'CANDIDATE',systemName:settings.systemName,ticker:q.ticker,eventTicker:q.eventTicker,createdAtMs:now-1000,firstVoteAtMs:now-3000,thirdVoteAtMs:now-1000,expiresAtMs:now+60_000,convergenceSpanMs:2000,saintCount:3,saints:[{conceptName:'Momentum Hunter',lastQualifiedAtMs:now-3000},{conceptName:'Wave Surfer',lastQualifiedAtMs:now-2000},{conceptName:'Crash Recovery Hunter',lastQualifiedAtMs:now-1000}],combination:['Momentum Hunter','Wave Surfer','Crash Recovery Hunter'],gameMinutes:45};
-  f.s.athenaExclamation.events.set(durable.id,structuredClone(durable));f.s.athenaExclamation.activeEventByTicker.set(q.ticker,durable.id);
-  f.db.activeAthenaExclamationEvent=async()=>['CANDIDATE','QUALIFIED'].includes(durable?.status)?structuredClone(durable):null;
-  f.db.updateAthenaExclamationEvent=async(id,row)=>{assert.equal(id,durable.id);durable=structuredClone(row);};
-  const fieldContext={athenaExclamationCandidate:{id:durable.id,ticker:q.ticker,eventTicker:q.eventTicker,status:'CANDIDATE',saintCount:3,combination:[...durable.combination],createdAtMs:durable.createdAtMs,firstVoteAtMs:durable.firstVoteAtMs,thirdVoteAtMs:durable.thirdVoteAtMs,expiresAtMs:durable.expiresAtMs}};
-  const c=command(settings,'Athena Exclamation',q,{boltId:'ae-hf1-bolt',decisionEvidence:{features:{askCents:q.yesAsk,bidCents:q.yesBid},fieldContext}});
-  const decision={decision:'FIRE',fireCommand:c,ranking:c.ranking};
-  const entry=await f.s.executeAthenaFire(q,{id:c.boltId,ticker:q.ticker,eventTicker:q.eventTicker,features:{sport:'Tennis'}},decision,{fieldContext});
-  assert.ok(entry);assert.equal(entry.conceptName,'Athena Exclamation');assert.equal(entry.sourceFeeder,null);assert.equal(entry.sourceTradeId,durable.id);
-  assert.equal(entry.entryConfig.athenaExclamation.candidate.id,durable.id);assert.equal(entry.entryConfig.athenaExclamation.policyRevision,'AE1-R3-DURABLE-FORMATION-SINGLE-CONSUMPTION');
-  assert.equal(durable.status,'EXECUTED');assert.equal(durable.entryId,entry.id);assert.equal(f.s.athenaExclamation.activeCandidate(q.ticker),null);
-  const before=f.db.inserted.length;
-  const second=await f.s.executeAthenaFire(q,{id:c.boltId,ticker:q.ticker,eventTicker:q.eventTicker,features:{sport:'Tennis'}},decision,{fieldContext});
-  assert.equal(second,null);assert.equal(f.db.inserted.length,before);assert.ok(f.db.audits.some(x=>x.event==='athena_fire_execution_aborted'&&x.data?.reason==='athena_exclamation_candidate_consumed_or_replaced'));
+test('R60-HF1 immediate post-reset A-to-Z chain: Pegasus shadow GREEN -> Atomic Thunder -> Athena FIRE -> Attack -> Infinity Break',async()=>{
+  const settings=r51Settings({atomicThunderGreenTriggerCents:1,infinityBreakMinNetPerOriginalContractCents:1,infinityBreakRequiredConfirmations:2,pegasusEnabled:true,dragonEnabled:false,phoenixEnabled:false,momentumHunterEnabled:true,waveSurferEnabled:false,recoveryHunterEnabled:false,crashRecoveryHunterEnabled:false,scarletNeedleEnabled:false,athenaExclamationEnabled:false,lightningPlasmaEnabled:false,auroraDamageControlPercent:45});
+  const gate=new SimulationMutationGate(),db=fakeDb(),market=fakeMarket(nowQuote('POST-RESET',54,55));
+  const resetEngine=Object.create(SagittariusEngine.prototype);Object.assign(resetEngine,{settings:{...settings},simulationMutationGate:gate,simulationResetPromise:null,athenaCommander:{async cancelAllScarletNeedleArms(){}},market:{histories:new Map([['POST-RESET',structuredClone(market.history)]])},db:{...db,async archiveSimulation(){return 0;},async saveSettings(){},async audit(level,event,data){db.audits.push({level,event,data});}},refreshCrashPriorityTickers(){},invalidateStateSnapshot(){}});
+  await resetEngine.resetSimulation();assert.ok(resetEngine.market.histories.get('POST-RESET').length>=4,'Atomic Thunder rolling history must survive reset');
+  const strategy=new StrategyEngine({db,kalshi:{},market,learning:{},getSettings:()=>settings,getLiveReady:()=>false,refreshGameClock:refreshClock,random:()=>0,captureSimulationMutationToken:()=>gate.capture(),enterSimulationMutation:(token)=>gate.enter(token)});
+  const shadow=await strategy.createGhost('Pegasus',market.quote,53,market.quote.gameStartTimeMs);assert.ok(shadow);assert.equal(shadow.conceptName,'Pegasus');
+  const atomic=new AtomicThunderBoltEngine({db,market,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R60-HF1'});
+  const bolt=await atomic.detect(market.quote,{cosmos:[shadow]});assert.ok(bolt);assert.equal(bolt.greenTrigger.shadowTradeId,shadow.id);assert.equal(bolt.greenTrigger.moveCents,1);
+  const athena=new AthenaCommander({db,getSettings:()=>settings,systemName:settings.systemName,sourceRelease:'R60-HF1'});
+  const decision=await athena.decide(bolt,{});assert.equal(decision.decision,'FIRE');assert.equal(decision.selectedAttack,'Momentum Hunter');
+  const entry=await strategy.executeAthenaFire(market.quote,bolt,decision,{cosmos:[shadow]});assert.ok(entry);assert.equal(entry.conceptName,'Momentum Hunter');assert.equal(entry.sourceTradeId,shadow.id);
+  market.quote.yesBid=65;market.quote.yesAsk=66;market.quote.updatedAtMs=Date.now();
+  const learning={async onHardStop(){},async stopGuardProfile(){return null;},async lossWatchdogProfile(){return null;}};const guard=new ProfitGuard({db,kalshi:{},market,learning,getSettings:()=>settings});
+  let out=await guard.protect(await db.entryById(entry.id));assert.equal(out.closed??false,false);market.quote.updatedAtMs+=1;market.history.push({t:market.quote.updatedAtMs,bid:65,ask:66});out=await guard.protect(await db.entryById(entry.id));assert.equal(out.closed,true);
+  const closed=await db.entryById(entry.id);assert.equal(closed.closeReason,'infinity_break');assert.ok(closed.pnlCents>0);
 });

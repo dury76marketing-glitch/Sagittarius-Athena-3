@@ -3,13 +3,19 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { isMatchDecisionMarket, MAX_HISTORY } from './doctrine.mjs';
 import { parseMarket, signKalshi } from './kalshi.mjs';
 
+export const MARKET_TRUTH_REVISION = 'R63-MHF1-HF2A-MARKET-TRUTH-RESTORATION-2026-08-31';
+
 const DERIVATIVE = [
   'SPREAD','TOTAL','HRDERBY','3PT','DERBY','EXACT','GAMETO','ANYSET',
   '-1H','-2H','-1Q','-2Q','-3Q','-4Q','-1P','-2P','-3P','HTOTAL','QTOTAL',
 ];
+const SNAPSHOT_BATCH_SIZE = 250;
 const cents = (v) => Math.round(Number(v || 0) * 100);
 const validQuote = (q) => q && q.yesBid >= 0 && q.yesAsk > 0 && q.yesAsk <= 100 && q.yesBid <= q.yesAsk;
 const finalStatus = (q) => ['finalized', 'settled'].includes(String(q?.status || '').toLowerCase()) && Boolean(q?.result);
+const finiteInt = (v) => Number.isFinite(Number(v)) ? Math.trunc(Number(v)) : null;
+const sidOf = (data, msg) => finiteInt(data?.sid ?? msg?.sid);
+const seqOf = (data, msg) => finiteInt(data?.seq ?? msg?.seq);
 
 function parseLevels(arr = []) {
   return arr
@@ -65,6 +71,22 @@ export class MarketHub {
     this.reconnectToken = 0;
     this.connectLoopRunning = false;
     this.resyncing = new Set();
+
+    // R63 maintenance HF1: Kalshi orderbook sequence is subscription-scoped,
+    // never ticker-scoped. Each SID retains one global cursor plus the tickers
+    // currently proven to belong to that stream. Recovery state is bounded by
+    // the wanted/safety ticker set and requires no timer, worker or DB surface.
+    this.orderbookStreams = new Map();
+    this.wsCommandId = 1;
+    this.bookIntegrityStats = {
+      sequenceGaps:0,
+      ignoredOldSequences:0,
+      missingSequence:0,
+      sidMismatch:0,
+      recoveryRequests:0,
+      recoveryBatches:0,
+      disconnectInvalidations:0,
+    };
   }
 
   hydrateHistories(trackers = []) {
@@ -81,7 +103,8 @@ export class MarketHub {
   allQuotes() { return [...this.quotes.values()]; }
   quoteAgeMs(ticker, now = Date.now()) {
     const q = this.quotes.get(ticker);
-    return q?.updatedAtMs ? Math.max(0, now - Number(q.updatedAtMs)) : Infinity;
+    const observed = Number(q?.quoteAtMs || q?.updatedAtMs || 0);
+    return observed > 0 ? Math.max(0, now - observed) : Infinity;
   }
   bookAgeMs(ticker, now = Date.now()) {
     const b = this.books.get(ticker);
@@ -104,8 +127,10 @@ export class MarketHub {
     const merged = old && old.updatedAtMs > q.updatedAtMs
       ? { ...q, ...old, result: q.result || old.result, status: q.status || old.status, recentTrades: Math.max(old.recentTrades || 0, q.recentTrades || 0) }
       : { ...(old || {}), ...q, recentTrades: Math.max(old?.recentTrades || 0, q.recentTrades || 0) };
-    if (validQuote(merged) || finalStatus(merged)) this.quotes.set(q.ticker, { ...merged, bookInvalid: finalStatus(merged) ? false : Boolean(merged.bookInvalid) });
-    else this.quotes.set(q.ticker, { ...merged, bookInvalid: true });
+    const quoteAtMs = Number(merged.quoteAtMs || merged.updatedAtMs || 0);
+    const normalized = { ...merged, quoteAtMs, updatedAtMs:quoteAtMs || merged.updatedAtMs };
+    if (validQuote(normalized) || finalStatus(normalized)) this.quotes.set(q.ticker, { ...normalized, bookInvalid: finalStatus(normalized) ? false : Boolean(normalized.bookInvalid) });
+    else this.quotes.set(q.ticker, { ...normalized, bookInvalid: true });
   }
 
   async discover(priorityTickers = []) {
@@ -154,17 +179,44 @@ export class MarketHub {
         removed[name] += 1;
       }
     }
+    // Keep sequence/recovery metadata under the same RGM4 cache authority.
+    for (const [sid,state] of this.orderbookStreams) {
+      for (const ticker of [...state.tickers]) if (!keep.has(ticker)) state.tickers.delete(ticker);
+      for (const ticker of [...state.pendingSnapshots]) if (!keep.has(ticker)) state.pendingSnapshots.delete(ticker);
+      if (!state.tickers.size && !state.pendingSnapshots.size) this.orderbookStreams.delete(sid);
+    }
     return removed;
   }
 
   resourceSnapshot() {
+    let wsSequenceValidBooks=0,restVerifiedBooks=0,invalidBooks=0,recoveringStreams=0,pendingSnapshots=0;
+    for (const [ticker,book] of this.books) {
+      const q=this.quotes.get(ticker);
+      if (q?.bookInvalid || book?.sequenceValid===false) invalidBooks+=1;
+      if (book?.source==='WS' && book?.sequenceValid===true && !q?.bookInvalid) wsSequenceValidBooks+=1;
+      if (book?.source==='REST' && book?.sequenceValid===true && !q?.bookInvalid) restVerifiedBooks+=1;
+    }
+    for (const state of this.orderbookStreams.values()) {
+      if (state.recovering) recoveringStreams+=1;
+      pendingSnapshots+=state.pendingSnapshots.size;
+    }
     return {
+      marketTruthRevision:MARKET_TRUTH_REVISION,
       wanted:this.wanted.size,
       quotes:this.quotes.size,
       books:this.books.size,
       histories:this.histories.size,
       resyncing:this.resyncing.size,
       connected:this.connected,
+      bookIntegrity:{
+        wsSequenceValidBooks,
+        restVerifiedBooks,
+        invalidBooks,
+        sequenceSids:this.orderbookStreams.size,
+        recoveringStreams,
+        pendingSnapshots,
+        ...this.bookIntegrityStats,
+      },
       cacheBoundedToWanted:true,
     };
   }
@@ -185,13 +237,18 @@ export class MarketHub {
     }
   }
 
+  trustedRestBook(b) {
+    return b ? { ...b, source:'REST', sid:null, seq:null, sequenceValid:true, invalidReason:null } : null;
+  }
+
   async refreshTickerVerified(ticker) {
     const [marketResult, bookResult] = await Promise.allSettled([
       this.kalshi.getMarket(ticker),
       this.kalshi.getOrderbook(ticker),
     ]);
     const q = marketResult.status === 'fulfilled' ? marketResult.value : null;
-    const b = bookResult.status === 'fulfilled' ? bookResult.value : null;
+    const rawBook = bookResult.status === 'fulfilled' ? bookResult.value : null;
+    const b=this.trustedRestBook(rawBook);
     const marketObservedAtMs = q ? Date.now() : 0;
     if (q) this.seed({ ...q, restMarketObservedAtMs: marketObservedAtMs });
     if (b) {
@@ -214,7 +271,7 @@ export class MarketHub {
   async ensureFreshBook(ticker, maxAgeMs = 5000) {
     const q = this.getQuote(ticker);
     const book = this.getBook(ticker);
-    if (!book || this.bookAgeMs(ticker) > maxAgeMs || !q || q.bookInvalid) await this.refreshTicker(ticker).catch(() => null);
+    if (!book || this.bookAgeMs(ticker) > maxAgeMs || !q || q.bookInvalid || book.sequenceValid===false) await this.refreshTicker(ticker).catch(() => null);
     return this.getBook(ticker) || null;
   }
 
@@ -222,7 +279,8 @@ export class MarketHub {
     if (this.resyncing.has(ticker)) return;
     this.resyncing.add(ticker);
     try {
-      const b = await this.kalshi.getOrderbook(ticker);
+      const raw = await this.kalshi.getOrderbook(ticker);
+      const b=this.trustedRestBook(raw);
       if (b) {
         this.books.set(ticker, b);
         this.applyBook(ticker);
@@ -236,22 +294,30 @@ export class MarketHub {
     const book = this.books.get(ticker);
     const old = this.quotes.get(ticker);
     if (!book || !old) return;
+    const trusted = book.source == null || book.source==='REST' || (book.source==='WS' && book.sequenceValid===true);
+    if (!trusted) {
+      this.quotes.set(ticker, { ...old, bookInvalid: !finalStatus(old) });
+      return;
+    }
     const yesAsks = yesAsksFromNoBids(book.noBids || []);
     book.yesAsks = yesAsks;
     const bid = book.yesBids?.[0];
     const ask = yesAsks[0];
     if (!bid || !ask || bid.priceCents > ask.priceCents) {
+      if (book.source==='WS') { book.sequenceValid=false; book.invalidReason='crossed_or_incomplete_book'; }
       this.quotes.set(ticker, { ...old, bookInvalid: !finalStatus(old) });
       if (!finalStatus(old)) void this.resyncBook(ticker);
       return;
     }
+    const observedAtMs=Number(book.updatedAtMs || 0);
     const q = {
       ...old,
       yesBid: bid.priceCents,
       yesAsk: ask.priceCents,
       yesBidSize: bid.count,
       yesAskSize: ask.count,
-      updatedAtMs: Math.max(old.updatedAtMs || 0, book.updatedAtMs || 0),
+      quoteAtMs: Math.max(Number(old.quoteAtMs || old.updatedAtMs || 0), observedAtMs),
+      updatedAtMs: Math.max(Number(old.updatedAtMs || 0), observedAtMs),
       bookInvalid: false,
     };
     this.quotes.set(ticker, q);
@@ -260,7 +326,8 @@ export class MarketHub {
 
   executableBid(ticker, count, limitCents = null) {
     const b = this.books.get(ticker);
-    if (!b?.yesBids?.length) return null;
+    const q = this.quotes.get(ticker);
+    if (!b?.yesBids?.length || b.sequenceValid===false || q?.bookInvalid) return null;
     const limit = Number.isFinite(Number(limitCents)) ? Number(limitCents) : -Infinity;
     const out = walkLevels(b.yesBids, count, (x) => x.priceCents >= limit);
     return { ...out, bestCents: b.yesBids[0].priceCents };
@@ -268,7 +335,8 @@ export class MarketHub {
 
   executableAsk(ticker, count, limitCents = null) {
     const b = this.books.get(ticker);
-    if (!b?.noBids?.length) return null;
+    const q = this.quotes.get(ticker);
+    if (!b?.noBids?.length || b.sequenceValid===false || q?.bookInvalid) return null;
     const asks = yesAsksFromNoBids(b.noBids);
     const limit = Number.isFinite(Number(limitCents)) ? Number(limitCents) : Infinity;
     const out = walkLevels(asks, count, (x) => x.priceCents <= limit);
@@ -294,6 +362,118 @@ export class MarketHub {
       'KALSHI-ACCESS-TIMESTAMP': ts,
       'KALSHI-ACCESS-SIGNATURE': signKalshi(c.privateKeyPem, ts, 'GET', path),
     };
+  }
+
+  nextWsCommandId(){ const id=this.wsCommandId; this.wsCommandId+=1; return id; }
+
+  streamState(sid,{create=false}={}) {
+    if (sid==null) return null;
+    let state=this.orderbookStreams.get(sid)||null;
+    if (!state && create) {
+      state={sid,lastSeq:0,tickers:new Set(),pendingSnapshots:new Set(),recovering:false,recoveryRequested:false};
+      this.orderbookStreams.set(sid,state);
+    }
+    return state;
+  }
+
+  invalidateTickerBook(ticker,reason='untrusted_ws_book') {
+    const book=this.books.get(ticker);
+    if (book?.source==='WS') { book.sequenceValid=false; book.invalidReason=reason; }
+    const q=this.quotes.get(ticker);
+    if (q && !finalStatus(q)) this.quotes.set(ticker,{...q,bookInvalid:true});
+  }
+
+  invalidateStream(state,reason='sequence_gap') {
+    if (!state) return;
+    for (const ticker of state.tickers) {
+      const book=this.books.get(ticker);
+      if (book?.source==='WS' && Number(book.sid)===Number(state.sid)) this.invalidateTickerBook(ticker,reason);
+      if (this.wanted.has(ticker) || this.books.has(ticker) || this.quotes.has(ticker)) state.pendingSnapshots.add(ticker);
+    }
+    state.recovering=true;
+    this.requestStreamSnapshots(state);
+  }
+
+  requestStreamSnapshots(state) {
+    if (!state || state.recoveryRequested || !state.pendingSnapshots.size) return false;
+    const ws=this.ws;
+    const openConstant=WebSocket?.OPEN;
+    if (!ws || !this.connected || typeof ws.send!=='function' || (openConstant!=null && ws.readyState!==openConstant)) return false;
+    state.recoveryRequested=true;
+    const tickers=[...state.pendingSnapshots];
+    this.bookIntegrityStats.recoveryRequests+=1;
+    for (let i=0;i<tickers.length;i+=SNAPSHOT_BATCH_SIZE) {
+      const batch=tickers.slice(i,i+SNAPSHOT_BATCH_SIZE);
+      this.bookIntegrityStats.recoveryBatches+=1;
+      ws.send(JSON.stringify({id:this.nextWsCommandId(),cmd:'update_subscription',params:{sid:state.sid,market_tickers:batch,action:'get_snapshot'}}));
+    }
+    return true;
+  }
+
+  startSingleTickerRecovery(state,ticker,reason) {
+    if (!state || !ticker) return;
+    state.tickers.add(ticker);
+    state.pendingSnapshots.add(ticker);
+    state.recovering=true;
+    this.invalidateTickerBook(ticker,reason);
+    this.requestStreamSnapshots(state);
+    if (!state.recoveryRequested) void this.resyncBook(ticker);
+  }
+
+  advanceStreamSequence(data,{ticker=null,type='orderbook'}={}) {
+    const msg=data?.msg||{};
+    const sid=sidOf(data,msg),seq=seqOf(data,msg);
+    if (sid==null || seq==null) {
+      this.bookIntegrityStats.missingSequence+=1;
+      const knownBook=ticker?this.books.get(ticker):null;
+      const knownSid=knownBook?.source==='WS'?finiteInt(knownBook.sid):null;
+      const knownState=knownSid==null?null:this.streamState(knownSid);
+      if (knownState) this.invalidateStream(knownState,'missing_sid_or_sequence');
+      else if (ticker) {
+        this.invalidateTickerBook(ticker,'missing_sid_or_sequence');
+        void this.resyncBook(ticker);
+      }
+      return {ok:false,sid,seq,state:knownState,reason:'missing_sid_or_sequence'};
+    }
+    let state=this.streamState(sid,{create:type==='snapshot'});
+    if (!state) {
+      this.bookIntegrityStats.missingSequence+=1;
+      if (ticker) {
+        this.invalidateTickerBook(ticker,'subscription_state_missing');
+        void this.resyncBook(ticker);
+      }
+      return {ok:false,sid,seq,state:null,reason:'subscription_state_missing'};
+    }
+    if (seq<=state.lastSeq) {
+      this.bookIntegrityStats.ignoredOldSequences+=1;
+      return {ok:false,sid,seq,state,reason:'old_or_duplicate_sequence'};
+    }
+    if (state.lastSeq>0 && seq!==state.lastSeq+1) {
+      this.bookIntegrityStats.sequenceGaps+=1;
+      const previousSeq=state.lastSeq;
+      state.lastSeq=seq;
+      this.invalidateStream(state,`sequence_gap:${previousSeq}->${seq}`);
+      return {ok:false,sid,seq,state,reason:'sequence_gap'};
+    }
+    state.lastSeq=seq;
+    return {ok:true,sid,seq,state,reason:'contiguous'};
+  }
+
+  invalidateWsBooks(reason='websocket_disconnect') {
+    let count=0;
+    for (const [ticker,book] of this.books) {
+      if (book?.source!=='WS') continue;
+      count+=1;
+      book.sequenceValid=false;
+      book.invalidReason=reason;
+      book.sid=null;
+      book.seq=null;
+      const q=this.quotes.get(ticker);
+      if (q && !finalStatus(q)) this.quotes.set(ticker,{...q,bookInvalid:true});
+    }
+    this.orderbookStreams.clear();
+    this.bookIntegrityStats.disconnectInvalidations+=count;
+    return count;
   }
 
   async connectLoop() {
@@ -327,9 +507,13 @@ export class MarketHub {
       this.ws = ws;
       let ping = null;
       let stale = null;
+      let cleaned = false;
       const clean = () => {
+        if (cleaned) return;
+        cleaned = true;
         if (ping) clearInterval(ping);
         if (stale) clearInterval(stale);
+        this.invalidateWsBooks('websocket_disconnect');
         if (this.ws === ws) this.ws = null;
         this.connected = false;
         this.onStatus(false, this.lastMessageMs);
@@ -338,17 +522,15 @@ export class MarketHub {
         this.connected = true;
         this.lastMessageMs = Date.now();
         this.onStatus(true, this.lastMessageMs);
-        let id = 1;
         const tickers = [...this.wanted];
         if (tickers.length) {
-          ws.send(JSON.stringify({ id: id++, cmd: 'subscribe', params: { channels: ['ticker', 'trade'], market_tickers: tickers } }));
-          // Keep Kalshi's native YES-bid / NO-bid representation. YES asks are
-          // derived internally as 100 - NO bid so REST and WebSocket books use
-          // the same price convention.
-          ws.send(JSON.stringify({ id: id++, cmd: 'subscribe', params: { channels: ['orderbook_delta'], market_tickers: tickers } }));
+          ws.send(JSON.stringify({ id: this.nextWsCommandId(), cmd: 'subscribe', params: { channels: ['ticker', 'trade'], market_tickers: tickers } }));
+          // Explicitly preserve Kalshi native YES-bid / NO-bid orderbook semantics.
+          // YES asks are derived internally as 100 - NO bid for REST/WS parity.
+          ws.send(JSON.stringify({ id: this.nextWsCommandId(), cmd: 'subscribe', params: { channels: ['orderbook_delta'], market_tickers: tickers, use_yes_price:false } }));
         }
-        ws.send(JSON.stringify({ id: id++, cmd: 'subscribe', params: { channels: ['market_lifecycle_v2'] } }));
-        ws.send(JSON.stringify({ id: id++, cmd: 'subscribe', params: { channels: ['fill', 'market_positions', 'user_orders'] } }));
+        ws.send(JSON.stringify({ id: this.nextWsCommandId(), cmd: 'subscribe', params: { channels: ['market_lifecycle_v2'] } }));
+        ws.send(JSON.stringify({ id: this.nextWsCommandId(), cmd: 'subscribe', params: { channels: ['fill', 'market_positions', 'user_orders'] } }));
         ping = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.ping(); }, 20000);
         stale = setInterval(() => {
           if (Date.now() - this.lastMessageMs > 65000 && ws.readyState === WebSocket.OPEN) ws.terminate();
@@ -372,57 +554,107 @@ export class MarketHub {
   handle(data) {
     const type = data.type;
     const msg = data.msg || {};
+
+    // Kalshi update_subscription acknowledgements can carry the same SID/SEQ
+    // cursor as book messages. They advance continuity but never heal a book.
+    if (type === 'ok') {
+      const sid=sidOf(data,msg),seq=seqOf(data,msg);
+      const state=this.streamState(sid);
+      if (state && seq!=null) this.advanceStreamSequence(data,{type:'ok'});
+      return;
+    }
+
     if (type === 'ticker') {
       const ticker = msg.market_ticker;
       const old = this.quotes.get(ticker);
       if (!ticker || !old) return;
+      const hasBid=msg.yes_bid_dollars != null,hasAsk=msg.yes_ask_dollars != null;
+      const directQuoteTruth=hasBid||hasAsk;
+      const observedAt=directQuoteTruth ? (Number(msg.ts_ms) || Date.now()) : Number(old.quoteAtMs || old.updatedAtMs || 0);
       const q = {
         ...old,
-        yesBid: msg.yes_bid_dollars != null ? cents(msg.yes_bid_dollars) : old.yesBid,
-        yesAsk: msg.yes_ask_dollars != null ? cents(msg.yes_ask_dollars) : old.yesAsk,
+        yesBid: hasBid ? cents(msg.yes_bid_dollars) : old.yesBid,
+        yesAsk: hasAsk ? cents(msg.yes_ask_dollars) : old.yesAsk,
         yesBidSize: msg.yes_bid_size_fp != null ? Number(msg.yes_bid_size_fp) : old.yesBidSize,
         yesAskSize: msg.yes_ask_size_fp != null ? Number(msg.yes_ask_size_fp) : old.yesAskSize,
         lastPrice: msg.price_dollars != null ? cents(msg.price_dollars) : old.lastPrice,
         volume: msg.volume_fp != null ? Number(msg.volume_fp) : old.volume,
-        updatedAtMs: Number(msg.ts_ms) || Date.now(),
+        quoteAtMs:observedAt,
+        updatedAtMs:observedAt,
+        // A quote/ticker message can refresh bid/ask values but it cannot prove
+        // continuity of the executable depth book after sequence invalidation.
+        bookInvalid:Boolean(old.bookInvalid),
       };
       if (!validQuote(q) && !finalStatus(q)) {
-        this.quotes.set(ticker, { ...old, bookInvalid: true, updatedAtMs: q.updatedAtMs });
+        this.quotes.set(ticker, { ...old, bookInvalid: true });
         void this.resyncBook(ticker);
         return;
       }
-      q.bookInvalid = false;
       this.quotes.set(ticker, q);
       this.onQuote(q);
       return;
     }
+
     if (type === 'trade') {
       const ticker = msg.market_ticker;
       const q = this.quotes.get(ticker);
       if (q) {
+        const observedAt=Number(msg.ts_ms) || Date.now();
         q.recentTrades = (q.recentTrades || 0) + 1;
+        q.recentTradesObservedAtMs = Math.max(Number(q.recentTradesObservedAtMs || 0),observedAt);
+        q.lastTradeObservedAtMs = observedAt;
         if (msg.yes_price_dollars != null) q.lastPrice = cents(msg.yes_price_dollars);
-        q.updatedAtMs = Number(msg.ts_ms) || Date.now();
+        // Critical HF2 invariant: trade activity is not bid/ask freshness.
+        // Do not mutate quoteAtMs/updatedAtMs or bookInvalid here.
         this.onQuote(q);
       }
       return;
     }
+
     if (type === 'orderbook_snapshot') {
       const ticker = msg.market_ticker;
       if (!ticker) return;
+      const sid=sidOf(data,msg);
+      const existing=this.books.get(ticker);
+      if (existing?.source==='WS' && existing.sid!=null && sid!=null && Number(existing.sid)!==Number(sid)) {
+        this.bookIntegrityStats.sidMismatch+=1;
+        const oldState=this.streamState(finiteInt(existing.sid));
+        if (oldState) this.invalidateStream(oldState,'sid_mismatch');
+        this.invalidateTickerBook(ticker,'sid_mismatch');
+        void this.resyncBook(ticker);
+        return;
+      }
+      const gate=this.advanceStreamSequence(data,{ticker,type:'snapshot'});
+      if (!gate.ok) return;
+      const state=gate.state;
+      state.tickers.add(ticker);
       this.books.set(ticker, {
         ticker,
         yesBids: parseLevels(msg.yes_dollars_fp || msg.yes_dollars),
         noBids: parseLevels(msg.no_dollars_fp || msg.no_dollars),
         updatedAtMs: Number(msg.ts_ms) || Date.now(),
+        source:'WS',sid:gate.sid,seq:gate.seq,sequenceValid:true,invalidReason:null,
       });
+      if (state.pendingSnapshots.has(ticker)) state.pendingSnapshots.delete(ticker);
+      if (state.recovering && state.pendingSnapshots.size===0) { state.recovering=false;state.recoveryRequested=false; }
       this.applyBook(ticker);
       return;
     }
+
     if (type === 'orderbook_delta') {
       const ticker = msg.market_ticker;
+      if (!ticker) return;
+      const gate=this.advanceStreamSequence(data,{ticker,type:'delta'});
+      const state=gate.state;
+      if (!gate.ok) return;
       const book = this.books.get(ticker);
-      if (!book) return;
+      if (!book) { this.startSingleTickerRecovery(state,ticker,'missing_snapshot_before_delta'); return; }
+      if (book.source!=='WS' || Number(book.sid)!==Number(gate.sid)) {
+        this.bookIntegrityStats.sidMismatch+=1;
+        this.startSingleTickerRecovery(state,ticker,'sid_mismatch');
+        return;
+      }
+      if (state.pendingSnapshots.has(ticker) || book.sequenceValid!==true) return;
       const nativeSide = String(msg.side || '').toLowerCase() === 'no' ? book.noBids : book.yesBids;
       const price = cents(msg.price_dollars);
       const delta = Number(msg.delta_fp ?? msg.delta ?? 0);
@@ -433,9 +665,13 @@ export class MarketHub {
       if (String(msg.side || '').toLowerCase() === 'no') book.noBids = clean;
       else book.yesBids = clean;
       book.updatedAtMs = Number(msg.ts_ms) || Date.now();
+      book.seq=gate.seq;
+      book.sequenceValid=true;
+      book.invalidReason=null;
       this.applyBook(ticker);
       return;
     }
+
     if (type === 'market_lifecycle_v2') {
       const ticker = msg.market_ticker || msg.ticker;
       const q = this.quotes.get(ticker);
@@ -445,8 +681,8 @@ export class MarketHub {
         else if (e === 'deactivated') q.status = 'inactive';
         else if (e === 'determined') { q.status = 'determined'; q.result = msg.result || q.result; }
         else if (e === 'settled' || e === 'finalized') { q.status = 'finalized'; q.result = msg.result || q.result; }
-        q.updatedAtMs = Number(msg.ts_ms) || Date.now();
-        q.bookInvalid = false;
+        q.lifecycleObservedAtMs = Number(msg.ts_ms) || Date.now();
+        // Lifecycle is not bid/ask freshness and cannot heal an invalid book.
         this.onQuote(q);
       }
       return;

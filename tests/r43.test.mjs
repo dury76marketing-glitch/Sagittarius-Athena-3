@@ -20,19 +20,19 @@ function legacyHunter(overrides={}){const now=Date.now();return{id:'H1',systemNa
 function marketFor(q=authorizedQuote(),{full=true,avgBid=null}={}){let quote={...q};let book={updatedAtMs:Date.now()};return{getQuote:()=>quote,quoteAgeMs:()=>0,bookAgeMs:()=>0,getBook:()=>book,async refreshTicker(){quote={...quote,updatedAtMs:Date.now()};return quote;},async refreshTickerVerified(){quote={...quote,updatedAtMs:Date.now()};book={updatedAtMs:Date.now()};return{quote,marketFresh:true,bookFresh:true,marketObservedAtMs:Date.now(),bookObservedAtMs:Date.now()};},async ensureFreshBook(){return book;},executableAsk(_t,c){return{filled:c,full:true,avgCents:quote.yesAsk,bestCents:quote.yesAsk};},executableBid(_t,c){return{filled:full?c:Math.max(0,c-1),full,avgCents:avgBid??quote.yesBid,bestCents:quote.yesBid};},setBid(v){quote={...quote,yesBid:v,yesAsk:Math.min(100,v+1),updatedAtMs:Date.now()};}};}
 function clockRefresh(q){const now=Date.now();return Promise.resolve({gameClockState:{...q.gameClockState,version:'GCA2',entryAuthorized:true,evidenceObservedAtMs:now,lastCheckedAtMs:now},gameStartTimeMs:q.gameStartTimeMs,liveStatus:'live'});}
 
-test("R49 release and architecture identities are exact",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const engine=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');const strategy=await readFile(new URL('../src/strategy.mjs',import.meta.url),'utf8');assert.equal(RELEASE,'SAGITTARIUS-R59-BIG-WAVE-CHOKE-RECOVERY-2026-08-29');assert.equal(D.ATHENA_COMMANDER.role,'supreme_economic_entry_commander_after_arayashiki');assert.equal(D.INFINITY_BREAK.authority,'PROFIT_EXIT');assert.equal(D.AURORA_EXECUTION.lossAuthority,'U-SG1');assert.ok(strategy.includes('maxGameMinutes'));assert.ok(engine.includes('atomicThunderBolt'));assert.ok(engine.includes('athenaCommander'));});
+test("R49 release and architecture identities are exact",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const engine=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');const strategy=await readFile(new URL('../src/strategy.mjs',import.meta.url),'utf8');assert.equal(RELEASE,'SAGITTARIUS-R63-GEMINI-ANOTHER-DIMENSION-LIVE-PARITY-2026-08-31');assert.equal(D.ATHENA_COMMANDER.role,'supreme_attack_selector_after_atomic_thunder_green_bolt');assert.equal(D.INFINITY_BREAK.authority,'PROFIT_EXIT');assert.equal(D.AURORA_EXECUTION.lossAuthority,'U-SG1');assert.ok(strategy.includes('maxGameMinutes'));assert.ok(engine.includes('atomicThunderBolt'));assert.ok(engine.includes('athenaCommander'));});
 
-test("R47 maximum game-time entry guard is wired through UI, EAC1, final Hunter clock revalidation and immutable entry snapshots",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const engine=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');const strategy=await readFile(new URL('../src/strategy.mjs',import.meta.url),'utf8');assert.equal(RELEASE,'SAGITTARIUS-R59-BIG-WAVE-CHOKE-RECOVERY-2026-08-29');assert.equal(D.ATHENA_COMMANDER.role,'supreme_economic_entry_commander_after_arayashiki');assert.equal(D.INFINITY_BREAK.authority,'PROFIT_EXIT');assert.equal(D.AURORA_EXECUTION.lossAuthority,'U-SG1');assert.ok(strategy.includes('maxGameMinutes'));assert.ok(engine.includes('atomicThunderBolt'));assert.ok(engine.includes('athenaCommander'));});
+test("R47 maximum game-time entry guard is wired through UI, EAC1, final Hunter clock revalidation and immutable entry snapshots",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const engine=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');const strategy=await readFile(new URL('../src/strategy.mjs',import.meta.url),'utf8');assert.equal(RELEASE,'SAGITTARIUS-R63-GEMINI-ANOTHER-DIMENSION-LIVE-PARITY-2026-08-31');assert.equal(D.ATHENA_COMMANDER.role,'supreme_attack_selector_after_atomic_thunder_green_bolt');assert.equal(D.INFINITY_BREAK.authority,'PROFIT_EXIT');assert.equal(D.AURORA_EXECUTION.lossAuthority,'U-SG1');assert.ok(strategy.includes('maxGameMinutes'));assert.ok(engine.includes('atomicThunderBolt'));assert.ok(engine.includes('athenaCommander'));});
 
 test('R55 active runtime set is seven Execution Attacks plus Pegasus/Dragon/Phoenix Cosmo',()=>{
-  assert.deepEqual([...ACTIVE_PORTFOLIO_CONCEPTS].sort(),['Athena Exclamation','Crash Recovery Hunter','Lightning Plasma','Momentum Hunter','Recovery Hunter','Scarlet Needle','Wave Surfer']);
+  assert.deepEqual([...ACTIVE_PORTFOLIO_CONCEPTS].sort(),['Athena Exclamation','Crash Recovery Hunter','Lightning Plasma','Momentum Hunter','Recovery Hunter','Sagittarius Justice Arrow','Scarlet Needle','Wave Surfer']);
   assert.deepEqual([...ACTIVE_FEEDER_CONCEPTS].sort(),['Dragon','Pegasus','Phoenix']);
-  assert.deepEqual(Object.keys(MODEL_ENABLE_KEYS).sort(),['Athena Exclamation','Crash Recovery Hunter','Dragon','Lightning Plasma','Momentum Hunter','Pegasus','Phoenix','Recovery Hunter','Scarlet Needle','Wave Surfer'].sort());
+  assert.deepEqual(Object.keys(MODEL_ENABLE_KEYS).sort(),['Another Dimension','Athena Exclamation','Crash Recovery Hunter','Dragon','Lightning Plasma','Momentum Hunter','Pegasus','Phoenix','Recovery Hunter','Sagittarius Justice Arrow','Scarlet Needle','Wave Surfer'].sort());
 });
 
 test('R49 canonical settings preserve retired-model removal and add fail-safe Athena Exclamation/Lightning Plasma controls',async()=>{const C=await import('../src/config.mjs');const keys=new Set(C.CANONICAL_NUMERIC_SETTINGS);for(const k of ['momentumStakeCents','momentumMinEntryCents','momentumMaxEntryCents','waveStakeCents','waveMinEntryCents','waveMaxEntryCents','recoveryStakeCents','recoveryMinEntryCents','recoveryMaxEntryCents','crashRecoveryStakeCents','crashRecoveryMinEntryCents','crashRecoveryMaxEntryCents','athenaExclamationStakeCents','athenaExclamationMinEntryCents','athenaExclamationMaxEntryCents','lightningPlasmaFieldStakeCents','lightningPlasmaMinEntryCents','lightningPlasmaMaxEntryCents','lightningPlasmaMaxStrikes','auroraDamageControlPercent'])assert.equal(keys.has(k),true,k);for(const k of ['momentumMinRiseCents','waveMinFeederFavorableMoveCents','recoveryMinReboundCents','crashRecoveryMinCrashCents','crashRecoveryMinReboundCents'])assert.equal(keys.has(k),false,k);});
 
-test('fresh install remains SIMULATION, LIVE restart remains disarmed, and Galactic Explosion/Lightning Plasma/Athena Exclamation default OFF',async()=>{const C=await import('../src/config.mjs');const s=C.freshInstallSettings();assert.equal(s.mode,'SIMULATION');assert.equal(s.liveArmed,false);assert.equal(s.galacticExplosionEnabled,false);assert.equal(s.athenaExclamationEnabled,false);const restarted=C.normalizeStartupExecutionMode({...s,mode:'LIVE',liveArmed:true},true).settings;assert.equal(restarted.liveArmed,false);assert.equal(restarted.mode,'LIVE');assert.equal(typeof s.lightningPlasmaEnabled,'boolean');});
+test('R63-MHF1 ultimate fresh install matches the locked 2026-08-31 operating profile while LIVE restart remains disarmed',async()=>{const C=await import('../src/config.mjs');const s=C.freshInstallSettings();const expected={mode:'SIMULATION',liveArmed:false,engineActive:true,pegasusEnabled:true,dragonEnabled:true,phoenixEnabled:true,momentumHunterEnabled:true,waveSurferEnabled:true,recoveryHunterEnabled:true,crashRecoveryHunterEnabled:true,scarletNeedleEnabled:true,geminiEnabled:true,justiceArrowEnabled:true,athenaExclamationEnabled:true,lightningPlasmaEnabled:true,galacticExplosionEnabled:true,maxPositions:20,maxEntriesPerTrade:1,hunterCooldownMinutes:75,minGameMinutes:30,maxGameMinutes:55,eventCooldownMinutes:1,maxSpreadCents:3,startingCapitalCents:1000000,simFillProbability:1,simFeeCents:2,recoveryTrackingHours:24,atomicThunderGreenTriggerCents:8,infinityBreakMinNetPerOriginalContractCents:1,infinityBreakRequiredConfirmations:2,infinityBreakMaximumBookAgeMs:1000,infinityBreakConfirmationWindowMs:3000,auroraDamageControlPercent:75,pegasusReferenceStakeCents:3000,pegasusMinPriceCents:20,pegasusMaxPriceCents:90,pegasusDropCents:10,dragonReferenceStakeCents:3000,dragonMinSignalPriceCents:20,dragonMaxSignalPriceCents:90,dragonMaxEpisode:2,phoenixReferenceStakeCents:3000,phoenixMinPriceCents:20,phoenixMaxPriceCents:90,geminiReferenceStakeCents:20000,geminiMinPriceCents:20,geminiMaxPriceCents:90,momentumStakeCents:20000,momentumMinEntryCents:75,momentumMaxEntryCents:89,waveStakeCents:20000,waveMinEntryCents:75,waveMaxEntryCents:89,recoveryStakeCents:20000,recoveryMinEntryCents:45,recoveryMaxEntryCents:89,crashRecoveryStakeCents:20000,crashRecoveryMinEntryCents:75,crashRecoveryMaxEntryCents:89,scarletNeedleStakeCents:20000,scarletNeedleMinEntryCents:70,scarletNeedleMaxEntryCents:89,scarletNeedleMaxRepeats:3,justiceArrowStakeCents:20000,justiceArrowMinEntryCents:70,justiceArrowMaxEntryCents:89,athenaExclamationStakeCents:40000,athenaExclamationMinEntryCents:75,athenaExclamationMaxEntryCents:89,lightningPlasmaFieldStakeCents:20000,lightningPlasmaMinEntryCents:75,lightningPlasmaMaxEntryCents:89,lightningPlasmaMaxStrikes:3};for(const [k,v] of Object.entries(expected))assert.deepEqual(s[k],v,k);const restarted=C.normalizeStartupExecutionMode({...s,mode:'LIVE',liveArmed:true},true).settings;assert.equal(restarted.liveArmed,false);assert.equal(restarted.mode,'LIVE');});
 
 test('Aurora 30-98c boundary matrix stays inside the 45% complete economic-loss covenant including SIM entry+exit fees',()=>{
   const expected=new Map([[30,9],[34,11],[35,11],[39,13],[40,14],[44,15],[45,16],[49,18],[50,18],[54,20],[55,20],[59,22],[60,23],[64,24],[65,25],[69,27],[70,27],[74,29],[75,29],[79,31],[80,32],[84,33],[85,34],[89,36],[90,36],[94,38],[95,38],[98,40]]);
@@ -105,7 +105,7 @@ test("Aurora telemetry labels avoided/forgone values COUNTERFACTUAL and preserve
 
 test("R45 dashboard order, names, Galactic control and one-click per-row Emergency Exit wiring are exact",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const html=await readFile(new URL('../public/index.html',import.meta.url),'utf8');const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');assert.ok(html.includes('ATOMIC THUNDER BOLT'));assert.ok(html.includes('ATHENA'));assert.ok(html.includes('INFINITY BREAK'));assert.ok(html.includes('AURORA EXECUTION'));assert.ok(html.includes('COSMO UNIVERSE'));assert.ok(app.includes('auroraDamageControlPercent'));assert.ok(app.includes('lightningPlasmaMaxStrikes'));for(const retired of ['momentumMinRiseCents','waveMinFeederFavorableMoveCents','crashRecoveryMinCrashCents','recoveryMinReboundCents'])assert.equal(app.includes(retired),false,retired);});
 
-test("HF4 long-list tables are closed by default while the four architecture tables and open Execution Attacks stay directly visible",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const strategy=await readFile(new URL('../src/strategy.mjs',import.meta.url),'utf8');assert.equal(RELEASE,'SAGITTARIUS-R59-BIG-WAVE-CHOKE-RECOVERY-2026-08-29');assert.equal(D.ATOMIC_THUNDER_BOLT.entryAuthority,false);assert.equal(D.ATHENA_COMMANDER.entryDecisionAuthority,true);assert.equal(D.INFINITY_BREAK.authority,'PROFIT_EXIT');assert.equal(D.AURORA_EXECUTION.lossAuthority,'U-SG1');assert.ok(strategy.includes('validateAthenaFireCommand'));});
+test("HF4 long-list tables are closed by default while the four architecture tables and open Execution Attacks stay directly visible",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const strategy=await readFile(new URL('../src/strategy.mjs',import.meta.url),'utf8');assert.equal(RELEASE,'SAGITTARIUS-R63-GEMINI-ANOTHER-DIMENSION-LIVE-PARITY-2026-08-31');assert.equal(D.ATOMIC_THUNDER_BOLT.entryAuthority,false);assert.equal(D.ATHENA_COMMANDER.entryDecisionAuthority,true);assert.equal(D.INFINITY_BREAK.authority,'PROFIT_EXIT');assert.equal(D.AURORA_EXECUTION.lossAuthority,'U-SG1');assert.ok(strategy.includes('validateAthenaFireCommand'));});
 
 test("R45 UI can always switch a LIVE-disarmed runtime back to SIMULATION",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const html=await readFile(new URL('../public/index.html',import.meta.url),'utf8');const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');assert.ok(html.includes('ATOMIC THUNDER BOLT'));assert.ok(html.includes('ATHENA'));assert.ok(html.includes('INFINITY BREAK'));assert.ok(html.includes('AURORA EXECUTION'));assert.ok(html.includes('COSMO UNIVERSE'));assert.ok(app.includes('auroraDamageControlPercent'));assert.ok(app.includes('lightningPlasmaMaxStrikes'));for(const retired of ['momentumMinRiseCents','waveMinFeederFavorableMoveCents','crashRecoveryMinCrashCents','recoveryMinReboundCents'])assert.equal(app.includes(retired),false,retired);});
 
@@ -236,21 +236,18 @@ test('HF3 rapid one-by-one topology toggles serialize persistence so PostgreSQL 
   const persisted=[];let completed=null,call=0;
   e.db={
     async saveSettings(v){const index=call++;await new Promise(r=>setTimeout(r,Math.max(1,45-index*5)));const snap=structuredClone(v);persisted.push(snap);completed=snap;},
+    async loadSettings(){return structuredClone(completed);},
     async audit(){},
   };
   const patches=[
     {pegasusEnabled:true},{dragonEnabled:true},{galacticExplosionEnabled:true},
     {waveSurferEnabled:true},{crashRecoveryHunterEnabled:true},{recoveryHunterEnabled:true},{momentumHunterEnabled:true},
   ];
-  // Deliberately do not await between clicks. Before HF3, the underlying DB
-  // writes could complete out of order even though memory had advanced.
   await Promise.all(patches.map(p=>e.patchSettings(p)));
   await new Promise(r=>setTimeout(r,0));
   assert.equal(persisted.length,7);
   for(const k of ['pegasusEnabled','dragonEnabled','galacticExplosionEnabled','waveSurferEnabled','crashRecoveryHunterEnabled','recoveryHunterEnabled','momentumHunterEnabled'])assert.equal(e.settings[k],true,`${k} missing in memory`);
   for(const k of ['pegasusEnabled','dragonEnabled','galacticExplosionEnabled','waveSurferEnabled','crashRecoveryHunterEnabled','recoveryHunterEnabled','momentumHunterEnabled'])assert.equal(completed[k],true,`${k} missing from final persisted snapshot`);
-  // Every completed write is monotonic: once a toggle becomes true, no later
-  // persisted snapshot may revert it because of pool scheduling.
   for(let i=1;i<persisted.length;i+=1)for(const k of Object.keys(persisted[i-1]))if(persisted[i-1][k]===true&&['pegasusEnabled','dragonEnabled','galacticExplosionEnabled','waveSurferEnabled','crashRecoveryHunterEnabled','recoveryHunterEnabled','momentumHunterEnabled'].includes(k))assert.equal(persisted[i][k],true,`${k} regressed at persisted write ${i}`);
 });
 
@@ -275,11 +272,11 @@ test('R59 RGM4 reports real process resources with a 500 MiB hard ceiling while 
 });
 
 
-test('R59 RGM4 begins non-authority compaction at 400 MiB and always protects live trade/market/Needle crash tickers',()=>{
+test('R61 RGM4 compaction protects live trade/market/Cosmo crash tickers without retired Scarlet arm state',()=>{
   const e=Object.create(SagittariusEngine.prototype);
   e.resourcePressureState='GREEN';e.resourceResearchDeferred=false;e.resourceGovernorTransitions=0;e.resourceGovernorActions=0;e.resourceGovernorLastActionAtMs=0;e.resourceGovernorLastResult=null;
-  e.protectedTickers=new Set(['PROTECTED']);e.recoveryPriorityTickers=new Set(['RECOVERY']);e.crashPriorityTickers=new Set(['CRASH']);e.feederPriorityTickers=new Set(['COSMO']);
-  e.market={wanted:new Set(['WANTED'])};e.athenaCommander={scarletNeedleTickers:()=>['NEEDLE']};
+  e.protectedTickers=new Set(['PROTECTED','SCARLET_OPEN']);e.recoveryPriorityTickers=new Set(['RECOVERY']);e.crashPriorityTickers=new Set(['CRASH']);e.feederPriorityTickers=new Set(['COSMO']);
+  e.market={wanted:new Set(['WANTED'])};
   let crashArgs=null,fsiLimit=null,restoreCalls=0;
   e.learning={compactForMemoryPressure:(args)=>{crashArgs=args;return{removed:7,after:200};}};
   e.feederSignalIntel={compactForMemoryPressure:(limit)=>{fsiLimit=limit;return{limit,removedSamples:10};},restoreNormalObservationLimit:()=>{restoreCalls++;return 96;}};
@@ -289,7 +286,8 @@ test('R59 RGM4 begins non-authority compaction at 400 MiB and always protects li
   assert.equal(out.pressureState,'COMPACT');assert.equal(e.resourceResearchDeferred,false);assert.equal(crashArgs.limit,512);assert.equal(fsiLimit,64);assert.equal(restoreCalls,0);
   out=e.applyResourceGovernance({memory:{rss:495*MiB}});
   assert.equal(out.pressureState,'HARD_RESEARCH_SHED');assert.equal(e.resourceResearchDeferred,true);assert.equal(crashArgs.limit,256);assert.equal(fsiLimit,64);
-  for(const ticker of ['PROTECTED','RECOVERY','CRASH','COSMO','WANTED','NEEDLE'])assert.equal(crashArgs.protectedTickers.has(ticker),true,ticker);
+  for(const ticker of ['PROTECTED','SCARLET_OPEN','RECOVERY','CRASH','COSMO','WANTED'])assert.equal(crashArgs.protectedTickers.has(ticker),true,ticker);
+  assert.equal(crashArgs.protectedTickers.has('NEEDLE'),false,'retired Scarlet arm state must not create a memory-retention authority');
   assert.equal(e.stateSnapshotCache,null);assert.equal(e.stateSnapshotAtMs,0);
   out=e.applyResourceGovernance({memory:{rss:350*MiB}});
   assert.equal(out.pressureState,'GREEN');assert.equal(e.resourceResearchDeferred,false);assert.equal(crashArgs.limit,768);assert.equal(fsiLimit,96);assert.equal(restoreCalls,1);
@@ -311,7 +309,7 @@ test('R54 RGM3 defers post-exit counterfactual research under pressure but force
 
 
 test('R58 EAC2 preserves deterministic base clock waits before the entry queue',()=>{
-  assert.equal(ENTRY_ADMISSION_CONTROL.version,'EAC2');
+  assert.equal(ENTRY_ADMISSION_CONTROL.version,'EAC3');
   const now=2_000_000_000_000,min=77;
   const confirmed=(start)=>({eventTicker:'EV',gameStartTimeMs:start,gameClockState:{version:'GCA2',eventTicker:'EV',phase:'CONFIRMED',confirmed:true,startTimeMs:start,entryAuthorized:false}});
   let d=entryAdmissionDecision({quote:confirmed(now-20*60_000),mode:'SIMULATION',minGameMinutes:min,now});
@@ -336,7 +334,7 @@ test('R58 EAC2 preserves deterministic base clock waits before the entry queue',
 test('HF7 EAC1 throttles unknown clock probes per event while never consuming the two entry workers for known under-age events',()=>{
   const now=Date.now();
   const e=Object.create(SagittariusEngine.prototype);
-  e.settings={mode:'SIMULATION',minGameMinutes:77,maxGameMinutes:90};e.entryAdmissionProbeAt=new Map();e.entryAdmissionStats={version:'EAC2',allowed:0,blockedBeforeQueue:0,probeAllowed:0,probeCoalesced:0,byReason:{}};
+  e.settings={mode:'SIMULATION',minGameMinutes:77,maxGameMinutes:90};e.entryAdmissionProbeAt=new Map();e.entryAdmissionStats={version:'EAC3',allowed:0,blockedBeforeQueue:0,probeAllowed:0,probeCoalesced:0,byReason:{}};
   let q={ticker:'T1',eventTicker:'EV',gameClockState:{version:'GCA2',eventTicker:'EV',phase:'UNKNOWN'}};
   e.market={getQuote:()=>q};
   assert.equal(e.shouldQueueInitialExposure('T1',{allowProbe:true}),true);
@@ -351,7 +349,7 @@ test('HF7 EAC1 quote-flood admission keeps predictable waits out of execution wo
   const now=Date.now();
   const e=Object.create(SagittariusEngine.prototype);
   e.running=true;e.settings={mode:'SIMULATION',minGameMinutes:77,maxGameMinutes:90,momentumHunterEnabled:true,waveSurferEnabled:true,crashRecoveryHunterEnabled:true};
-  e.entryAdmissionProbeAt=new Map();e.entryAdmissionStats={version:'EAC2',allowed:0,blockedBeforeQueue:0,probeAllowed:0,probeCoalesced:0,byReason:{}};
+  e.entryAdmissionProbeAt=new Map();e.entryAdmissionStats={version:'EAC3',allowed:0,blockedBeforeQueue:0,probeAllowed:0,probeCoalesced:0,byReason:{}};
   e.entryEvaluationQueue=new CoalescingWorkQueue({maxConcurrency:2});e.feederHunterEvaluationTimers=new Map();e.feederPriorityTickers=new Set(['T']);e.entryExecutionGate=()=>({allowed:true});
   let q={ticker:'T',eventTicker:'EV',gameStartTimeMs:now-20*60_000,gameClockState:{version:'GCA2',eventTicker:'EV',phase:'CONFIRMED',confirmed:true,startTimeMs:now-20*60_000,entryAuthorized:true,evidenceObservedAtMs:now}};
   e.market={getQuote:()=>q};e.strategy={};
@@ -365,13 +363,8 @@ test('HF7 EAC1 quote-flood admission keeps predictable waits out of execution wo
 
 test('HF7 EAC1 full-scan admission preserves eligible markets and removes predictable 77-minute waits before StrategyEngine evaluation',()=>{
   const now=Date.now();
-  const e=Object.create(SagittariusEngine.prototype);e.settings={mode:'SIMULATION',minGameMinutes:77,maxGameMinutes:90};e.entryAdmissionProbeAt=new Map();e.entryAdmissionStats={version:'EAC2',allowed:0,blockedBeforeQueue:0,probeAllowed:0,probeCoalesced:0,byReason:{}};
+  const e=Object.create(SagittariusEngine.prototype);e.settings={mode:'SIMULATION',minGameMinutes:77,maxGameMinutes:90};e.entryAdmissionProbeAt=new Map();e.entryAdmissionStats={version:'EAC3',allowed:0,blockedBeforeQueue:0,probeAllowed:0,probeCoalesced:0,byReason:{}};
   const early={ticker:'EARLY',eventTicker:'E1',gameStartTimeMs:now-30*60_000,gameClockState:{version:'GCA2',eventTicker:'E1',phase:'CONFIRMED',confirmed:true,startTimeMs:now-30*60_000,entryAuthorized:true,evidenceObservedAtMs:now}};
-  // Keep this integration fixture clearly inside the configured window. The
-  // exact inclusive 90:00 boundary is covered above with an injected fixed
-  // clock; using Date.now() at the exact boundary here creates a race where a
-  // few milliseconds of test/runtime work legitimately moves the event past
-  // the maximum before admittedInitialExposureMap evaluates it.
   const ready={ticker:'READY',eventTicker:'E2',gameStartTimeMs:now-80*60_000,gameClockState:{version:'GCA2',eventTicker:'E2',phase:'CONFIRMED',confirmed:true,startTimeMs:now-80*60_000,entryAuthorized:true,evidenceObservedAtMs:now}};
   const unknown={ticker:'UNKNOWN',eventTicker:'E3',gameClockState:{phase:'UNKNOWN'}};
   const tooLate={ticker:'TOOLATE',eventTicker:'E4',gameStartTimeMs:now-91*60_000,gameClockState:{version:'GCA2',eventTicker:'E4',phase:'CONFIRMED',confirmed:true,startTimeMs:now-91*60_000,entryAuthorized:true,evidenceObservedAtMs:now}};
@@ -380,40 +373,32 @@ test('HF7 EAC1 full-scan admission preserves eligible markets and removes predic
   assert.ok((e.entryAdmissionSnapshot().byReason.maximum_game_time_exceeded||0)>=1);
 });
 
-test('R58 EAC2 new PRE-BOLT requires the frozen 120s exam plus execution margin to fit strictly before max game time',()=>{
-  const now=2_100_000_000_000,start=now-87*60_000; // 3 minutes remain to the 90m ceiling
+test('R60 EAC3 COSMO_GREEN requires only the execution margin before the max game boundary',()=>{
+  const now=2_100_000_000_000,start=now-89*60_000;
   const quote={ticker:'T',eventTicker:'EV',gameStartTimeMs:start,gameClockState:{version:'GCA2',eventTicker:'EV',phase:'CONFIRMED',confirmed:true,startTimeMs:start,entryAuthorized:true,evidenceObservedAtMs:now,lastCheckedAtMs:now}};
-  let d=entryChainAdmissionDecision({quote,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now,stage:'NEW_PRE_BOLT',finalExamSeconds:120,executionMarginMs:5000});
-  assert.equal(d.action,'ALLOW');assert.equal(d.readyAtMs,now+125000);assert.equal(d.lastEligibleAtMs,start+90*60_000);
-  const exactBoundaryNow=start+90*60_000-125000;
-  const exact={...quote,gameClockState:{...quote.gameClockState,evidenceObservedAtMs:exactBoundaryNow,lastCheckedAtMs:exactBoundaryNow}};
-  d=entryChainAdmissionDecision({quote:exact,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now:exactBoundaryNow,stage:'NEW_PRE_BOLT',finalExamSeconds:120,executionMarginMs:5000});
-  assert.equal(d.action,'BLOCK');assert.equal(d.reason,'prebolt_time_infeasible','ready time equal to max boundary is not safely executable');
-  const minute89=start+89*60_000;
-  const q89={...quote,gameClockState:{...quote.gameClockState,evidenceObservedAtMs:minute89,lastCheckedAtMs:minute89}};
-  d=entryChainAdmissionDecision({quote:q89,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now:minute89,stage:'NEW_PRE_BOLT',finalExamSeconds:120,executionMarginMs:5000});
-  assert.equal(d.action,'BLOCK');assert.equal(d.reason,'prebolt_time_infeasible');
+  let d=entryChainAdmissionDecision({quote,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now,stage:'ATOMIC_GREEN',executionMarginMs:5000});
+  assert.equal(d.action,'ALLOW');assert.equal(d.readyAtMs,now+5000);assert.equal(d.immediateGreenChain,true);
+  const boundary=start+90*60_000-5000;
+  const exact={...quote,gameClockState:{...quote.gameClockState,evidenceObservedAtMs:boundary,lastCheckedAtMs:boundary}};
+  d=entryChainAdmissionDecision({quote:exact,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now:boundary,stage:'ATOMIC_GREEN',executionMarginMs:5000});
+  assert.equal(d.action,'BLOCK');assert.equal(d.reason,'execution_window_infeasible');
 });
 
-test('R58 EAC2 active PRE-BOLT uses its frozen creation schedule instead of restarting the full exam from now',()=>{
-  const now=2_200_000_000_000,start=now-89*60_000,preStarted=now-115000;
-  const quote={ticker:'T',eventTicker:'EV',gameClockState:{version:'GCA2',eventTicker:'EV',phase:'CONFIRMED',confirmed:true,startTimeMs:start,entryAuthorized:false,evidenceObservedAtMs:now-30000}};
-  const d=entryChainAdmissionDecision({quote,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now,stage:'ACTIVE_PRE_BOLT',preBoltStartedAtMs:preStarted,preBoltFinalExamMs:120000,executionMarginMs:5000});
-  assert.equal(d.action,'ALLOW');assert.equal(d.readyAtMs,now+10000);assert.equal(d.preBoltFeasible,true);
+test('R60 EAC3 has no active PRE-BOLT schedule and never adds a strategic wait',()=>{
+  const now=2_200_000_000_000,start=now-89*60_000;
+  const quote={ticker:'T',eventTicker:'EV',gameClockState:{version:'GCA2',eventTicker:'EV',phase:'CONFIRMED',confirmed:true,startTimeMs:start,entryAuthorized:true,evidenceObservedAtMs:now,lastCheckedAtMs:now}};
+  const d=entryChainAdmissionDecision({quote,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now,stage:'ACTIVE_PRE_BOLT',preBoltStartedAtMs:now-115000,preBoltFinalExamMs:120000,executionMarginMs:5000});
+  assert.equal(d.action,'ALLOW');assert.equal(d.stage,'ATOMIC_GREEN');assert.equal(d.readyAtMs,now+5000);
 });
 
-test('R58 EAC2 post-ATB2 admission requires fresh GCA2 authorization and only the execution margin',()=>{
+test('R60 EAC3 POST_BOLT admission re-proves fresh GCA2 and requires only execution margin',()=>{
   const now=2_300_000_000_000,start=now-89*60_000;
   const stale={ticker:'T',eventTicker:'EV',gameClockState:{version:'GCA2',eventTicker:'EV',phase:'CONFIRMED',confirmed:true,startTimeMs:start,entryAuthorized:true,evidenceObservedAtMs:now-20000}};
-  let d=entryChainAdmissionDecision({quote:stale,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now,stage:'POST_ATB2',executionMarginMs:5000});
-  assert.equal(d.action,'PROBE');assert.equal(d.reason,'post_atb2_clock_authorization_refresh_required');
+  let d=entryChainAdmissionDecision({quote:stale,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now,stage:'POST_BOLT',executionMarginMs:5000});
+  assert.equal(d.action,'PROBE');assert.equal(d.reason,'post_bolt_clock_authorization_refresh_required');
   const fresh={...stale,gameClockState:{...stale.gameClockState,evidenceObservedAtMs:now,lastCheckedAtMs:now}};
-  d=entryChainAdmissionDecision({quote:fresh,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now,stage:'POST_ATB2',executionMarginMs:5000});
+  d=entryChainAdmissionDecision({quote:fresh,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now,stage:'POST_BOLT',executionMarginMs:5000});
   assert.equal(d.action,'ALLOW');assert.equal(d.readyAtMs,now+5000);
-  const nearEnd=start+90*60_000-5000;
-  const boundary={...fresh,gameClockState:{...fresh.gameClockState,evidenceObservedAtMs:nearEnd,lastCheckedAtMs:nearEnd}};
-  d=entryChainAdmissionDecision({quote:boundary,mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,now:nearEnd,stage:'POST_ATB2',executionMarginMs:5000});
-  assert.equal(d.action,'BLOCK');assert.equal(d.reason,'execution_window_infeasible');
 });
 
 test('R58 quote-event Athena route performs EAC2 admission before queuing expensive opportunity evaluation',async()=>{
@@ -425,46 +410,47 @@ test('R58 quote-event Athena route performs EAC2 admission before queuing expens
   assert.ok(block.indexOf('shouldQueueInitialExposure(ticker,{allowProbe:true})')<block.indexOf('evaluateNewGenerationOpportunities'));
 });
 
-test('R58 centralized opportunity evaluation rechecks POST_ATB2 clock before A8/Athena and applies event cooldown before Athena FIRE',async()=>{
+test('R60 centralized opportunity evaluation rechecks POST_BOLT clock and event cooldown before direct Athena FIRE',async()=>{
   const src=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');
   const start=src.indexOf('async evaluateNewGenerationOpportunities');
   const block=src.slice(start,src.indexOf('noteEntryAdmission(',start));
-  const post=block.indexOf("lane:'POST_ATB2'");
+  const post=block.indexOf("lane:'POST_BOLT'");
   const eventAdmission=block.indexOf('hunterEventAdmissionState(q)',post);
   const decide=block.indexOf('athenaCommander.decide(bolt,commandContext)',eventAdmission);
   assert.ok(post>=0&&eventAdmission>post&&decide>eventAdmission);
-  assert.ok(block.slice(eventAdmission,decide).includes('post_atb2_cooldown_blocked'));
+  assert.ok(block.slice(eventAdmission,decide).includes('post_bolt_cooldown_blocked'));
+  assert.equal(block.includes('A8_CERTIFIED'),false);
 });
 
-test('R58 minute-89 candidate is rejected before DB fanout, ATB2, A8 or Athena work',async()=>{
-  const now=Date.now(),start=now-89*60_000,q={ticker:'LATE',eventTicker:'LATE',sport:'Tennis',yesBid:55,yesAsk:56,updatedAtMs:now,quoteAtMs:now,gameClockState:{version:'GCA2',eventTicker:'LATE',phase:'CONFIRMED',confirmed:true,startTimeMs:start,entryAuthorized:true,evidenceObservedAtMs:now,lastCheckedAtMs:now}};
+test('R60 candidate with less than execution margin remaining is rejected before DB fanout or Atomic Thunder work',async()=>{
+  const now=Date.now(),start=now-(90*60_000-4_000),q={ticker:'LATE',eventTicker:'LATE',sport:'Tennis',yesBid:55,yesAsk:56,updatedAtMs:now,quoteAtMs:now,gameClockState:{version:'GCA2',eventTicker:'LATE',phase:'CONFIRMED',confirmed:true,startTimeMs:start,entryAuthorized:true,evidenceObservedAtMs:now,lastCheckedAtMs:now}};
   const e=Object.create(SagittariusEngine.prototype);let dbReads=0,detects=0,decisions=0;
-  e.settings={systemName:'S',mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,atomicThunderFinalPatternExamSeconds:120,lightningPlasmaMaxStrikes:3,lightningPlasmaFieldStakeCents:20000,recoveryTrackingHours:24};
-  e.entryExecutionGate=()=>({allowed:true});e.atomicThunderBolt={preBolts:new Map(),activeByTicker:new Map(),async detect(){detects++;return null;}};e.athenaCommander={scarletNeedleArms:new Map(),async decide(){decisions++;return{decision:'REJECT'};}};
+  e.settings={systemName:'S',mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,atomicThunderGreenTriggerCents:1,lightningPlasmaMaxStrikes:3,lightningPlasmaFieldStakeCents:20000,recoveryTrackingHours:24};
+  e.entryExecutionGate=()=>({allowed:true});e.atomicThunderBolt={activeByTicker:new Map(),async detect(){detects++;return null;}};e.athenaCommander={scarletNeedleArms:new Map(),async decide(){decisions++;return{decision:'REJECT'};}};
   e.strategy={async recoveryObservationsBySource(){return new Map();}};e.db={async openEntries(){dbReads++;return[];},async recoverySourceEntries(){dbReads++;return[];},async audit(){}};e.market={getHistory(){return[];}};e.learning=null;
   const out=await e.evaluateNewGenerationOpportunities(new Map([['LATE',q]]));
   assert.deepEqual(out,[]);assert.equal(dbReads,0);assert.equal(detects,0);assert.equal(decisions,0);
 });
 
-test('R58 a Bolt that loses fresh Game Clock authorization after ATB2 never reaches A8/Athena',async()=>{
+test('R60 a Bolt that loses fresh Game Clock authorization never reaches Athena',async()=>{
   const now=Date.now(),q={ticker:'T',eventTicker:'T',sport:'Tennis',yesBid:55,yesAsk:56,updatedAtMs:now,quoteAtMs:now,gameClockState:{version:'GCA2',eventTicker:'T',phase:'CONFIRMED',confirmed:true,startTimeMs:now-45*60_000,entryAuthorized:true,evidenceObservedAtMs:now,lastCheckedAtMs:now}};
   const e=Object.create(SagittariusEngine.prototype);let decisions=0,detects=0;
-  e.settings={systemName:'S',mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,atomicThunderFinalPatternExamSeconds:120,lightningPlasmaMaxStrikes:3,lightningPlasmaFieldStakeCents:20000,recoveryTrackingHours:24};e.entryExecutionGate=()=>({allowed:true});e.entryChainAdmissionForQuote=()=>({action:'ALLOW',reason:'test'});
-  e.resolveEntryChainAdmission=async(_q,{lane})=>lane==='POST_ATB2'?{action:'BLOCK',reason:'post_atb2_clock_authorization_refresh_required'}:{action:'ALLOW',reason:'test'};
-  const b={id:'B',ticker:'T',eventTicker:'T',expiresAtMs:now+5000,features:{eligibleAttacks:[{concept:'Wave Surfer'}]}};e.atomicThunderBolt={preBolts:new Map(),activeByTicker:new Map(),async detect(){detects++;return b;},noteDecision(){}};
+  e.settings={systemName:'S',mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,atomicThunderGreenTriggerCents:1,lightningPlasmaMaxStrikes:3,lightningPlasmaFieldStakeCents:20000,recoveryTrackingHours:24};e.entryExecutionGate=()=>({allowed:true});e.entryChainAdmissionForQuote=()=>({action:'ALLOW',reason:'test'});
+  e.resolveEntryChainAdmission=async(_q,{lane})=>lane==='POST_BOLT'?{action:'BLOCK',reason:'post_bolt_clock_authorization_refresh_required'}:{action:'ALLOW',reason:'test'};
+  const b={id:'B',ticker:'T',eventTicker:'T',expiresAtMs:now+5000,features:{eligibleAttacks:[{concept:'Wave Surfer'}]}};e.atomicThunderBolt={activeByTicker:new Map(),async detect(){detects++;return b;},noteDecision(){}};
   e.athenaCommander={scarletNeedleArms:new Map(),async decide(){decisions++;throw new Error('Athena must not run');}};e.strategy={recoverySourcesFromEntries(){return[];},async recoveryObservationsBySource(){return new Map();}};e.db={async openEntries(){return[];},async recoverySourceEntries(){return[];},async audit(){}};e.market={getHistory(){return[];}};e.learning=null;
   const out=await e.evaluateNewGenerationOpportunities(new Map([['T',q]]));assert.deepEqual(out,[]);assert.equal(detects,1);assert.equal(decisions,0);
 });
 
-test('R58 shared Hunter cooldown is resolved before Athena FIRE and cannot become a post-FIRE static veto',async()=>{
+test('R60 shared Hunter cooldown is resolved before Athena FIRE and remains a hard pre-FIRE topology rule',async()=>{
   const now=Date.now(),q={ticker:'T',eventTicker:'EV',sport:'Tennis',yesBid:55,yesAsk:56,updatedAtMs:now,quoteAtMs:now,gameClockState:{version:'GCA2',eventTicker:'EV',phase:'CONFIRMED',confirmed:true,startTimeMs:now-45*60_000,entryAuthorized:true,evidenceObservedAtMs:now,lastCheckedAtMs:now}};
   const e=Object.create(SagittariusEngine.prototype);let decisions=0;
-  e.settings={systemName:'S',mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,atomicThunderFinalPatternExamSeconds:120,lightningPlasmaMaxStrikes:3,lightningPlasmaFieldStakeCents:20000,recoveryTrackingHours:24};e.entryExecutionGate=()=>({allowed:true});e.entryChainAdmissionForQuote=()=>({action:'ALLOW',reason:'test'});e.resolveEntryChainAdmission=async()=>({action:'ALLOW',reason:'test'});
-  const b={id:'B',ticker:'T',eventTicker:'EV',expiresAtMs:now+5000,score:90,features:{eligibleAttacks:[{concept:'Wave Surfer',targetFeasible:true}]}};e.atomicThunderBolt={preBolts:new Map(),activeByTicker:new Map(),async detect(){return b;},noteDecision(){}};
+  e.settings={systemName:'S',mode:'SIMULATION',minGameMinutes:20,maxGameMinutes:90,atomicThunderGreenTriggerCents:1,lightningPlasmaMaxStrikes:3,lightningPlasmaFieldStakeCents:20000,recoveryTrackingHours:24};e.entryExecutionGate=()=>({allowed:true});e.entryChainAdmissionForQuote=()=>({action:'ALLOW',reason:'test'});e.resolveEntryChainAdmission=async()=>({action:'ALLOW',reason:'test'});
+  const b={id:'B',ticker:'T',eventTicker:'EV',expiresAtMs:now+5000,score:90,features:{eligibleAttacks:[{concept:'Wave Surfer',targetFeasible:true}]}};e.atomicThunderBolt={activeByTicker:new Map(),async detect(){return b;},noteDecision(){}};
   e.athenaCommander={scarletNeedleArms:new Map(),async decide(){decisions++;throw new Error('Athena must not run behind cooldown');}};
   e.strategy={recoverySourcesFromEntries(){return[];},async recoveryObservationsBySource(){return new Map();},async hunterEventAdmissionState(){return{eventTicker:'EV',activeEntries:0,maxEntriesPerTrade:3,eventCapBlocked:false,latestHunterEntryMs:now-1000,hunterCooldownMinutes:45,cooldownBlocked:true};}};
   e.db={audits:[],async openEntries(){return[];},async recoverySourceEntries(){return[];},async audit(level,event,data){this.audits.push({level,event,data});}};e.market={getHistory(){return[];}};e.learning=null;
-  const out=await e.evaluateNewGenerationOpportunities(new Map([['T',q]]));assert.deepEqual(out,[]);assert.equal(decisions,0);assert.ok(e.db.audits.some(x=>x.event==='post_atb2_cooldown_blocked'));
+  const out=await e.evaluateNewGenerationOpportunities(new Map([['T',q]]));assert.deepEqual(out,[]);assert.equal(decisions,0);assert.ok(e.db.audits.some(x=>x.event==='post_bolt_cooldown_blocked'));
 });
 
 test('R54 RGM3 compacts oversized hydrated FSI trajectories to a representative 96-sample working set and can pressure-compact to 64 without losing total observation aggregates',async()=>{

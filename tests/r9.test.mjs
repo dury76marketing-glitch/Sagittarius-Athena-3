@@ -57,7 +57,7 @@ function runtimeDb(initial = originalSettings()) {
 
 test("R45 Mega Wave retains Athena B1, Golden Eye GE1-R2, FSI1 and the R41 loss machinery under Aurora",async()=>{const {RELEASE,originalSettings,CANONICAL_NUMERIC_SETTINGS,CANONICAL_BOOLEAN_SETTINGS,sanitizeRuntimeSettings,normalizeStartupExecutionMode}=await import('../src/config.mjs');const D=await import('../src/doctrine.mjs');const {readFile,readdir,stat}=await import('node:fs/promises');const pg=await readFile(new URL('../src/profitGuard.mjs',import.meta.url),'utf8');assert.equal(D.INFINITY_BREAK.authority,'PROFIT_EXIT');assert.equal(D.AURORA_EXECUTION.lossAuthority,'U-SG1');assert.equal(D.AURORA_EXECUTION.defaultDamageControlPercent,45);assert.ok(pg.includes("'infinity_break'"));assert.ok(pg.includes("'atomic_thunder_cashout'"),'legacy Atomic history must remain compatible');assert.ok(pg.includes('auroraDamageControlPercent'));assert.equal(pg.includes('maximumPositionLifetimeMs'),false);});
 
-test('Shared/System Settings contains only the explicitly approved shared controls',async()=>{const {readFile}=await import('node:fs/promises');const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');for(const k of ['maxPositions','maxEntriesPerTrade','hunterCooldownMinutes','minGameMinutes','maxGameMinutes','eventCooldownMinutes','maxSpreadCents','startingCapitalCents','simFillProbability','simFeeCents','recoveryTrackingHours'])assert.ok(app.includes(`['${k}'`)||app.includes(`['${k}',`),k);for(const retired of ['momentumMinRiseCents','waveMinFeederFavorableMoveCents','crashRecoveryMinCrashCents'])assert.equal(app.includes(retired),false,retired);});
+test('Shared/System Settings contains only the explicitly approved shared controls',async()=>{const {readFile}=await import('node:fs/promises');const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');for(const k of ['maxPositions','maxEntriesPerTrade','hunterCooldownMinutes','minGameMinutes','maxGameMinutes','eventCooldownMinutes','maxSpreadCents','startingCapitalCents','simFeeCents','recoveryTrackingHours'])assert.ok(app.includes(`['${k}'`)||app.includes(`['${k}',`),k);for(const retired of ['momentumMinRiseCents','waveMinFeederFavorableMoveCents','crashRecoveryMinCrashCents','simFillProbability'])assert.equal(app.includes(retired),false,retired);});
 
 test('every active Execution Attack and Cosmo feeder owns its editable fields while static stops and retired concepts are absent',async()=>{const {readFile}=await import('node:fs/promises');const app=await readFile(new URL('../public/app.js',import.meta.url),'utf8');for(const k of ['momentumStakeCents','momentumMinEntryCents','momentumMaxEntryCents','waveStakeCents','recoveryStakeCents','crashRecoveryStakeCents','athenaExclamationStakeCents','lightningPlasmaFieldStakeCents','lightningPlasmaMaxStrikes','pegasusReferenceStakeCents','dragonReferenceStakeCents'])assert.ok(app.includes(k),k);for(const retired of ['waveStopLossCents','momentumMinRiseCents','recoveryMinReboundCents','crashRecoveryMinCrashCents'])assert.equal(app.includes(retired),false,retired);});
 
@@ -213,7 +213,7 @@ test('RH1 engine keeps stopped-source tickers in the required tracker set and ma
   assert.deepEqual(stored,[{ticker,phase:'recovery'}]);
 });
 
-test('R45 entry-chain ordering gives Recovery first claim, builds Cosmo signals, then CRH and feeder-driven Attacks',async()=>{const D=await import('../src/doctrine.mjs');const C=await import('../src/config.mjs');assert.equal(C.RELEASE,'SAGITTARIUS-R59-BIG-WAVE-CHOKE-RECOVERY-2026-08-29');assert.equal(D.ATOMIC_THUNDER_BOLT.entryAuthority,false);assert.equal(D.ATHENA_COMMANDER.entryDecisionAuthority,true);assert.equal(D.ATHENA_COMMANDER.attackSelectionAuthority,true);assert.equal(D.ATHENA_COMMANDER.attackStrategicRevalidationAllowed,false);const {readFile}=await import('node:fs/promises');const engine=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');assert.ok(engine.includes('evaluateNewGenerationOpportunities'));for(const call of ['strategy.evaluateMomentumAndWave(','strategy.evaluateRecovery(','strategy.evaluateCrashRecovery(','strategy.evaluateLightningPlasma('])assert.equal(engine.includes(call),false,call);});
+test('R45 entry-chain ordering gives Recovery first claim, builds Cosmo signals, then CRH and feeder-driven Attacks',async()=>{const D=await import('../src/doctrine.mjs');const C=await import('../src/config.mjs');assert.equal(C.RELEASE,'SAGITTARIUS-R63-GEMINI-ANOTHER-DIMENSION-LIVE-PARITY-2026-08-31');assert.equal(D.ATOMIC_THUNDER_BOLT.entryAuthority,false);assert.equal(D.ATHENA_COMMANDER.entryDecisionAuthority,true);assert.equal(D.ATHENA_COMMANDER.attackSelectionAuthority,true);assert.equal(D.ATHENA_COMMANDER.attackStrategicRevalidationAllowed,false);const {readFile}=await import('node:fs/promises');const engine=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');assert.ok(engine.includes('evaluateNewGenerationOpportunities'));for(const call of ['strategy.evaluateMomentumAndWave(','strategy.evaluateRecovery(','strategy.evaluateCrashRecovery(','strategy.evaluateLightningPlasma('])assert.equal(engine.includes(call),false,call);});
 
 test('R45 diagnostics expose GCA2, Galactic Explosion lock scope, Aurora, U-SG1/SLW1 and profit authority invariants',async()=>{const {readFile}=await import('node:fs/promises');const D=await import('../src/doctrine.mjs');const engine=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');assert.equal(D.AURORA_EXECUTION.lossAuthority,'U-SG1');assert.equal(D.INFINITY_BREAK.authority,'PROFIT_EXIT');assert.equal(D.GALACTIC_EXPLOSION.enabledLockScope,'exact_ticker_plus_attack_identity');for(const k of ['auroraDamageControlPercent','infinityBreak','atomicThunderBolt','athena'])assert.ok(engine.includes(k),k);});
 
@@ -325,7 +325,7 @@ test('the shared in-game guard applies centrally to every real Hunter concept',a
   }
 });
 
-test('feeders remain free to create reference signals before Minimum Minutes In-Game',async()=>{const D=await import('../src/doctrine.mjs');const C=await import('../src/config.mjs');assert.equal(C.RELEASE,'SAGITTARIUS-R59-BIG-WAVE-CHOKE-RECOVERY-2026-08-29');assert.equal(D.ATOMIC_THUNDER_BOLT.entryAuthority,false);assert.equal(D.ATHENA_COMMANDER.entryDecisionAuthority,true);assert.equal(D.ATHENA_COMMANDER.attackSelectionAuthority,true);assert.equal(D.ATHENA_COMMANDER.attackStrategicRevalidationAllowed,false);const {readFile}=await import('node:fs/promises');const engine=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');assert.ok(engine.includes('evaluateNewGenerationOpportunities'));for(const call of ['strategy.evaluateMomentumAndWave(','strategy.evaluateRecovery(','strategy.evaluateCrashRecovery(','strategy.evaluateLightningPlasma('])assert.equal(engine.includes(call),false,call);});
+test('feeders remain free to create reference signals before Minimum Minutes In-Game',async()=>{const D=await import('../src/doctrine.mjs');const C=await import('../src/config.mjs');assert.equal(C.RELEASE,'SAGITTARIUS-R63-GEMINI-ANOTHER-DIMENSION-LIVE-PARITY-2026-08-31');assert.equal(D.ATOMIC_THUNDER_BOLT.entryAuthority,false);assert.equal(D.ATHENA_COMMANDER.entryDecisionAuthority,true);assert.equal(D.ATHENA_COMMANDER.attackSelectionAuthority,true);assert.equal(D.ATHENA_COMMANDER.attackStrategicRevalidationAllowed,false);const {readFile}=await import('node:fs/promises');const engine=await readFile(new URL('../src/engine.mjs',import.meta.url),'utf8');assert.ok(engine.includes('evaluateNewGenerationOpportunities'));for(const call of ['strategy.evaluateMomentumAndWave(','strategy.evaluateRecovery(','strategy.evaluateCrashRecovery(','strategy.evaluateLightningPlasma('])assert.equal(engine.includes(call),false,call);});
 
 test('GCA1 live-data parser accepts only explicit game-state evidence and never treats generic active as live',()=>{
   assert.equal(classifyLiveData({details:{status:'in_progress'}}).classification,'live');
@@ -611,13 +611,12 @@ test('R17 preserves the shared in-game setting and persists tracker plus event-l
   await assert.rejects(()=>engine.patchSettings({maxGameMinutes:-1}),/non-negative integer/);
   await assert.rejects(()=>engine.patchSettings({maxGameMinutes:2.5}),/non-negative integer/);
   await assert.rejects(()=>engine.patchSettings({minGameMinutes:40,maxGameMinutes:39}),/greater than or equal to minGameMinutes/);
-  await engine.patchSettings({atomicThunderFirstPatternExamSeconds:25,atomicThunderFinalPatternExamSeconds:100});
-  const persistedAtb2=await db.loadSettings(originalSettings());
-  assert.equal(persistedAtb2.atomicThunderFirstPatternExamSeconds,25);
-  assert.equal(persistedAtb2.atomicThunderFinalPatternExamSeconds,100);
-  await assert.rejects(()=>engine.patchSettings({atomicThunderFirstPatternExamSeconds:120,atomicThunderFinalPatternExamSeconds:120}),/final pattern exam must be greater/);
-  await assert.rejects(()=>engine.patchSettings({atomicThunderFirstPatternExamSeconds:0}),/positive integer/);
-  await assert.rejects(()=>engine.patchSettings({atomicThunderFinalPatternExamSeconds:3601}),/cannot exceed 3600 seconds/);
+  await engine.patchSettings({atomicThunderGreenTriggerCents:2});
+  const persistedAtomic=await db.loadSettings(originalSettings());
+  assert.equal(persistedAtomic.atomicThunderGreenTriggerCents,2);
+  await assert.rejects(()=>engine.patchSettings({atomicThunderGreenTriggerCents:0}),/integer from 1 to 99/);
+  await assert.rejects(()=>engine.patchSettings({atomicThunderGreenTriggerCents:2.5}),/integer/);
+  await assert.rejects(()=>engine.patchSettings({atomicThunderFirstPatternExamSeconds:30}),/Unknown or retired setting/);
   const dbSource=await readFile(resolve(root,'src/db.mjs'),'utf8');
   assert.ok(dbSource.includes('game_start_time_ms=excluded.game_start_time_ms'));
   assert.ok(dbSource.includes('game_clock_state=excluded.game_clock_state'));
@@ -1064,4 +1063,42 @@ test('R28 GCA2 PBP plus fresh exact activity authorizes inside the official mile
   assert.equal(state.reason,'official_pbp_current_window_authorized');
   assert.equal(state.occurrenceConflict,true);
   assert.equal(isEntryAuthorizedGameClockState(state,event,now),true);
+});
+
+test('R61-HF1 Aurora 15 percent write is PostgreSQL-readback verified and survives a reload exactly',async()=>{
+  const db=runtimeDb(settings({auroraDamageControlPercent:7}));
+  db.audit=async()=>{};
+  const engine=Object.create(SagittariusEngine.prototype);
+  engine.settings=settings({auroraDamageControlPercent:7});
+  engine.db=db;
+  engine.settingsPersistence={version:'SETTINGS-PERSISTENCE-R1',lastVerifiedAtMs:0,lastKeys:[],lastValues:{},lastError:null};
+  engine.invalidateStateSnapshot=()=>{};
+  engine.requestScan=()=>{};
+  engine.feederPriorityTickers=new Set();engine.recoveryPriorityTickers=new Set();engine.crashPriorityTickers=new Set();
+  engine.refreshFeederPriorityTickers=async()=>engine.feederPriorityTickers;engine.refreshRecoveryPriorityTickers=async()=>engine.recoveryPriorityTickers;engine.refreshCrashPriorityTickers=()=>engine.crashPriorityTickers;
+  await engine.patchSettings({auroraDamageControlPercent:15});
+  const persisted=await db.loadSettings(originalSettings());
+  assert.equal(engine.settings.auroraDamageControlPercent,15);
+  assert.equal(persisted.auroraDamageControlPercent,15);
+  assert.equal(engine.settingsPersistence.lastError,null);
+  assert.deepEqual(engine.settingsPersistence.lastKeys,['auroraDamageControlPercent']);
+  assert.equal(engine.settingsPersistence.lastValues.auroraDamageControlPercent,15);
+  assert.ok(engine.settingsPersistence.lastVerifiedAtMs>0);
+});
+
+test('R61-HF1 settings write fails closed when database readback does not match and runtime does not falsely report 15 percent',async()=>{
+  const engine=Object.create(SagittariusEngine.prototype);
+  engine.settings=settings({auroraDamageControlPercent:7});
+  engine.settingsPersistence={version:'SETTINGS-PERSISTENCE-R1',lastVerifiedAtMs:0,lastKeys:[],lastValues:{},lastError:null};
+  engine.invalidateStateSnapshot=()=>{};
+  const audits=[];
+  engine.db={
+    async saveSettings(){},
+    async loadSettings(){return settings({auroraDamageControlPercent:7});},
+    async audit(level,event,data){audits.push({level,event,data});},
+  };
+  await assert.rejects(()=>engine.patchSettings({auroraDamageControlPercent:15}),/settings_persistence_verification_failed:auroraDamageControlPercent/);
+  assert.equal(engine.settings.auroraDamageControlPercent,7,'runtime must not claim an unverified 15% write');
+  assert.match(engine.settingsPersistence.lastError,/auroraDamageControlPercent/);
+  assert.ok(audits.some(x=>x.event==='settings_persistence_verification_failed'));
 });

@@ -607,18 +607,16 @@ export class Athena {
 // a visually strong pattern fit. No Attack quota is forced: diversity emerges
 // only when a different Saint has the stronger economic case.
 // ---------------------------------------------------------------------------
-import { ATHENA_COMMANDER, ARAYASHIKI, ATOMIC_THUNDER_BOLT, ATOMIC_THUNDER_PATTERN_GUARDIAN, SCARLET_NEEDLE, LIGHTNING_PLASMA, ATHENA_EXCLAMATION, EXECUTION_ATTACK_DISPLAY, PORTFOLIO_CONCEPTS, kalshiGeneralTakerFeeEstimateCents } from './doctrine.mjs';
+import { ATHENA_COMMANDER, ARAYASHIKI, ATOMIC_THUNDER_BOLT, ATOMIC_THUNDER_PATTERN_GUARDIAN, INFINITY_BREAK, SCARLET_NEEDLE, LIGHTNING_PLASMA, ATHENA_EXCLAMATION, EXECUTION_ATTACK_DISPLAY, PORTFOLIO_CONCEPTS } from './doctrine.mjs';
 import { sealAthenaFireCommand } from './authority.mjs';
-import { examineArayashikiSurvival } from './arayashiki.mjs';
 
 const COMMAND_ATTACKS=Object.freeze([
-  'Momentum Hunter','Wave Surfer','Crash Recovery Hunter','Scarlet Needle','Recovery Hunter','Lightning Plasma','Athena Exclamation',
+  'Momentum Hunter','Wave Surfer','Crash Recovery Hunter','Recovery Hunter','Lightning Plasma','Athena Exclamation',
 ]);
 const COMMAND_SETTING_MAP=Object.freeze({
   'Momentum Hunter':Object.freeze({enabled:'momentumHunterEnabled',stake:'momentumStakeCents',min:'momentumMinEntryCents',max:'momentumMaxEntryCents'}),
   'Wave Surfer':Object.freeze({enabled:'waveSurferEnabled',stake:'waveStakeCents',min:'waveMinEntryCents',max:'waveMaxEntryCents'}),
   'Crash Recovery Hunter':Object.freeze({enabled:'crashRecoveryHunterEnabled',stake:'crashRecoveryStakeCents',min:'crashRecoveryMinEntryCents',max:'crashRecoveryMaxEntryCents'}),
-  'Scarlet Needle':Object.freeze({enabled:'scarletNeedleEnabled',stake:'scarletNeedleStakeCents',min:'scarletNeedleMinEntryCents',max:'scarletNeedleMaxEntryCents'}),
   'Recovery Hunter':Object.freeze({enabled:'recoveryHunterEnabled',stake:'recoveryStakeCents',min:'recoveryMinEntryCents',max:'recoveryMaxEntryCents'}),
   'Lightning Plasma':Object.freeze({enabled:'lightningPlasmaEnabled',stake:'lightningPlasmaFieldStakeCents',min:'lightningPlasmaMinEntryCents',max:'lightningPlasmaMaxEntryCents'}),
   'Athena Exclamation':Object.freeze({enabled:'athenaExclamationEnabled',stake:'athenaExclamationStakeCents',min:'athenaExclamationMinEntryCents',max:'athenaExclamationMaxEntryCents'}),
@@ -802,11 +800,10 @@ function featureFit(concept,f={},context={}){
 
 export function rankAthenaAttacks(bolt,settings={},memory=null,context={}){
   const f=bolt?.features||{},eligible=new Map((f.eligibleAttacks||[]).map(x=>[String(x.concept),x])),rows=[];
-  const target=Math.max(0.01,commandFinite(settings.infinityBreakMinNetPerOriginalContractCents,5));
+  const target=Math.max(0.01,commandFinite(settings.infinityBreakMinNetPerOriginalContractCents,INFINITY_BREAK.defaultMinimumNetPerOriginalContractCents));
   const maturity=Math.max(1,commandFinite(ATHENA_COMMANDER.certifiedEconomicMaturityObservations,5));
   const partialMinimum=Math.max(1,commandFinite(ATHENA_COMMANDER.partialCertifiedEconomicMinimumObservations,3));
   for(const concept of COMMAND_ATTACKS){
-    if(concept==='Scarlet Needle')continue;
     const map=COMMAND_SETTING_MAP[concept],band=eligible.get(concept);if(!map||settings?.[map.enabled]!==true||!band)continue;
     if(band.targetFeasible===false)continue;
     if(concept==='Recovery Hunter'&&!context?.recoveryContext?.eligible)continue;
@@ -848,11 +845,11 @@ export function rankAthenaAttacks(bolt,settings={},memory=null,context={}){
     const legacyExpected=legacy?.expectedNetPerContractCents??0,legacyMature=legacyEvidence>=maturity,legacyQualified=!legacyMature||legacyExpected>0;
     rows.push({
       concept,displayName:EXECUTION_ATTACK_DISPLAY[concept]?.name||concept,score:Number(commandClamp(score).toFixed(2)),fitScore:Number(fit.toFixed(2)),liveScore:Number(liveScore.toFixed(2)),
-      economicAuthorityMode:authorityMode,economicMemoryAuthority:ATHENA_COMMANDER.economicMemoryAuthority,economicMemoryDecisionAuthority:false,memoryAssessment:certifiedMature?(certifiedQualified?'POSITIVE_EV':'NEGATIVE_EV'):(certifiedPartial?'PARTIAL_EVIDENCE':'INSUFFICIENT_EVIDENCE'),economicDecisionWeight:Number(economicWeight.toFixed(4)),economicScore:Number(economicScore.toFixed(2)),economicEvidence:certifiedEvidence,economicQualified:certifiedQualified,economicMature:certifiedMature,
+      economicAuthorityMode:authorityMode,economicDecisionWeight:Number(economicWeight.toFixed(4)),economicScore:Number(economicScore.toFixed(2)),economicEvidence:certifiedEvidence,economicQualified:certifiedQualified,economicMature:certifiedMature,
       certifiedEconomicEvidence:certifiedEvidence,certifiedEconomicQualified:certifiedQualified,certifiedEconomicMature:certifiedMature,certifiedEconomicScore:certified?.economicScore??null,certifiedExpectedNetPerOriginalContractCents:certifiedExpected==null?null:Number(certifiedExpected.toFixed(6)),certifiedTargetHitProbability:certified?.targetHitProbability==null?null:Number(certified.targetHitProbability.toFixed(6)),certifiedProfiles:certified?.profiles||[],
       legacyEconomicEvidence:legacyEvidence,legacyEconomicQualified:legacyQualified,legacyEconomicMature:legacyMature,legacyEconomicScore:legacy?.economicScore??null,legacyExpectedNetPerOriginalContractCents:Number(legacyExpected.toFixed(6)),legacyTargetHitProbability:legacy?.targetHitProbability==null?null:Number(legacy.targetHitProbability.toFixed(6)),legacyBreakEvenTargetHitProbability:legacy?.breakEvenTargetHitProbability==null?null:Number(legacy.breakEvenTargetHitProbability.toFixed(6)),legacyProfiles:legacy?.profiles||[],
-      // Compatibility aliases describe the certified-memory population while
-      // its live decision authority remains explicitly disabled.
+      // Compatibility aliases now describe the *authoritative* certified
+      // population rather than the legacy mixed population.
       expectedNetPerOriginalContractCents:certifiedExpected==null?null:Number(certifiedExpected.toFixed(6)),rawExpectedNetPerOriginalContractCents:certified?.rawExpectedNetPerContractCents==null?null:Number(certified.rawExpectedNetPerContractCents.toFixed(6)),targetHitProbability:certified?.targetHitProbability==null?null:Number(certified.targetHitProbability.toFixed(6)),breakEvenTargetHitProbability:certified?.breakEvenTargetHitProbability==null?null:Number(certified.breakEvenTargetHitProbability.toFixed(6)),averageFailureNetPerOriginalContractCents:certified?.avgFailureNetPerContractCents??null,averageNetPerOriginalContractCents:certified?.avgNetPerContractCents??null,averageReturnRatio:certified?.avgReturnRatio??null,averageMaeCents:certified?.avgMaeCents??null,
       historyScore:legacy?.economicScore??50,historyEvidence:legacy?.evidence||0,historyProfile:legacy?.key||null,historyProfiles:legacy?.profiles||[],
       targetNetPerOriginalContractCents:target,targetFeasibilityScore:Number(targetFeasibility.toFixed(2)),requiredTargetBidCents:commandMaybeFinite(band.requiredTargetBidCents),requiredGrossMoveCents:commandMaybeFinite(band.requiredGrossMoveCents),estimatedEntryFeePerContractCents:commandMaybeFinite(band.estimatedEntryFeePerContractCents),estimatedExitFeePerContractCents:commandMaybeFinite(band.estimatedExitFeePerContractCents),stakeCents:commandFinite(settings[map.stake],0),operatorMinEntryCents:commandFinite(settings[map.min],0),operatorMaxEntryCents:commandFinite(settings[map.max],100),
@@ -862,106 +859,71 @@ export function rankAthenaAttacks(bolt,settings={},memory=null,context={}){
 }
 
 function survivalConditionedEconomics({memory,best,bolt,certificate,settings}={}){
-  const target=Math.max(0.01,commandFinite(settings?.infinityBreakMinNetPerOriginalContractCents,5));
+  const target=Math.max(0.01,commandFinite(settings?.infinityBreakMinNetPerOriginalContractCents,INFINITY_BREAK.defaultMinimumNetPerOriginalContractCents));
   const certified=memoryEvidence(memory,best?.concept,bolt?.features||{},target,{certifiedOnly:true});
   const maturity=Math.max(1,commandFinite(ATHENA_COMMANDER.certifiedEconomicMaturityObservations,5));
   const certifiedEvidence=commandFinite(certified?.economicEvidence,0);
-  const expected=certified?.expectedNetPerContractCents==null?null:commandFinite(certified.expectedNetPerContractCents,0);
-  const memoryMature=certifiedEvidence>=maturity;
-  const memoryAssessment=!memoryMature?'INSUFFICIENT_EVIDENCE':expected>0?'POSITIVE_EV':'NEGATIVE_EV';
-  // R59 Athena Memory HF1: economic memory is an observer/ranking signal only. It never owns
-  // the live FIRE gate. Current A8 survival, target reachability and Bolt
-  // strength remain the live authorization inputs, regardless of whether the
-  // accumulated historical profile is positive or negative.
+  if(certifiedEvidence>=maturity){
+    const expected=commandFinite(certified?.expectedNetPerContractCents,0),qualified=expected>0;
+    return{mode:'ATB2_A8_CERTIFIED_MATURE',qualified,reason:qualified?'atb2_a8_certified_positive_expected_economic_value':'atb2_a8_certified_negative_expected_economic_value',evidence:certifiedEvidence,targetHitProbability:certified?.targetHitProbability??null,breakEvenTargetHitProbability:certified?.breakEvenTargetHitProbability??null,expectedNetPerOriginalContractCents:Number(expected.toFixed(6)),rawExpectedNetPerOriginalContractCents:certified?.rawExpectedNetPerContractCents??null,averageFailureNetPerOriginalContractCents:certified?.avgFailureNetPerContractCents??null,profiles:certified?.profiles||[]};
+  }
+  // Cold start means exactly that: the new ATB2+A8 population is not mature.
+  // Legacy mixed history remains visible as a prior, but it may neither raise
+  // A8's survival threshold nor veto a certified present-state candidate.
   const requiredSurvival=commandFinite(certificate?.requiredSurvivalScore,70);
+  // R59/A3-C1: before the clean ATB2+A8 cohort is mature there is no causal EV
+  // evidence that can justify a second hand-built price-path veto. ATB2 already
+  // owns dangerous history and A8 already certified the present state. Athena
+  // therefore requires only economic target reachability plus a valid Bolt;
+  // live fit remains a ranking signal, never a cold-start execution veto.
   const targetFloor=45,boltFloor=45;
-  const currentQualified=commandFinite(certificate?.survivalScore,0)>=requiredSurvival&&commandFinite(best?.targetFeasibilityScore,0)>=targetFloor&&commandFinite(bolt?.score,0)>=boltFloor;
-  const mode=memoryMature?'ATB2_A8_CERTIFIED_MATURE_SHADOW_MEMORY':'ATB2_A8_CERTIFIED_COLD_START';
-  let reason;
-  if(!currentQualified)reason='atb2_a8_current_economic_target_unready';
-  else if(memoryAssessment==='NEGATIVE_EV')reason='atb2_a8_certified_current_feasible_memory_negative_shadow';
-  else if(memoryAssessment==='POSITIVE_EV')reason='atb2_a8_certified_current_feasible_memory_positive_shadow';
-  else reason='atb2_a8_certified_cold_start_feasible';
-  return{mode,qualified:currentQualified,reason,evidence:certifiedEvidence,targetHitProbability:certified?.targetHitProbability??null,breakEvenTargetHitProbability:certified?.breakEvenTargetHitProbability??null,expectedNetPerOriginalContractCents:expected==null?null:Number(expected.toFixed(6)),rawExpectedNetPerOriginalContractCents:certified?.rawExpectedNetPerContractCents??null,averageFailureNetPerOriginalContractCents:certified?.avgFailureNetPerContractCents??null,profiles:certified?.profiles||[],requiredSurvivalScore:requiredSurvival,observedSurvivalScore:commandFinite(certificate?.survivalScore,0),targetFeasibilityFloor:targetFloor,boltScoreFloor:boltFloor,memoryAssessment,memoryMature,memoryDecisionAuthority:false,memoryAuthority:ATHENA_COMMANDER.economicMemoryAuthority};
+  const qualified=commandFinite(certificate?.survivalScore,0)>=requiredSurvival&&commandFinite(best?.targetFeasibilityScore,0)>=targetFloor&&commandFinite(bolt?.score,0)>=boltFloor;
+  return{mode:'ATB2_A8_CERTIFIED_COLD_START',qualified,reason:qualified?'atb2_a8_certified_cold_start_feasible':'atb2_a8_certified_cold_start_economic_target_unready',evidence:certifiedEvidence,targetHitProbability:null,breakEvenTargetHitProbability:null,expectedNetPerOriginalContractCents:null,rawExpectedNetPerOriginalContractCents:null,averageFailureNetPerOriginalContractCents:null,profiles:certified?.profiles||[],requiredSurvivalScore:requiredSurvival,observedSurvivalScore:commandFinite(certificate?.survivalScore,0),targetFeasibilityFloor:targetFloor,boltScoreFloor:boltFloor,legacyPrior:{mature:best?.legacyEconomicMature===true,qualified:best?.legacyEconomicQualified===true,expectedNetPerOriginalContractCents:best?.legacyExpectedNetPerOriginalContractCents??null,targetHitProbability:best?.legacyTargetHitProbability??null,breakEvenTargetHitProbability:best?.legacyBreakEvenTargetHitProbability??null}};
 }
 
-function scarletEconomicTarget({askCents=0,stakeCents=0,settings={}}={}){
-  const ask=Math.max(1,commandFinite(askCents,0)),stake=Math.max(1,commandFinite(stakeCents,0));
-  const target=Math.max(0.01,commandFinite(settings.infinityBreakMinNetPerOriginalContractCents,5));
-  const count=Math.max(1,Math.floor(stake/ask));
-  let entryFeePerContract=0,exitFeePerContract=0,targetBid=ask+target;
-  if(String(settings.mode||'SIMULATION').toUpperCase()==='LIVE'){
-    entryFeePerContract=kalshiGeneralTakerFeeEstimateCents({count,priceCents:ask})/count;
-    for(let i=0;i<3;i+=1){
-      const px=Math.max(1,Math.min(99,Math.ceil(targetBid)));
-      exitFeePerContract=kalshiGeneralTakerFeeEstimateCents({count,priceCents:px})/count;
-      targetBid=ask+target+entryFeePerContract+exitFeePerContract;
-    }
-  }else{
-    entryFeePerContract=Math.max(0,commandFinite(settings.simFeeCents,2));exitFeePerContract=entryFeePerContract;targetBid=ask+target+entryFeePerContract+exitFeePerContract;
-  }
-  const requiredTargetBidCents=Math.ceil(targetBid-1e-9);
-  return{version:'ATHENA-A3-ECONOMIC-TARGET-V1',netPerOriginalContractCents:target,requiredTargetBidCents,requiredGrossMoveCents:requiredTargetBidCents-ask,estimatedEntryFeePerContractCents:Number(entryFeePerContract.toFixed(6)),estimatedExitFeePerContractCents:Number(exitFeePerContract.toFixed(6)),targetFeasibilityScore:requiredTargetBidCents<=99?100:0,targetHitProbability:null,breakEvenTargetHitProbability:null,expectedNetPerOriginalContractCents:0,economicEvidence:0,economicQualified:requiredTargetBidCents<=99,targetFeasible:requiredTargetBidCents<=99};
-}
-function scarletArmFromEpisode(ep={}){
-  const sn=ep?.athenaDecision?.scarletNeedle;
-  if(!sn||sn.version!==SCARLET_NEEDLE.version||String(sn.status)!=='ARMED'||ep?.entryId)return null;
-  const reference=commandFinite(sn.signalReferenceCents,0),trigger=commandFinite(sn.triggerPriceCents,reference-SCARLET_NEEDLE.triggerDropCents);
-  if(!(reference>0)||!(trigger>0)||reference-trigger+1e-9<SCARLET_NEEDLE.triggerDropCents)return null;
-  return{id:String(ep.id),sourceBoltId:String(sn.sourceBoltId||''),sourceBoltFingerprint:sn.sourceBoltFingerprint||null,ticker:String(ep.ticker||sn.ticker||''),eventTicker:String(ep.eventTicker||sn.eventTicker||ep.ticker||''),sport:String(ep.sport||sn.sport||'Unknown'),armedAtMs:commandFinite(sn.armedAtMs,ep.boltAtMs),signalReferenceCents:reference,triggerPriceCents:trigger,triggerDropCents:SCARLET_NEEDLE.triggerDropCents,armedMinEntryCents:commandFinite(sn.armedMinEntryCents,0),armedMaxEntryCents:commandFinite(sn.armedMaxEntryCents,99),armedStakeCents:commandFinite(sn.armedStakeCents,0),sourceRelease:String(ep.sourceRelease||''),cohortId:String(ep.cohortId||''),boltSnapshot:ep.boltSnapshot&&typeof ep.boltSnapshot==='object'?structuredClone(ep.boltSnapshot):{},lastObservedAtMs:commandFinite(sn.lastObservedAtMs,ep.updatedAtMs),lastObservedAskCents:commandMaybeFinite(sn.lastObservedAskCents)};
-}
 
 export class AthenaCommander{
   constructor({db,systemName='SAGITTARIUS',sourceRelease='',getSettings=()=>({}),audit=async()=>{},legacyAthena=null}={}){
-    this.db=db;this.systemName=systemName;this.sourceRelease=sourceRelease;this.getSettings=getSettings;this.audit=audit;this.legacyAthena=legacyAthena;this.memory=compileAthenaAttackMemory();this.loadedAtMs=0;this.decisions=0;this.fire=0;this.watch=0;this.reject=0;this.expired=0;this.survivalCertified=0;this.survivalRejected=0;this.lastSurvivalCertificate=null;this.lastDecision=null;this.trainedEpisodeIds=new Set();this.knownEntryIds=new Set();this.knownProfitEpisodeIds=new Set();this.memoryRefreshPromise=null;this.scarletNeedleArms=new Map();this.scarletNeedleStats={armed:0,restored:0,triggered:0,executed:0,executionAborted:0,cancelled:0};this.scarletNeedleHydration={state:'IDLE',startedAtMs:0,completedAtMs:0,lastError:null};this.scarletNeedleHydrationPromise=null;
+    this.db=db;this.systemName=systemName;this.sourceRelease=sourceRelease;this.getSettings=getSettings;this.audit=audit;this.legacyAthena=legacyAthena;this.memory=compileAthenaAttackMemory();this.loadedAtMs=0;this.decisions=0;this.fire=0;this.watch=0;this.reject=0;this.expired=0;this.survivalCertified=0;this.survivalRejected=0;this.lastSurvivalCertificate=null;this.lastDecision=null;this.trainedEpisodeIds=new Set();this.knownEntryIds=new Set();this.knownProfitEpisodeIds=new Set();this.memoryRefreshPromise=null;this.memoryMutationVersion=0;this.memoryLoad={state:'IDLE',startedAtMs:0,completedAtMs:0,lastError:null,attempts:0,discardedStaleLoads:0};
   }
-  async init(){
+  async loadHistoricalMemory(){
     const entryReader=typeof this.db?.athenaEconomicEntries==='function'?this.db.athenaEconomicEntries.bind(this.db):this.db?.entries?.bind(this.db);
     const episodeReader=typeof this.db?.athenaEconomicOpportunityEpisodes==='function'?this.db.athenaEconomicOpportunityEpisodes.bind(this.db):this.db?.opportunityEpisodes?.bind(this.db);
     const profitReader=typeof this.db?.athenaEconomicProfitEpisodes==='function'?this.db.athenaEconomicProfitEpisodes.bind(this.db):this.db?.profitEpisodes?.bind(this.db);
     if(typeof entryReader!=='function'||typeof episodeReader!=='function')throw new Error('Athena C2 persistence readers are required');
-    const entries=await entryReader(this.systemName,{limit:20_000,includeArchived:true});
-    const episodes=await episodeReader(this.systemName,{limit:20_000,trackingComplete:true});
-    const profitEpisodes=typeof profitReader==='function'?await profitReader(this.systemName,{complete:null,limit:20_000}).catch(()=>[]):[];
-    this.memory=compileAthenaAttackMemory({entries,episodes,profitEpisodes});this.loadedAtMs=Date.now();
-    this.trainedEpisodeIds=new Set((episodes||[]).filter(x=>x?.trackingComplete&&x?.id).map(x=>String(x.id)));
-    this.knownEntryIds=new Set((entries||[]).filter(x=>x?.id).map(x=>String(x.id)));
-    this.knownProfitEpisodeIds=new Set((profitEpisodes||[]).filter(x=>x?.id).map(x=>String(x.id)));
-    // R54: no raw C2 training arrays are retained after compilation. Athena's
-    // compact economic profiles stay resident; PostgreSQL remains the durable
-    // warehouse for full history.
-    await this.audit('athena_c2_memory_initialized',{entryRows:entries.length,opportunityRows:episodes.length,profitEpisodeRows:profitEpisodes.length,profileCount:Object.keys(this.memory.profiles).length,certifiedProfileCount:Object.keys(this.memory.certifiedProfiles||{}).length,certifiedEntryRows:this.memory.certifiedEntryRows||0,certifiedOpportunityRows:this.memory.certifiedOpportunityRows||0,economicObjective:ATHENA_COMMANDER.economicObjective,economicMemoryAuthority:ATHENA_COMMANDER.economicMemoryAuthority,economicMemoryDecisionAuthority:false,rawTrainingRowsRetained:0,compactTrainingReaders:typeof this.db?.athenaEconomicEntries==='function',scarletNeedleArmed:this.scarletNeedleArms.size,scarletNeedleHydrationState:this.scarletNeedleHydration.state}).catch(()=>{});return this.memory;
+    const startedAtMs=Date.now(),mutationVersionAtStart=this.memoryMutationVersion;
+    this.memoryLoad={...this.memoryLoad,state:'LOADING',startedAtMs,completedAtMs:0,lastError:null,attempts:Number(this.memoryLoad?.attempts||0)+1};
+    try{
+      const entries=await entryReader(this.systemName,{limit:20_000,includeArchived:true});
+      const episodes=await episodeReader(this.systemName,{limit:20_000,trackingComplete:true});
+      const profitEpisodes=typeof profitReader==='function'?await profitReader(this.systemName,{complete:null,limit:20_000}).catch(()=>[]):[];
+      const compiled=compileAthenaAttackMemory({entries,episodes,profitEpisodes});
+      if(this.memoryMutationVersion!==mutationVersionAtStart){
+        this.memoryLoad={...this.memoryLoad,state:'STALE_DISCARDED',completedAtMs:Date.now(),lastError:null,discardedStaleLoads:Number(this.memoryLoad?.discardedStaleLoads||0)+1};
+        await this.audit('athena_c2_memory_load_stale_discarded',{mutationVersionAtStart,currentMutationVersion:this.memoryMutationVersion,entryRows:entries.length,opportunityRows:episodes.length,profitEpisodeRows:profitEpisodes.length,policy:'keep_live_ranking_memory_and_retry'}).catch(()=>{});
+        return this.memory;
+      }
+      this.memory=compiled;this.loadedAtMs=Date.now();
+      this.trainedEpisodeIds=new Set((episodes||[]).filter(x=>x?.trackingComplete&&x?.id).map(x=>String(x.id)));
+      this.knownEntryIds=new Set((entries||[]).filter(x=>x?.id).map(x=>String(x.id)));
+      this.knownProfitEpisodeIds=new Set((profitEpisodes||[]).filter(x=>x?.id).map(x=>String(x.id)));
+      this.memoryLoad={...this.memoryLoad,state:'READY',completedAtMs:Date.now(),lastError:null};
+      await this.audit('athena_c2_memory_initialized',{entryRows:entries.length,opportunityRows:episodes.length,profitEpisodeRows:profitEpisodes.length,profileCount:Object.keys(this.memory.profiles).length,certifiedProfileCount:Object.keys(this.memory.certifiedProfiles||{}).length,certifiedEntryRows:this.memory.certifiedEntryRows||0,certifiedOpportunityRows:this.memory.certifiedOpportunityRows||0,economicObjective:ATHENA_COMMANDER.economicObjective,rawTrainingRowsRetained:0,compactTrainingReaders:typeof this.db?.athenaEconomicEntries==='function',entryAuthorityBlockedUntilLoaded:false}).catch(()=>{});
+      return this.memory;
+    }catch(error){
+      this.memoryLoad={...this.memoryLoad,state:'FAILED',completedAtMs:Date.now(),lastError:String(error?.message||error)};
+      await this.audit('athena_c2_memory_initialization_failed',{message:String(error?.message||error),policy:'ranking_memory_optional_trading_continues_neutral_live_fit'},'warning').catch(()=>{});
+      throw error;
+    }
+  }
+  async init({background=false}={}){
+    if(background){void this.refreshLearning().catch(()=>{});return this.memory;}
+    return this.refreshLearning();
   }
   async refreshLearning(){
     if(this.memoryRefreshPromise)return this.memoryRefreshPromise;
-    const run=this.init();this.memoryRefreshPromise=run;
+    const run=this.loadHistoricalMemory();this.memoryRefreshPromise=run;
     try{return await run;}finally{if(this.memoryRefreshPromise===run)this.memoryRefreshPromise=null;}
-  }
-  async hydrateScarletNeedleArms({limit=2048}={}){
-    const settings=this.getSettings();
-    if(settings?.scarletNeedleEnabled!==true){this.scarletNeedleHydration={state:'DISABLED',startedAtMs:0,completedAtMs:Date.now(),lastError:null};return 0;}
-    if(this.scarletNeedleHydration?.state==='READY')return this.scarletNeedleArms.size;
-    if(this.scarletNeedleHydrationPromise)return this.scarletNeedleHydrationPromise;
-    const startedAtMs=Date.now();this.scarletNeedleHydration={state:'LOADING',startedAtMs,completedAtMs:0,lastError:null};
-    this.scarletNeedleHydrationPromise=(async()=>{
-      try{
-        if(typeof this.db?.opportunityEpisodes!=='function')throw new Error('Athena C2 opportunity reader is required');
-        // Use the existing bounded/indexed opportunity reader. Do not add a new
-        // unindexed JSON scan to PostgreSQL startup or the quote hot path.
-        const rows=await this.db.opportunityEpisodes(this.systemName,{limit:Math.max(1,Math.min(2048,Math.floor(Number(limit)||2048))),trackingComplete:false});
-        const restored=new Map();
-        for(const ep of rows||[]){if(ep?.attackSelected!=='Scarlet Needle')continue;const arm=scarletArmFromEpisode(ep);if(arm?.ticker&&!restored.has(arm.ticker))restored.set(arm.ticker,arm);}
-        // Preserve any newer local arm that may already exist; hydration is a
-        // restart recovery mechanism, never authority to overwrite live state.
-        for(const [ticker,arm] of this.scarletNeedleArms)if(!restored.has(ticker))restored.set(ticker,arm);
-        this.scarletNeedleArms=restored;this.scarletNeedleStats.restored=restored.size;
-        this.scarletNeedleHydration={state:'READY',startedAtMs,completedAtMs:Date.now(),lastError:null};
-        await this.audit('scarlet_needle_hydration_complete',{armed:restored.size,limit:Math.max(1,Math.min(2048,Math.floor(Number(limit)||2048)))}).catch(()=>{});
-        return restored.size;
-      }catch(error){this.scarletNeedleHydration={state:'FAILED',startedAtMs,completedAtMs:Date.now(),lastError:String(error?.message||error)};await this.audit('scarlet_needle_hydration_failed',{message:String(error?.message||error)},'warning').catch(()=>{});return 0;}
-      finally{this.scarletNeedleHydrationPromise=null;}
-    })();
-    return this.scarletNeedleHydrationPromise;
   }
   async learnEpisode(episode){
     const id=String(episode?.id||'');if(!id||episode?.trackingComplete!==true||this.trainedEpisodeIds.has(id))return this.memory;
@@ -977,162 +939,37 @@ export class AthenaCommander{
     const entryRows=Number(this.memory?.entryRows||0)+(newEntry?1:0);
     const profitEpisodeRows=Number(this.memory?.profitEpisodeRows||0)+(profitId&&!this.knownProfitEpisodeIds.has(profitId)?1:0);
     this.memory=finalizeAthenaAttackMemory({profiles,certifiedProfiles,entryRows,opportunityRows:Number(this.memory?.opportunityRows||0)+1,profitEpisodeRows,certifiedEntryRows:Number(this.memory?.certifiedEntryRows||0)+(certified&&newEntry?1:0),certifiedOpportunityRows:Number(this.memory?.certifiedOpportunityRows||0)+(certified?1:0),sourceReleases,cohortIds});
+    this.memoryMutationVersion+=1;
     this.trainedEpisodeIds.add(id);if(entryId)this.knownEntryIds.add(entryId);if(profitId)this.knownProfitEpisodeIds.add(profitId);
-    // Bound exact de-duplication metadata without retaining any heavy rows.
     while(this.trainedEpisodeIds.size>25_000)this.trainedEpisodeIds.delete(this.trainedEpisodeIds.values().next().value);
     while(this.knownEntryIds.size>25_000)this.knownEntryIds.delete(this.knownEntryIds.values().next().value);
     while(this.knownProfitEpisodeIds.size>25_000)this.knownProfitEpisodeIds.delete(this.knownProfitEpisodeIds.values().next().value);
     await this.audit('athena_c2_continuous_learning_updated',{opportunityId:id,outcomeLabel:episode.outcomeLabel,attackSelected:episode.attackSelected,profileCount:Object.keys(this.memory.profiles).length,rawTrainingRowsRetained:0,incremental:true}).catch(()=>{});return this.memory;
   }
-  scarletNeedleTickers(){return [...this.scarletNeedleArms.keys()];}
-  async armScarletNeedle(bolt,context={}){
-    const settings=this.getSettings();
-    if(settings?.scarletNeedleEnabled!==true||!bolt?.id||!bolt?.ticker)return null;
-    if(this.scarletNeedleHydration?.state!=='READY')await this.hydrateScarletNeedleArms();
-    if(this.scarletNeedleHydration?.state!=='READY')return null;
-    if((context?.openEntriesOnTicker||[]).some(e=>String(e?.conceptName)==='Scarlet Needle'&&['open','entry_pending','exit_pending','pending_recovery'].includes(String(e?.status||''))))return null;
-    const ticker=String(bolt.ticker),local=this.scarletNeedleArms.get(ticker);if(local)return local;
-    const band=(bolt?.features?.eligibleAttacks||[]).find(x=>String(x?.concept)==='Scarlet Needle'&&x?.delayedEntry===true);
-    if(!band)return null;
-    const reference=commandFinite(band.signalReferenceCents,commandFinite(bolt?.features?.askCents,0));
-    const trigger=reference-SCARLET_NEEDLE.triggerDropCents,min=commandFinite(settings.scarletNeedleMinEntryCents,0),max=commandFinite(settings.scarletNeedleMaxEntryCents,99);
-    if(!(reference>SCARLET_NEEDLE.triggerDropCents)||!(trigger>=min)||!(Math.min(trigger,max)>=min))return null;
-    let unlock=null;
-    try{
-      if(typeof this.db?.acquireHunterTickerLock==='function'){
-        unlock=await this.db.acquireHunterTickerLock(this.systemName,`scarlet-arm:${ticker}`);
-        if(!unlock)return null;
-      }
-      const id=`${bolt.id}:SCARLET_NEEDLE`;
-      // Cross-process duplicate proof is a primary-key lookup for this exact
-      // Bolt-derived arm. It is bounded and cannot degrade into a history scan.
-      if(typeof this.db?.opportunityEpisode==='function'){
-        const existing=await this.db.opportunityEpisode(id).catch(()=>null);const restored=scarletArmFromEpisode(existing||{});if(restored){this.scarletNeedleArms.set(ticker,restored);return restored;}
-      }
-      const now=Date.now();
-      const scarletNeedle={version:SCARLET_NEEDLE.version,policyRevision:SCARLET_NEEDLE.policyRevision,status:'ARMED',sourceBoltId:String(bolt.id),sourceBoltFingerprint:bolt.fingerprint||null,ticker,eventTicker:String(bolt.eventTicker||ticker),sport:String(bolt.sport||bolt?.features?.sport||'Unknown'),armedAtMs:now,signalReferenceCents:reference,triggerDropCents:SCARLET_NEEDLE.triggerDropCents,triggerPriceCents:trigger,armedStakeCents:commandFinite(settings.scarletNeedleStakeCents,0),armedMinEntryCents:min,armedMaxEntryCents:max,lastObservedAtMs:now,lastObservedAskCents:reference};
-      const decision={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision:'WATCH',reason:'scarlet_needle_armed',decidedAtMs:now,boltId:id,ticker,ranking:[],selectedAttack:'Scarlet Needle',selectedAttackDisplay:EXECUTION_ATTACK_DISPLAY['Scarlet Needle']?.name||'Scarlet Needle',fireCommand:null,strategicAuthority:true,durableFireRequired:true,durableFirePersisted:true,scarletNeedle};
-      if(typeof this.db?.upsertOpportunityEpisode!=='function')throw new Error('scarlet_needle_persistence_writer_missing');
-      await this.db.upsertOpportunityEpisode({id,systemName:this.systemName,sourceRelease:this.sourceRelease,cohortId:String(settings.resetTimestampMs||''),ticker,eventTicker:bolt.eventTicker||ticker,side:'YES',sport:bolt.sport||bolt?.features?.sport||'Unknown',boltAtMs:Number(bolt.detectedAtMs||now),boltSnapshot:{...structuredClone(bolt),scarletNeedleArm:structuredClone(scarletNeedle)},athenaDecision:decision,fireCommand:{},attackSelected:'Scarlet Needle',updatedAtMs:now});
-      const arm=scarletArmFromEpisode({id,systemName:this.systemName,sourceRelease:this.sourceRelease,cohortId:String(settings.resetTimestampMs||''),ticker,eventTicker:bolt.eventTicker||ticker,sport:bolt.sport||bolt?.features?.sport||'Unknown',boltAtMs:Number(bolt.detectedAtMs||now),boltSnapshot:{...structuredClone(bolt),scarletNeedleArm:structuredClone(scarletNeedle)},athenaDecision:decision,entryId:null,updatedAtMs:now});
-      this.scarletNeedleArms.set(ticker,arm);this.scarletNeedleStats.armed+=1;
-      await this.audit('scarlet_needle_armed',{armId:id,sourceBoltId:bolt.id,ticker,signalReferenceCents:reference,triggerDropCents:SCARLET_NEEDLE.triggerDropCents,triggerPriceCents:trigger,minEntryCents:min,maxEntryCents:max}).catch(()=>{});
-      return arm;
-    }catch(error){await this.audit('scarlet_needle_arm_persistence_failed',{boltId:bolt?.id||null,ticker,message:String(error?.message||error)},'error').catch(()=>{});return null;}
-    finally{if(unlock)await unlock().catch(()=>{});}
-  }
-  async cancelScarletNeedleArm(armOrTicker,reason='cancelled',q=null){
-    const ticker=this.scarletNeedleArms.has(String(armOrTicker||''))?String(armOrTicker):[...this.scarletNeedleArms].find(([,a])=>String(a?.id)===String(armOrTicker||''))?.[0];
-    if(!ticker)return false;const arm=this.scarletNeedleArms.get(ticker);this.scarletNeedleArms.delete(ticker);this.scarletNeedleStats.cancelled+=1;
-    const now=Date.now();
-    if(typeof this.db?.opportunityEpisode==='function'&&typeof this.db?.upsertOpportunityEpisode==='function'){
-      const ep=await this.db.opportunityEpisode(arm.id).catch(()=>null);if(ep){const sn={...(ep.athenaDecision?.scarletNeedle||{}),status:'CANCELLED',cancelledAtMs:now,cancelReason:String(reason),lastObservedAtMs:now,lastObservedAskCents:commandMaybeFinite(q?.yesAsk)};await this.db.upsertOpportunityEpisode({...ep,athenaDecision:{...(ep.athenaDecision||{}),decision:'REJECT',reason:`scarlet_needle_${reason}`,fireCommand:null,scarletNeedle:sn},fireCommand:{},attackSelected:'Scarlet Needle',updatedAtMs:now}).catch(()=>{});}
-    }
-    await this.audit('scarlet_needle_cancelled',{armId:arm.id,ticker,reason}).catch(()=>{});return true;
-  }
-  async cancelAllScarletNeedleArms(reason='cancelled'){for(const arm of [...this.scarletNeedleArms.values()])await this.cancelScarletNeedleArm(arm.id,reason);return this.scarletNeedleArms.size;}
-  async evaluateScarletNeedle(q,context={}){
-    const ticker=String(q?.ticker||''),arm=this.scarletNeedleArms.get(ticker);if(!arm)return null;
-    const settings=this.getSettings(),now=Date.now();
-    if(settings?.scarletNeedleEnabled!==true){await this.cancelScarletNeedleArm(arm.id,'operator_disabled',q);return null;}
-    const status=String(q?.status||'').toLowerCase();if(Boolean(q?.result)||['determined','finalized','settled','closed'].includes(status)){await this.cancelScarletNeedleArm(arm.id,'market_final',q);return null;}
-    const openOnTicker=(context?.openEntriesOnTicker||[]).filter(e=>['open','entry_pending','exit_pending','pending_recovery'].includes(String(e?.status||'')));
-    if(openOnTicker.some(e=>String(e?.conceptName)==='Scarlet Needle')){await this.cancelScarletNeedleArm(arm.id,'existing_needle_exposure',q);return null;}
-    // Galactic Explosion OFF preserves the existing one-real-Attack-per-ticker
-    // topology before we mint another FIRE. This is only an early hard-safety
-    // wait: createHunter() still re-proves topology under its final commit lock.
-    if(settings?.galacticExplosionEnabled!==true&&openOnTicker.some(e=>PORTFOLIO_CONCEPTS.has(String(e?.conceptName||''))))return null;
-    const maxGame=Math.max(0,commandFinite(settings.maxGameMinutes,0)),gameMinutes=commandMaybeFinite(q?.gameMinutes);
-    if(maxGame>0&&gameMinutes!=null&&gameMinutes>maxGame+1e-9){await this.cancelScarletNeedleArm(arm.id,'maximum_game_time_exceeded',q);return null;}
-    const ask=commandFinite(q?.yesAsk,0),bid=commandFinite(q?.yesBid,0),min=commandFinite(settings.scarletNeedleMinEntryCents,0),max=commandFinite(settings.scarletNeedleMaxEntryCents,99);
-    arm.lastObservedAtMs=now;arm.lastObservedAskCents=ask;
-    if(!(ask>0)||!(bid>0)||bid>ask||ask>arm.triggerPriceCents+1e-9||ask<min-1e-9||ask>max+1e-9)return null;
-    if(typeof this.db?.opportunityEpisode==='function'){
-      const durable=await this.db.opportunityEpisode(arm.id).catch(()=>null);const durableArm=scarletArmFromEpisode(durable||{});
-      if(!durableArm){this.scarletNeedleArms.delete(ticker);return null;}
-    }
-    const stake=Math.max(1,commandFinite(settings.scarletNeedleStakeCents,0)),economicTarget=scarletEconomicTarget({askCents:ask,stakeCents:stake,settings});
-    if(economicTarget.targetFeasible!==true)return null;
-    const ranking=[{concept:'Scarlet Needle',displayName:EXECUTION_ATTACK_DISPLAY['Scarlet Needle']?.name||'Scarlet Needle',score:100,fitScore:100,historyScore:50,historyEvidence:0,economicEvidence:0,economicQualified:true,economicMature:false,expectedNetPerOriginalContractCents:0,targetHitProbability:null,targetNetPerOriginalContractCents:economicTarget.netPerOriginalContractCents,targetFeasibilityScore:100,requiredTargetBidCents:economicTarget.requiredTargetBidCents,requiredGrossMoveCents:economicTarget.requiredGrossMoveCents,estimatedEntryFeePerContractCents:economicTarget.estimatedEntryFeePerContractCents,estimatedExitFeePerContractCents:economicTarget.estimatedExitFeePerContractCents,stakeCents:stake,operatorMinEntryCents:min,operatorMaxEntryCents:max}];
-    const scarletNeedle={version:SCARLET_NEEDLE.version,policyRevision:SCARLET_NEEDLE.policyRevision,status:'TRIGGERED',sourceBoltId:arm.sourceBoltId,sourceBoltFingerprint:arm.sourceBoltFingerprint,armedAtMs:arm.armedAtMs,triggeredAtMs:now,signalReferenceCents:arm.signalReferenceCents,triggerDropCents:SCARLET_NEEDLE.triggerDropCents,triggerPriceCents:arm.triggerPriceCents,triggerAskCents:ask,triggerBidCents:bid,observedDropCents:arm.signalReferenceCents-ask};
-    const delayedBolt={version:ATOMIC_THUNDER_BOLT.version,policyRevision:ATOMIC_THUNDER_BOLT.policyRevision,id:arm.id,systemName:this.systemName,sourceRelease:this.sourceRelease,ticker,eventTicker:String(q?.eventTicker||arm.eventTicker||ticker),side:'YES',sport:String(q?.sport||q?.sportName||arm.sport||'Unknown'),detectedAtMs:now,expiresAtMs:now+ATOMIC_THUNDER_BOLT.maximumOpportunityAgeMs,score:100,fingerprint:arm.sourceBoltFingerprint||null,preBoltClearance:structuredClone(arm.boltSnapshot?.preBoltClearance||null),features:{...(context?.survivalFeatures||arm.boltSnapshot?.features||{}),ticker,eventTicker:String(q?.eventTicker||arm.eventTicker||ticker),bidCents:bid,askCents:ask,spreadCents:ask-bid,gameMinutes,marketObservedAtMs:Number(q?.quoteAtMs||q?.updatedAtMs||now),scarletNeedle:structuredClone(scarletNeedle)}};
-    const survivalCertificate=examineArayashikiSurvival({bolt:delayedBolt,context,selectedAttack:'Scarlet Needle',now});
-    this.lastSurvivalCertificate=survivalCertificate;
-    if(survivalCertificate.status!=='CERTIFIED'){
-      this.decisions+=1;this.reject+=1;this.survivalRejected+=1;
-      const result={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision:'SURVIVAL_REJECT',reason:survivalCertificate.hardBlocks?.[0]||'arayashiki_not_certified',decidedAtMs:now,boltId:arm.id,sourceBoltId:arm.sourceBoltId,ticker,ranking,selectedAttack:'Scarlet Needle',selectedAttackDisplay:EXECUTION_ATTACK_DISPLAY['Scarlet Needle']?.name||'Scarlet Needle',fireCommand:null,economicObjective:ATHENA_COMMANDER.economicObjective,configuredTargetNetPerOriginalContractCents:economicTarget.netPerOriginalContractCents,strategicAuthority:true,legacyB2VetoApplied:false,durableFireRequired:true,scarletNeedle,survivalCertificate};
-      this.lastDecision=result;
-      if(typeof this.db?.opportunityEpisode==='function'&&typeof this.db?.upsertOpportunityEpisode==='function'){const ep=await this.db.opportunityEpisode(arm.id).catch(()=>null);if(ep)await this.db.upsertOpportunityEpisode({...ep,athenaDecision:result,fireCommand:{},attackSelected:'Scarlet Needle',updatedAtMs:now}).catch(()=>{});}
-      await this.audit('arayashiki_survival_rejected',{boltId:arm.id,ticker,selectedAttack:'Scarlet Needle',hardBlocks:survivalCertificate.hardBlocks,survivalScore:survivalCertificate.survivalScore}).catch(()=>{});
-      return null;
-    }
-    this.survivalCertified+=1;
-    const core={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,boltId:arm.id,sourceBoltId:arm.sourceBoltId,boltFingerprint:arm.sourceBoltFingerprint||null,systemName:this.systemName,sourceRelease:this.sourceRelease,decidedAtMs:now,expiresAtMs:delayedBolt.expiresAtMs,ticker,eventTicker:delayedBolt.eventTicker,side:'YES',selectedAttack:'Scarlet Needle',selectedAttackDisplay:EXECUTION_ATTACK_DISPLAY['Scarlet Needle']?.name||'Scarlet Needle',stakeCents:stake,fieldBudgetCents:null,maxRays:null,operatorMinEntryCents:min,operatorMaxEntryCents:max,entryPriceCents:ask,authorizedMaxEntryCents:Math.min(ask,arm.triggerPriceCents,max),maxSpreadCents:Number(settings.maxSpreadCents??3),auroraDamageControlPercent:Number(settings.auroraDamageControlPercent??45),infinityBreakPolicyVersion:'INFINITY-BREAK-V1',economicTarget,survivalCertificate,ranking,decisionEvidence:{economicObjective:ATHENA_COMMANDER.economicObjective,configuredTargetNetPerOriginalContractCents:economicTarget.netPerOriginalContractCents,preBoltClearance:structuredClone(delayedBolt.preBoltClearance||null),scarletNeedle:structuredClone(scarletNeedle),sourceBoltFeatures:structuredClone(arm.boltSnapshot?.features||{}),triggerQuote:{bidCents:bid,askCents:ask,observedAtMs:now},recoveryContext:context?.recoveryContext||null,fieldContext:context?.fieldContext||null,survivalCertificate}};
-    const fireCommand=sealAthenaFireCommand(core);let result={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision:'FIRE',reason:'scarlet_needle_10c_retracement_trigger',decidedAtMs:now,boltId:arm.id,sourceBoltId:arm.sourceBoltId,ticker,ranking,selectedAttack:'Scarlet Needle',selectedAttackDisplay:EXECUTION_ATTACK_DISPLAY['Scarlet Needle']?.name||'Scarlet Needle',fireCommand,economicObjective:ATHENA_COMMANDER.economicObjective,configuredTargetNetPerOriginalContractCents:economicTarget.netPerOriginalContractCents,strategicAuthority:true,legacyB2VetoApplied:false,durableFireRequired:true,scarletNeedle,survivalCertificate};
-    this.decisions+=1;
-    try{if(typeof this.db?.upsertOpportunityEpisode!=='function')throw new Error('scarlet_needle_persistence_writer_missing');await this.db.upsertOpportunityEpisode({id:arm.id,systemName:this.systemName,sourceRelease:this.sourceRelease,cohortId:arm.cohortId||String(settings.resetTimestampMs||''),ticker,eventTicker:delayedBolt.eventTicker,side:'YES',sport:delayedBolt.sport,boltAtMs:arm.armedAtMs,boltSnapshot:arm.boltSnapshot||{},athenaDecision:result,fireCommand,attackSelected:'Scarlet Needle',updatedAtMs:now});result={...result,durableFirePersisted:true};this.fire+=1;this.scarletNeedleStats.triggered+=1;this.lastDecision=result;await this.audit('scarlet_needle_triggered',{armId:arm.id,sourceBoltId:arm.sourceBoltId,ticker,signalReferenceCents:arm.signalReferenceCents,triggerPriceCents:arm.triggerPriceCents,askCents:ask,observedDropCents:arm.signalReferenceCents-ask,commandHash:fireCommand.commandHash}).catch(()=>{});return{arm,bolt:delayedBolt,decision:result};}
-    catch(error){this.reject+=1;result={...result,decision:'REJECT',reason:'scarlet_needle_fire_persistence_failed',fireCommand:null,durableFirePersisted:false,scarletNeedle:{...scarletNeedle,status:'ARMED'}};this.lastDecision=result;await this.audit('scarlet_needle_fire_persistence_failed',{armId:arm.id,ticker,message:String(error?.message||error)},'error').catch(()=>{});return null;}
-  }
-  async noteScarletNeedleExecution(armId,entry=null){
-    const pair=[...this.scarletNeedleArms].find(([,a])=>String(a?.id)===String(armId||''));if(!pair)return false;const [ticker,arm]=pair,now=Date.now();
-    const ep=typeof this.db?.opportunityEpisode==='function'?await this.db.opportunityEpisode(arm.id).catch(()=>null):null;
-    if(entry){this.scarletNeedleArms.delete(ticker);this.scarletNeedleStats.executed+=1;if(ep&&typeof this.db?.upsertOpportunityEpisode==='function'){const sn={...(ep.athenaDecision?.scarletNeedle||{}),status:'EXECUTED',executedAtMs:now,entryId:entry.id};await this.db.upsertOpportunityEpisode({...ep,athenaDecision:{...(ep.athenaDecision||{}),scarletNeedle:sn},entryId:entry.id,entryAtMs:Number(entry.openedAtMs||now),attackSelected:'Scarlet Needle',updatedAtMs:now}).catch(()=>{});}await this.audit('scarlet_needle_executed',{armId:arm.id,ticker,entryId:entry.id,status:entry.status}).catch(()=>{});return true;}
-    // Another Railway process may have won the exact Attack/ticker commit race
-    // after this process emitted the same durable trigger. Never erase that
-    // winner by re-arming the shared opportunity episode.
-    if(ep?.entryId){this.scarletNeedleArms.delete(ticker);this.scarletNeedleStats.executed+=1;if(typeof this.db?.upsertOpportunityEpisode==='function'){const sn={...(ep.athenaDecision?.scarletNeedle||{}),status:'EXECUTED',executedAtMs:Number(ep.entryAtMs||now),entryId:ep.entryId,crossProcessAdopted:true};await this.db.upsertOpportunityEpisode({...ep,athenaDecision:{...(ep.athenaDecision||{}),scarletNeedle:sn},attackSelected:'Scarlet Needle',updatedAtMs:now}).catch(()=>{});}await this.audit('scarlet_needle_cross_process_execution_adopted',{armId:arm.id,ticker,entryId:ep.entryId}).catch(()=>{});return true;}
-    this.scarletNeedleStats.executionAborted+=1;
-    if(ep&&typeof this.db?.upsertOpportunityEpisode==='function'){const sn={...(ep.athenaDecision?.scarletNeedle||{}),status:'ARMED',rearmedAtMs:now,lastFireAttemptAtMs:now};await this.db.upsertOpportunityEpisode({...ep,athenaDecision:{...(ep.athenaDecision||{}),decision:'WATCH',reason:'scarlet_needle_execution_aborted_retry_armed',fireCommand:null,scarletNeedle:sn},fireCommand:{},entryId:null,entryAtMs:null,attackSelected:'Scarlet Needle',updatedAtMs:now}).catch(()=>{});}
-    await this.audit('scarlet_needle_execution_aborted_retry_armed',{armId:arm.id,ticker}).catch(()=>{});return false;
-  }
   async decide(bolt,context={}){
-    const now=Date.now(),settings=this.getSettings(),target=Math.max(0.01,commandFinite(settings.infinityBreakMinNetPerOriginalContractCents,5));this.decisions+=1;
-    let decision='REJECT',reason='no_economically_eligible_attack',ranking=[],fireCommand=null,survivalCertificate=null,finalEconomics=null;
+    const now=Date.now(),settings=this.getSettings(),target=Math.max(0.01,commandFinite(settings.infinityBreakMinNetPerOriginalContractCents,1));this.decisions+=1;
+    let decision='REJECT',reason='no_executable_attack',ranking=[],fireCommand=null;
     if(!bolt||!bolt.id){reason='bolt_required';this.reject+=1;}
     else if(now>Number(bolt.expiresAtMs||0)){decision='EXPIRED';reason='bolt_expired';this.expired+=1;}
     else{
-      // R57 chain invariant: a pattern-cleared Atomic Thunder Bolt goes first
-      // to Arayashiki. Athena never ranks or economically selects an Attack
-      // until the current market has a fresh A8 survival certificate.
-      survivalCertificate=examineArayashikiSurvival({bolt,context,selectedAttack:null,now});
-      this.lastSurvivalCertificate=survivalCertificate;
-      if(survivalCertificate.status!=='CERTIFIED'){
-        this.reject+=1;this.survivalRejected+=1;decision='SURVIVAL_REJECT';reason=survivalCertificate.hardBlocks?.[0]||'arayashiki_not_certified';
-        await this.audit('arayashiki_survival_rejected',{boltId:bolt.id,ticker:bolt.ticker,selectedAttack:null,hardBlocks:survivalCertificate.hardBlocks,survivalScore:survivalCertificate.survivalScore,requiredSurvivalScore:survivalCertificate.requiredSurvivalScore}).catch(()=>{});
-      }else{
-        this.survivalCertified+=1;
-        const scarletNeedleArm=context?.scarletNeedleArm||await this.armScarletNeedle(bolt,context);
-        context={...context,scarletNeedleArm};
-        ranking=rankAthenaAttacks(bolt,settings,this.memory,context);const best=ranking[0]||null;
-        if(best){
-          const targetFeasible=best.targetFeasibilityScore>=45,boltStrong=Number(bolt.score||0)>=45;
-          // R59 Athena Memory HF1 authority boundary: Athena Memory may rank and warn, but it can
-          // never turn accumulated outcomes into a live no-FIRE gate. A fresh
-          // A8-certified candidate with current target feasibility and a valid
-          // Bolt remains eligible regardless of mature historical EV sign.
-          if(targetFeasible&&boltStrong){
-            finalEconomics=survivalConditionedEconomics({memory:this.memory,best,bolt,certificate:survivalCertificate,settings});
-            if(finalEconomics.qualified){decision='FIRE';reason=finalEconomics.reason;this.fire+=1;}
-            else{decision='REJECT';reason=finalEconomics.reason;this.reject+=1;}
-          }else if(best.liveScore>=48&&Number(bolt.score||0)>=40){decision='WATCH';reason='current_economic_case_requires_more_evidence';this.watch+=1;}
-          else{decision='REJECT';reason='insufficient_current_economic_edge';this.reject+=1;}
-        }else if(context?.scarletNeedleArm){decision='WATCH';reason='scarlet_needle_armed';this.watch+=1;}
-        else this.reject+=1;
-      }
+      ranking=rankAthenaAttacks(bolt,settings,this.memory,context);
+      const immediate=ranking[0]||null;
+      if(immediate){decision='FIRE';reason='cosmo_green_best_attack';this.fire+=1;}
+      else this.reject+=1;
     }
     const best=ranking[0]||null;
     if(decision==='FIRE'&&best){
       const currentAsk=commandFinite(bolt.features?.askCents,0),chase=best.score>=85?1:0,authorizedMaxEntryCents=Math.min(best.operatorMaxEntryCents,currentAsk+chase);
       const isPlasma=best.concept==='Lightning Plasma',fieldBudgetCents=isPlasma?best.stakeCents:null,executionStakeCents=isPlasma&&Number(context?.fieldContext?.rayStakeCents)>0?Math.min(best.stakeCents,Number(context.fieldContext.rayStakeCents)):best.stakeCents;
-      const economicTarget={version:'ATHENA-A3-ECONOMIC-TARGET-V3-ATB2-A8-CERTIFIED',authorityMode:finalEconomics?.mode||'ATB2_A8_CERTIFIED_COLD_START',netPerOriginalContractCents:target,requiredTargetBidCents:best.requiredTargetBidCents,requiredGrossMoveCents:best.requiredGrossMoveCents,estimatedEntryFeePerContractCents:best.estimatedEntryFeePerContractCents,estimatedExitFeePerContractCents:best.estimatedExitFeePerContractCents,targetFeasibilityScore:best.targetFeasibilityScore,targetHitProbability:finalEconomics?.targetHitProbability??best.certifiedTargetHitProbability,breakEvenTargetHitProbability:finalEconomics?.breakEvenTargetHitProbability??best.breakEvenTargetHitProbability,expectedNetPerOriginalContractCents:finalEconomics?.expectedNetPerOriginalContractCents,economicEvidence:finalEconomics?.evidence??0,economicQualified:true,memoryAssessment:finalEconomics?.memoryAssessment||'INSUFFICIENT_EVIDENCE',memoryDecisionAuthority:false,memoryAuthority:ATHENA_COMMANDER.economicMemoryAuthority,legacyPriorExpectedNetPerOriginalContractCents:best.legacyExpectedNetPerOriginalContractCents,legacyPriorTargetHitProbability:best.legacyTargetHitProbability};
-      const core={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,boltId:bolt.id,boltFingerprint:bolt.fingerprint||null,systemName:this.systemName,sourceRelease:this.sourceRelease,decidedAtMs:now,expiresAtMs:Number(bolt.expiresAtMs||now),ticker:bolt.ticker,eventTicker:bolt.eventTicker,side:'YES',selectedAttack:best.concept,selectedAttackDisplay:best.displayName,stakeCents:executionStakeCents,fieldBudgetCents,maxRays:isPlasma?Math.max(1,Math.floor(Number(settings.lightningPlasmaMaxStrikes||1))):null,operatorMinEntryCents:best.operatorMinEntryCents,operatorMaxEntryCents:best.operatorMaxEntryCents,entryPriceCents:currentAsk,authorizedMaxEntryCents,maxSpreadCents:Number(settings.maxSpreadCents??3),auroraDamageControlPercent:Number(settings.auroraDamageControlPercent??45),infinityBreakPolicyVersion:'INFINITY-BREAK-V1',economicTarget,survivalCertificate,ranking:ranking.slice(0,6),decisionEvidence:{economicObjective:ATHENA_COMMANDER.economicObjective,configuredTargetNetPerOriginalContractCents:target,boltScore:bolt.score,features:bolt.features,preBoltClearance:structuredClone(bolt.preBoltClearance||null),historicalMemoryVersion:this.memory.version,certifiedEconomicMemory:{mode:best.economicAuthorityMode,authority:ATHENA_COMMANDER.economicMemoryAuthority,decisionAuthority:false,memoryAssessment:best.memoryAssessment,economicEvidence:best.certifiedEconomicEvidence,expectedNetPerOriginalContractCents:best.certifiedExpectedNetPerOriginalContractCents,targetHitProbability:best.certifiedTargetHitProbability},legacyEconomicPrior:{expectedNetPerOriginalContractCents:best.legacyExpectedNetPerOriginalContractCents,targetHitProbability:best.legacyTargetHitProbability,breakEvenTargetHitProbability:best.legacyBreakEvenTargetHitProbability,economicEvidence:best.legacyEconomicEvidence},survivalConditionedEconomics:finalEconomics,recoveryContext:context?.recoveryContext||null,fieldContext:context?.fieldContext||null,survivalCertificate}};
+      const economicTarget={version:'ATHENA-A3-ECONOMIC-TARGET-V4-COSMO-GREEN',authorityMode:'COSMO_GREEN_DIRECT',netPerOriginalContractCents:target,requiredTargetBidCents:best.requiredTargetBidCents,requiredGrossMoveCents:best.requiredGrossMoveCents,estimatedEntryFeePerContractCents:best.estimatedEntryFeePerContractCents,estimatedExitFeePerContractCents:best.estimatedExitFeePerContractCents,targetFeasibilityScore:best.targetFeasibilityScore,targetHitProbability:best.certifiedTargetHitProbability??best.legacyTargetHitProbability??null,breakEvenTargetHitProbability:best.breakEvenTargetHitProbability??null,expectedNetPerOriginalContractCents:best.certifiedExpectedNetPerOriginalContractCents??best.legacyExpectedNetPerOriginalContractCents??null,economicEvidence:best.certifiedEconomicEvidence??0,economicQualified:true,rankingOnlyHistory:true};
+      const core={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,boltId:bolt.id,boltFingerprint:bolt.fingerprint||null,systemName:this.systemName,sourceRelease:this.sourceRelease,decidedAtMs:now,expiresAtMs:Number(bolt.expiresAtMs||now),ticker:bolt.ticker,eventTicker:bolt.eventTicker,side:'YES',selectedAttack:best.concept,selectedAttackDisplay:best.displayName,stakeCents:executionStakeCents,fieldBudgetCents,maxRays:isPlasma?Math.max(1,Math.floor(Number(settings.lightningPlasmaMaxStrikes||1))):null,operatorMinEntryCents:best.operatorMinEntryCents,operatorMaxEntryCents:best.operatorMaxEntryCents,entryPriceCents:currentAsk,authorizedMaxEntryCents,maxSpreadCents:Number(settings.maxSpreadCents??3),auroraDamageControlPercent:Number(settings.auroraDamageControlPercent??45),infinityBreakPolicyVersion:'INFINITY-BREAK-V1',economicTarget,survivalCertificate:null,ranking:ranking.slice(0,6),decisionEvidence:{economicObjective:ATHENA_COMMANDER.economicObjective,configuredTargetNetPerOriginalContractCents:target,boltScore:bolt.score,greenTrigger:structuredClone(bolt.greenTrigger||null),features:bolt.features,preBoltClearance:structuredClone(bolt.preBoltClearance||null),historicalMemoryVersion:this.memory.version,historyRole:'RANKING_ONLY_NO_VETO',predictiveReVetoAllowed:false,recoveryContext:context?.recoveryContext||null,fieldContext:context?.fieldContext||null}};
       fireCommand=sealAthenaFireCommand(core);
     }
-    let result={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision,reason,decidedAtMs:now,boltId:bolt?.id||null,ticker:bolt?.ticker||null,ranking,selectedAttack:best?.concept||null,selectedAttackDisplay:best?.displayName||null,fireCommand,economicObjective:ATHENA_COMMANDER.economicObjective,configuredTargetNetPerOriginalContractCents:target,strategicAuthority:true,legacyB2VetoApplied:false,economicMemoryAuthority:ATHENA_COMMANDER.economicMemoryAuthority,economicMemoryDecisionAuthority:false,durableFireRequired:true,survivalCertificate,survivalConditionedEconomics:finalEconomics};
+    let result={version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,decision,reason,decidedAtMs:now,boltId:bolt?.id||null,ticker:bolt?.ticker||null,ranking,selectedAttack:best?.concept||null,selectedAttackDisplay:best?.displayName||null,fireCommand,economicObjective:ATHENA_COMMANDER.economicObjective,configuredTargetNetPerOriginalContractCents:target,strategicAuthority:true,legacyB2VetoApplied:false,durableFireRequired:true,survivalCertificate:null,survivalConditionedEconomics:null};
     let persisted=false;
     if(typeof this.db?.upsertOpportunityEpisode==='function'&&bolt?.id){try{await this.db.upsertOpportunityEpisode({id:bolt.id,systemName:this.systemName,sourceRelease:this.sourceRelease,cohortId:String(settings.resetTimestampMs||''),ticker:bolt.ticker,eventTicker:bolt.eventTicker,side:'YES',sport:bolt.sport||bolt.features?.sport||'Unknown',boltAtMs:bolt.detectedAtMs,boltSnapshot:bolt,athenaDecision:result,fireCommand:fireCommand||{},attackSelected:best?.concept||null,updatedAtMs:now});persisted=true;}catch(error){await this.audit('athena_a3_decision_persistence_failed',{boltId:bolt.id,ticker:bolt.ticker,decision,message:String(error?.message||error)},'error').catch(()=>{});}}
     if(decision==='FIRE'&&!persisted){this.fire=Math.max(0,this.fire-1);this.reject+=1;decision='REJECT';reason='fire_persistence_failed';fireCommand=null;result={...result,decision,reason,fireCommand:null,selectedAttack:best?.concept||null,selectedAttackDisplay:best?.displayName||null,durableFirePersisted:false};}else result={...result,durableFirePersisted:persisted};
-    this.lastDecision=result;await this.audit('athena_a3_decision',{boltId:bolt?.id||null,ticker:bolt?.ticker||null,decision,reason,selectedAttack:best?.concept||null,bestScore:best?.score||null,certifiedEconomicMode:best?.economicAuthorityMode||null,certifiedEconomicEvidence:best?.certifiedEconomicEvidence??0,certifiedExpectedNetPerOriginalContractCents:best?.certifiedExpectedNetPerOriginalContractCents??null,legacyExpectedNetPerOriginalContractCents:best?.legacyExpectedNetPerOriginalContractCents??null,legacyTargetHitProbability:best?.legacyTargetHitProbability??null,survivalEconomicMode:finalEconomics?.mode||null,survivalEconomicExpectedNetPerOriginalContractCents:finalEconomics?.expectedNetPerOriginalContractCents??null,memoryAssessment:finalEconomics?.memoryAssessment||best?.memoryAssessment||null,economicMemoryDecisionAuthority:false,configuredTargetNetPerOriginalContractCents:target,durableFirePersisted:persisted}).catch(()=>{});return result;
+    this.lastDecision=result;await this.audit('athena_a3_decision',{boltId:bolt?.id||null,ticker:bolt?.ticker||null,decision,reason,selectedAttack:best?.concept||null,bestScore:best?.score||null,historyRole:'RANKING_ONLY_NO_VETO',configuredTargetNetPerOriginalContractCents:target,durableFirePersisted:persisted}).catch(()=>{});return result;
   }
-  summary(){return{version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,role:ATHENA_COMMANDER.role,economicObjective:ATHENA_COMMANDER.economicObjective,targetAwareAttackSelection:true,entryDecisionAuthority:true,attackSelectionAuthority:true,attackStrategicRevalidationAllowed:false,economicMemory:{authority:ATHENA_COMMANDER.economicMemoryAuthority,decisionAuthority:false,continuousLearning:true,matureNegativeMayFire:ATHENA_COMMANDER.matureNegativeExpectedValueMayFire},loadedAtMs:this.loadedAtMs,memory:{version:this.memory.version,memoryHash:this.memory.memoryHash,entryRows:this.memory.entryRows,opportunityRows:this.memory.opportunityRows,profitEpisodeRows:this.memory.profitEpisodeRows,profileCount:Object.keys(this.memory.profiles||{}).length,certifiedProfileCount:Object.keys(this.memory.certifiedProfiles||{}).length,certifiedEntryRows:this.memory.certifiedEntryRows||0,certifiedOpportunityRows:this.memory.certifiedOpportunityRows||0,sourceReleaseCount:this.memory.sourceReleases?.length||0,cohortCount:this.memory.cohortIds?.length||0,rawTrainingRowsRetained:0},decisions:this.decisions,fire:this.fire,watch:this.watch,reject:this.reject,expired:this.expired,survivalCertified:this.survivalCertified,survivalRejected:this.survivalRejected,arayashiki:{version:ARAYASHIKI.version,policyRevision:ARAYASHIKI.policyRevision,role:ARAYASHIKI.role,noEvidencePolicy:ARAYASHIKI.noEvidencePolicy,certificateTtlMs:ARAYASHIKI.certificateTtlMs,lastCertificate:this.lastSurvivalCertificate},lastDecision:this.lastDecision,scarletNeedle:{version:SCARLET_NEEDLE.version,triggerDropCents:SCARLET_NEEDLE.triggerDropCents,...this.scarletNeedleStats,armed:this.scarletNeedleArms.size,tickers:this.scarletNeedleTickers().slice(0,64),hydration:{...this.scarletNeedleHydration}},legacyHistoricalBrain:this.legacyAthena?.summary?.()||null};}
+  summary(){return{version:ATHENA_COMMANDER.version,policyRevision:ATHENA_COMMANDER.policyRevision,role:ATHENA_COMMANDER.role,economicObjective:ATHENA_COMMANDER.economicObjective,targetAwareAttackSelection:true,entryDecisionAuthority:true,attackSelectionAuthority:true,attackStrategicRevalidationAllowed:false,loadedAtMs:this.loadedAtMs,memory:{version:this.memory.version,memoryHash:this.memory.memoryHash,entryRows:this.memory.entryRows,opportunityRows:this.memory.opportunityRows,profitEpisodeRows:this.memory.profitEpisodeRows,profileCount:Object.keys(this.memory.profiles||{}).length,certifiedProfileCount:Object.keys(this.memory.certifiedProfiles||{}).length,certifiedEntryRows:this.memory.certifiedEntryRows||0,certifiedOpportunityRows:this.memory.certifiedOpportunityRows||0,sourceReleaseCount:this.memory.sourceReleases?.length||0,cohortCount:this.memory.cohortIds?.length||0,rawTrainingRowsRetained:0,load:{...this.memoryLoad},mutationVersion:this.memoryMutationVersion,entryAuthorityBlockedUntilLoaded:false},decisions:this.decisions,fire:this.fire,watch:this.watch,reject:this.reject,expired:this.expired,survivalCertified:this.survivalCertified,survivalRejected:this.survivalRejected,arayashiki:{version:ARAYASHIKI.version,policyRevision:ARAYASHIKI.policyRevision,role:ARAYASHIKI.role,noEvidencePolicy:ARAYASHIKI.noEvidencePolicy,certificateTtlMs:ARAYASHIKI.certificateTtlMs,lastCertificate:this.lastSurvivalCertificate},lastDecision:this.lastDecision,scarletNeedle:{version:SCARLET_NEEDLE.version,role:SCARLET_NEEDLE.role,strategicAuthority:false,managedBy:'ENGINE_POST_PROFIT_CLOSE_HANDOFF',retracementAuthority:false},legacyHistoricalBrain:this.legacyAthena?.summary?.()||null};}
 }

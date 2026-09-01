@@ -10,7 +10,7 @@ const bool = (name, fallback) => {
 };
 const pem = (v='') => String(v).replace(/\\n/g, '\n').trim();
 
-export const RELEASE = 'SAGITTARIUS-R59-BIG-WAVE-CHOKE-RECOVERY-2026-08-29';
+export const RELEASE = 'SAGITTARIUS-R63-GEMINI-ANOTHER-DIMENSION-LIVE-PARITY-2026-08-31';
 
 export const env = Object.freeze({
   port: num('PORT', 3000),
@@ -41,9 +41,8 @@ export const CANONICAL_NUMERIC_SETTINGS = Object.freeze([
   'simFeeCents',
   'recoveryTrackingHours',
 
-  // Atomic Thunder ATB2 Pattern Guard -- operator-editable pre-Bolt timing.
-  'atomicThunderFirstPatternExamSeconds',
-  'atomicThunderFinalPatternExamSeconds',
+  // Atomic Thunder -- operator-editable favorable move required from a shadow Cosmo trade.
+  'atomicThunderGreenTriggerCents',
 
   // Infinity Break -- sole profit authority for new-generation positions.
   'infinityBreakMinNetPerOriginalContractCents',
@@ -66,6 +65,9 @@ export const CANONICAL_NUMERIC_SETTINGS = Object.freeze([
   'phoenixReferenceStakeCents',
   'phoenixMinPriceCents',
   'phoenixMaxPriceCents',
+  'geminiReferenceStakeCents',
+  'geminiMinPriceCents',
+  'geminiMaxPriceCents',
 
   // Execution Attacks retain only stake + operator-permitted price band.
   'momentumStakeCents',
@@ -83,6 +85,10 @@ export const CANONICAL_NUMERIC_SETTINGS = Object.freeze([
   'scarletNeedleStakeCents',
   'scarletNeedleMinEntryCents',
   'scarletNeedleMaxEntryCents',
+  'scarletNeedleMaxRepeats',
+  'justiceArrowStakeCents',
+  'justiceArrowMinEntryCents',
+  'justiceArrowMaxEntryCents',
   'athenaExclamationStakeCents',
   'athenaExclamationMinEntryCents',
   'athenaExclamationMaxEntryCents',
@@ -104,12 +110,14 @@ export const CANONICAL_BOOLEAN_SETTINGS = Object.freeze([
   'recoveryHunterEnabled',
   'crashRecoveryHunterEnabled',
   'scarletNeedleEnabled',
+  'geminiEnabled',
+  'justiceArrowEnabled',
   'athenaExclamationEnabled',
   'lightningPlasmaEnabled',
   'galacticExplosionEnabled',
 ]);
 
-export const EDITABLE_NUMERIC_SETTINGS = Object.freeze(CANONICAL_NUMERIC_SETTINGS.filter((k) => k !== 'resetTimestampMs'));
+export const EDITABLE_NUMERIC_SETTINGS = Object.freeze(CANONICAL_NUMERIC_SETTINGS.filter((k) => !['resetTimestampMs','simFillProbability'].includes(k)));
 export const EDITABLE_BOOLEAN_SETTINGS = Object.freeze(CANONICAL_BOOLEAN_SETTINGS.filter((k) => k !== 'engineActive'));
 
 // R10 has one authoritative home for every setting. Legacy shared stake keys are
@@ -130,6 +138,8 @@ export function originalSettings() {
     recoveryHunterEnabled: true,
     crashRecoveryHunterEnabled: true,
     scarletNeedleEnabled: false,
+    geminiEnabled: false,
+    justiceArrowEnabled: false,
     athenaExclamationEnabled: false,
     lightningPlasmaEnabled: true,
     galacticExplosionEnabled: false,
@@ -142,14 +152,15 @@ export function originalSettings() {
     eventCooldownMinutes: 1,
     maxSpreadCents: 3,
     startingCapitalCents: 100000,
-    simFillProbability: 0.75,
+    // Compatibility telemetry only. R63 SIM execution is deterministic from fresh
+    // visible IOC depth and no longer applies an independent random fill lottery.
+    simFillProbability: 1,
     simFeeCents: 2,
     recoveryTrackingHours: 24,
 
-    atomicThunderFirstPatternExamSeconds: 30,
-    atomicThunderFinalPatternExamSeconds: 120,
+    atomicThunderGreenTriggerCents: 1,
 
-    infinityBreakMinNetPerOriginalContractCents: 5,
+    infinityBreakMinNetPerOriginalContractCents: 1,
     infinityBreakRequiredConfirmations: 2,
     infinityBreakMaximumBookAgeMs: 1000,
     infinityBreakConfirmationWindowMs: 3000,
@@ -166,6 +177,9 @@ export function originalSettings() {
     phoenixReferenceStakeCents: 3000,
     phoenixMinPriceCents: 10,
     phoenixMaxPriceCents: 50,
+    geminiReferenceStakeCents: 20000,
+    geminiMinPriceCents: 10,
+    geminiMaxPriceCents: 89,
 
     momentumStakeCents: 20000,
     momentumMinEntryCents: 50,
@@ -182,6 +196,10 @@ export function originalSettings() {
     scarletNeedleStakeCents: 20000,
     scarletNeedleMinEntryCents: 10,
     scarletNeedleMaxEntryCents: 89,
+    scarletNeedleMaxRepeats: 1,
+    justiceArrowStakeCents: 20000,
+    justiceArrowMinEntryCents: 10,
+    justiceArrowMaxEntryCents: 89,
     athenaExclamationStakeCents: 20000,
     athenaExclamationMinEntryCents: 50,
     athenaExclamationMaxEntryCents: 60,
@@ -194,20 +212,91 @@ export function originalSettings() {
   };
 }
 
-// R45 fresh-install profile. This remains separate from originalSettings() so
-// persisted deployments preserve their settings while a brand-new database
-// boots safely in SIMULATION with the current reference/Hunter lane.
+// R63-MHF1 authoritative fresh-install profile. Keep the conservative
+// originalSettings() contract for legacy migrations and missing-key fallbacks,
+// while a brand-new database boots with the locked 2026-08-31 running profile.
 export function freshInstallSettings() {
   return {
     ...originalSettings(),
     mode:'SIMULATION',
     liveArmed:false,
+    engineActive:true,
+    pegasusEnabled:true,
+    dragonEnabled:true,
+    phoenixEnabled:true,
+    momentumHunterEnabled:true,
+    waveSurferEnabled:true,
+    recoveryHunterEnabled:true,
+    crashRecoveryHunterEnabled:true,
+    scarletNeedleEnabled:true,
+    geminiEnabled:true,
+    justiceArrowEnabled:true,
+    athenaExclamationEnabled:true,
+    lightningPlasmaEnabled:true,
+    galacticExplosionEnabled:true,
+
     maxPositions:20,
-    maxEntriesPerTrade:3,
-    hunterCooldownMinutes:0,
+    maxEntriesPerTrade:1,
+    hunterCooldownMinutes:75,
     minGameMinutes:30,
-    maxGameMinutes:60,
+    maxGameMinutes:55,
+    eventCooldownMinutes:1,
+    maxSpreadCents:3,
     startingCapitalCents:1_000_000,
+    simFillProbability:1,
+    simFeeCents:2,
+    recoveryTrackingHours:24,
+
+    atomicThunderGreenTriggerCents:8,
+    infinityBreakMinNetPerOriginalContractCents:1,
+    infinityBreakRequiredConfirmations:2,
+    infinityBreakMaximumBookAgeMs:1000,
+    infinityBreakConfirmationWindowMs:3000,
+    auroraDamageControlPercent:75,
+
+    pegasusReferenceStakeCents:3000,
+    pegasusMinPriceCents:20,
+    pegasusMaxPriceCents:90,
+    pegasusDropCents:10,
+    dragonReferenceStakeCents:3000,
+    dragonMinSignalPriceCents:20,
+    dragonMaxSignalPriceCents:90,
+    dragonMaxEpisode:2,
+    phoenixReferenceStakeCents:3000,
+    phoenixMinPriceCents:20,
+    phoenixMaxPriceCents:90,
+    geminiReferenceStakeCents:20000,
+    geminiMinPriceCents:20,
+    geminiMaxPriceCents:90,
+
+    momentumStakeCents:20000,
+    momentumMinEntryCents:75,
+    momentumMaxEntryCents:89,
+    waveStakeCents:20000,
+    waveMinEntryCents:75,
+    waveMaxEntryCents:89,
+    recoveryStakeCents:20000,
+    recoveryMinEntryCents:45,
+    recoveryMaxEntryCents:89,
+    crashRecoveryStakeCents:20000,
+    crashRecoveryMinEntryCents:75,
+    crashRecoveryMaxEntryCents:89,
+    scarletNeedleStakeCents:20000,
+    scarletNeedleMinEntryCents:70,
+    scarletNeedleMaxEntryCents:89,
+    scarletNeedleMaxRepeats:3,
+    justiceArrowStakeCents:20000,
+    justiceArrowMinEntryCents:70,
+    justiceArrowMaxEntryCents:89,
+    athenaExclamationStakeCents:40000,
+    athenaExclamationMinEntryCents:75,
+    athenaExclamationMaxEntryCents:89,
+    lightningPlasmaFieldStakeCents:20000,
+    lightningPlasmaMinEntryCents:75,
+    lightningPlasmaMaxEntryCents:89,
+    lightningPlasmaMaxStrikes:3,
+
+    resetTimestampMs:null,
   };
 }
 
@@ -234,12 +323,19 @@ export function sanitizeRuntimeSettings(value = {}, defaults = originalSettings(
   if (!Object.hasOwn(src, 'recoveryStakeCents') && Object.hasOwn(src, 'recoveryBaseStakeCents')) src.recoveryStakeCents = Number(src.recoveryBaseStakeCents) * 2;
   if (!Object.hasOwn(src, 'recoveryStakeCents') && Object.hasOwn(src, 'hunterStakeCents')) src.recoveryStakeCents = src.hunterStakeCents;
   if (!Object.hasOwn(src, 'waveStakeCents') && Object.hasOwn(src, 'stakeCents')) src.waveStakeCents = src.stakeCents;
+  // R63 rename/migration: the former Another Dimension shadow-universe toggle
+  // becomes Gemini. Existing R62 deployments retain their operator state and
+  // inherit the prior Great Horn-linked virtual stake/band exactly once.
+  if (!Object.hasOwn(src, 'geminiEnabled') && Object.hasOwn(src, 'anotherDimensionEnabled')) src.geminiEnabled = src.anotherDimensionEnabled;
+  if (!Object.hasOwn(src, 'geminiReferenceStakeCents') && Object.hasOwn(src, 'momentumStakeCents')) src.geminiReferenceStakeCents = src.momentumStakeCents;
+  if (!Object.hasOwn(src, 'geminiMinPriceCents') && Object.hasOwn(src, 'momentumMinEntryCents')) src.geminiMinPriceCents = src.momentumMinEntryCents;
+  if (!Object.hasOwn(src, 'geminiMaxPriceCents') && Object.hasOwn(src, 'momentumMaxEntryCents')) src.geminiMaxPriceCents = src.momentumMaxEntryCents;
 
   // R45 retired runtime concepts/settings are intentionally not canonical.
   // Persisted legacy keys are ignored on load, while historical trade-level
   // snapshots remain intact in sag_entries for audit and legacy protection.
   const hasPersistedRecord=Object.keys(raw).length>0;
-  const migrationFailSafeOff=new Set(['dragonEnabled','phoenixEnabled','crashRecoveryHunterEnabled','scarletNeedleEnabled','athenaExclamationEnabled','lightningPlasmaEnabled']);
+  const migrationFailSafeOff=new Set(['dragonEnabled','phoenixEnabled','crashRecoveryHunterEnabled','scarletNeedleEnabled','geminiEnabled','justiceArrowEnabled','athenaExclamationEnabled','lightningPlasmaEnabled']);
 
   const out = { ...defaults };
   for (const key of CANONICAL_NUMERIC_SETTINGS) {
@@ -265,14 +361,18 @@ export function sanitizeRuntimeSettings(value = {}, defaults = originalSettings(
   if (!Object.hasOwn(src, 'infinityBreakRequiredConfirmations') && Object.hasOwn(src, 'atomicThunderRequiredConfirmations')) out.infinityBreakRequiredConfirmations = Number(src.atomicThunderRequiredConfirmations);
   if (!Object.hasOwn(src, 'infinityBreakMaximumBookAgeMs') && Object.hasOwn(src, 'atomicThunderMaximumBookAgeMs')) out.infinityBreakMaximumBookAgeMs = Number(src.atomicThunderMaximumBookAgeMs);
   if (!Object.hasOwn(src, 'infinityBreakConfirmationWindowMs') && Object.hasOwn(src, 'atomicThunderConfirmationWindowMs')) out.infinityBreakConfirmationWindowMs = Number(src.atomicThunderConfirmationWindowMs);
-  out.atomicThunderFirstPatternExamSeconds = Math.max(1, Math.floor(Number(out.atomicThunderFirstPatternExamSeconds) || 30));
-  out.atomicThunderFinalPatternExamSeconds = Math.max(out.atomicThunderFirstPatternExamSeconds + 1, Math.floor(Number(out.atomicThunderFinalPatternExamSeconds) || 120));
+  out.atomicThunderGreenTriggerCents = Math.max(1, Math.min(99, Math.floor(Number(out.atomicThunderGreenTriggerCents) || 1)));
   out.infinityBreakMinNetPerOriginalContractCents = Math.max(0.01, Number(out.infinityBreakMinNetPerOriginalContractCents) || 0.01);
   out.infinityBreakRequiredConfirmations = Math.max(1, Math.floor(Number(out.infinityBreakRequiredConfirmations) || 1));
   out.infinityBreakMaximumBookAgeMs = Math.max(100, Math.floor(Number(out.infinityBreakMaximumBookAgeMs) || 100));
   out.infinityBreakConfirmationWindowMs = Math.max(250, Math.floor(Number(out.infinityBreakConfirmationWindowMs) || 250));
   out.auroraDamageControlPercent = Math.max(1, Math.min(95, Number(out.auroraDamageControlPercent) || 45));
+  out.scarletNeedleMaxRepeats = Math.max(0, Math.min(100, Math.floor(Number(out.scarletNeedleMaxRepeats) || 0)));
   out.lightningPlasmaMaxStrikes = Math.max(1, Math.floor(Number(out.lightningPlasmaMaxStrikes) || 1));
+  // R63 simulation/live parity: persisted legacy probabilities are neutralized.
+  // SIM still requires fresh executable depth and may fill partially, but never
+  // rejects a proven executable IOC through an unrelated random coin flip.
+  out.simFillProbability = 1;
   out.liveArmed = false;
   return out;
 }

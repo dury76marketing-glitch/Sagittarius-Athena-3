@@ -293,6 +293,7 @@ export class Database {
       alter table sag_entries add column if not exists post_exit_state jsonb not null default '{}'::jsonb;
       create index if not exists sag_entries_owner_status on sag_entries(owner_id,status);
       create index if not exists sag_entries_system_concept on sag_entries(system_name,concept_name);
+      create index if not exists sag_entries_system_concept_source on sag_entries(system_name,concept_name,source_trade_id);
       create index if not exists sag_entries_ticker on sag_entries(ticker);
       create index if not exists sag_entries_system_closed_at on sag_entries(system_name,status,closed_at_ms desc);
       create table if not exists sag_trackers(
@@ -573,31 +574,19 @@ export class Database {
   async insertAthenaExclamationEvent(e){
     const r=await this.pool.query(`insert into sag_athena_exclamation_events_v1(id,system_name,ticker,event_ticker,status,created_at_ms,first_vote_at_ms,third_vote_at_ms,expires_at_ms,convergence_span_ms,saint_count,saints,combination,review,entry_id,decided_at_ms)
       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) on conflict(id) do nothing`,[
-      e.id,e.systemName,e.ticker,e.eventTicker,e.status,e.createdAtMs,e.firstVoteAtMs,e.thirdVoteAtMs,e.expiresAtMs,e.convergenceSpanMs,e.saintCount,
-      JSON.stringify(Array.isArray(e.saints)?e.saints:[]),JSON.stringify(Array.isArray(e.combination)?e.combination:[]),
-      e.review||null,e.entryId||null,e.decidedAtMs||null
+      e.id,e.systemName,e.ticker,e.eventTicker,e.status,e.createdAtMs,e.firstVoteAtMs,e.thirdVoteAtMs,e.expiresAtMs,e.convergenceSpanMs,e.saintCount,e.saints||[],e.combination||[],e.review||null,e.entryId||null,e.decidedAtMs||null
     ]);
     return (r.rowCount||0)>0;
   }
   async updateAthenaExclamationEvent(id,e){
-    await this.pool.query(`update sag_athena_exclamation_events_v1 set status=$2,review=$3,entry_id=$4,decided_at_ms=$5,saint_count=$6,saints=$7,combination=$8 where id=$1`,[
-      id,e.status,e.review||null,e.entryId||null,e.decidedAtMs||null,e.saintCount||0,
-      JSON.stringify(Array.isArray(e.saints)?e.saints:[]),JSON.stringify(Array.isArray(e.combination)?e.combination:[])
-    ]);
+    await this.pool.query(`update sag_athena_exclamation_events_v1 set status=$2,review=$3,entry_id=$4,decided_at_ms=$5,saint_count=$6,saints=$7,combination=$8 where id=$1`,[id,e.status,e.review||null,e.entryId||null,e.decidedAtMs||null,e.saintCount||0,e.saints||[],e.combination||[]]);
   }
   async recentAthenaExclamationEvents(systemName,sinceMs=0){
     const r=await this.pool.query(`select * from sag_athena_exclamation_events_v1 where system_name=$1 and created_at_ms >= $2 order by created_at_ms asc`,[systemName,sinceMs]);
     return r.rows.map(x=>({id:x.id,systemName:x.system_name,ticker:x.ticker,eventTicker:x.event_ticker,status:x.status,createdAtMs:n(x.created_at_ms),firstVoteAtMs:n(x.first_vote_at_ms),thirdVoteAtMs:n(x.third_vote_at_ms),expiresAtMs:n(x.expires_at_ms),convergenceSpanMs:n(x.convergence_span_ms),saintCount:n(x.saint_count),saints:x.saints||[],combination:x.combination||[],review:x.review||null,entryId:x.entry_id,decidedAtMs:x.decided_at_ms==null?null:n(x.decided_at_ms)}));
   }
   async activeAthenaExclamationEvent(systemName,ticker,nowMs=Date.now()){
-    const r=await this.pool.query(`select e.* from sag_athena_exclamation_events_v1 e
-      where e.system_name=$1 and e.ticker=$2 and e.expires_at_ms>$3 and e.status in ('CANDIDATE','QUALIFIED')
-        and not exists(
-          select 1 from sag_entries h
-          where h.system_name=e.system_name and h.concept_name='Athena Exclamation' and h.source_trade_id=e.id
-            and h.status in ('open','entry_pending','exit_pending','pending_recovery','closed')
-        )
-      order by e.created_at_ms desc limit 1`,[systemName,ticker,nowMs]);
+    const r=await this.pool.query(`select * from sag_athena_exclamation_events_v1 where system_name=$1 and ticker=$2 and expires_at_ms>$3 order by created_at_ms desc limit 1`,[systemName,ticker,nowMs]);
     const x=r.rows[0];
     return x?{id:x.id,systemName:x.system_name,ticker:x.ticker,eventTicker:x.event_ticker,status:x.status,createdAtMs:n(x.created_at_ms),firstVoteAtMs:n(x.first_vote_at_ms),thirdVoteAtMs:n(x.third_vote_at_ms),expiresAtMs:n(x.expires_at_ms),convergenceSpanMs:n(x.convergence_span_ms),saintCount:n(x.saint_count),saints:x.saints||[],combination:x.combination||[],review:x.review||null,entryId:x.entry_id,decidedAtMs:x.decided_at_ms==null?null:n(x.decided_at_ms)}:null;
   }
@@ -827,6 +816,8 @@ export class Database {
   async openHunterEntries(systemName){const r=await this.pool.query("select * from sag_entries where system_name=$1 and archived=false and concept_name = any($2::text[]) and status in ('open','entry_pending','exit_pending','pending_recovery') order by opened_at_ms asc",[systemName,PORTFOLIO_CONCEPT_NAMES]);return r.rows.map(rowEntry);}
   async openHunterEntriesByTicker(systemName,ticker){const r=await this.pool.query("select * from sag_entries where system_name=$1 and ticker=$2 and archived=false and concept_name = any($3::text[]) and status in ('open','entry_pending','exit_pending','pending_recovery') order by opened_at_ms asc",[systemName,ticker,PORTFOLIO_CONCEPT_NAMES]);return r.rows.map(rowEntry);}
   async openFeederEntries(systemName){const r=await this.pool.query("select * from sag_entries where system_name=$1 and archived=false and concept_name = any($2::text[]) and status in ('open','entry_pending','exit_pending','pending_recovery') order by opened_at_ms asc",[systemName,FEEDER_CONCEPT_NAMES]);return r.rows.map(rowEntry);}
+  async entriesByConcept(systemName,conceptName,{limit=200,includeArchived=false}={}){const lim=Math.max(1,Math.min(2000,Math.floor(Number(limit)||200)));const r=await this.pool.query(`select * from sag_entries where system_name=$1 and concept_name=$2 ${includeArchived?'':'and archived=false'} order by opened_at_ms desc limit $3`,[String(systemName),String(conceptName),lim]);return r.rows.map(rowEntry);}
+  async entryByConceptSourceTradeId(systemName,conceptName,sourceTradeId){const r=await this.pool.query('select * from sag_entries where system_name=$1 and concept_name=$2 and source_trade_id=$3 and archived=false order by opened_at_ms desc limit 1',[String(systemName),String(conceptName),String(sourceTradeId)]);return r.rows[0]?rowEntry(r.rows[0]):null;}
   async liveOpenHunterEntries(ownerId){const r=await this.pool.query("select * from sag_entries where owner_id=$1 and archived=false and concept_name = any($2::text[]) and mode='LIVE' and status in ('open','entry_pending','exit_pending','pending_recovery') order by opened_at_ms asc",[ownerId,PORTFOLIO_CONCEPT_NAMES]);return r.rows.map(rowEntry);}
   async entryById(id){const r=await this.pool.query('select * from sag_entries where id=$1',[id]);return r.rows[0]?rowEntry(r.rows[0]):null;}
   async recentClosed(systemName,limit=500){const r=await this.pool.query("select * from sag_entries where system_name=$1 and archived=false and status='closed' order by closed_at_ms desc nulls last limit $2",[systemName,limit]);return r.rows.map(rowEntry);}
