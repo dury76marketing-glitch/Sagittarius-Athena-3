@@ -517,7 +517,7 @@ export class SagittariusEngine {
       const parentExit=Number(parentEntry.exitPriceCents||0);
       const parentEntryPx=Number(parentEntry.entryPriceCents||0);
       const handoffAsk=Number(q.yesAsk||0),handoffBid=Number(q.yesBid||0);
-      const gate=scarletHandoffGate({soulEnabled:s.athenaSoulEnabled===true,parentEntryCents:parentEntryPx,parentExitCents:parentExit,askCents:handoffAsk});
+      const gate=scarletHandoffGate({soulEnabled:s.athenaSoulEnabled===true,parentEntryCents:parentEntryPx,parentExitCents:parentExit,askCents:handoffAsk,maxParentBounceCents:s.scarletHandoffMaxParentBounceCents});
       if(!gate.ok)return terminal(gate.reason,{parentEntryPriceCents:parentEntryPx,parentExitPriceCents:parentExit,askCents:handoffAsk,bidCents:handoffBid,bounceCents:gate.bounceCents});
       if(handoffBid>handoffAsk)return terminal('handoff_not_still_up',{parentExitPriceCents:parentExit,askCents:handoffAsk,bidCents:handoffBid});
       stats.attempted+=1;record('ATTEMPTED',{authorizationId,repeatIndex,maxRepeats,rootEntryId,bidCents:Number(q.yesBid||0),askCents:Number(q.yesAsk||0)});

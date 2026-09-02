@@ -58,7 +58,7 @@ export const ATHENA_EXCLAMATION = Object.freeze({
 
 export const SCARLET_NEEDLE = Object.freeze({
   version:'SCARLET-NEEDLE-V2',
-  policyRevision:'SN2-R2-POST-INFINITY-HANDOFF-50-99',
+  policyRevision:'SN2-R3-HANDOFF-COMPLETE-12',
   role:'post_profit_same_ticker_continuation_attack',
   trigger:'POST_PROFIT_INFINITY_CLOSE',
   triggerRequiresPositiveRealizedNet:true,
@@ -73,7 +73,7 @@ export const SCARLET_NEEDLE = Object.freeze({
   handoffMaxCents:99,
   handoffRequiresBidAtOrAboveParentExit:true,
   handoffRequiresAskAboveParentExit:true,
-  handoffMaxParentBounceCents:8,
+  handoffMaxParentBounceCents:12,
   handoffInfinityNetPerContractCents:1,
   sourceDoesNotAuthorizeEntry:true,
   strategicEntryAuthority:'SCARLET_NEEDLE_POST_PROFIT_CONTINUATION',
@@ -82,16 +82,17 @@ export const SCARLET_NEEDLE = Object.freeze({
   noPostEntryTimeExit:true,
 });
 
-export function scarletHandoffGate({soulEnabled=false,parentEntryCents=0,parentExitCents=0,askCents=0}={}){
+export function scarletHandoffGate({soulEnabled=false,parentEntryCents=0,parentExitCents=0,askCents=0,maxParentBounceCents=null}={}){
   if(soulEnabled!==true)return{ok:true,reason:'soul_off'};
   const entry=Math.round(Number(parentEntryCents)||0);
   const exit=Math.round(Number(parentExitCents)||0);
   const ask=Math.round(Number(askCents)||0);
   const bounce=exit-entry;
+  const cap=Math.max(4,Math.min(20,Math.round(Number(maxParentBounceCents!=null?maxParentBounceCents:SCARLET_NEEDLE.handoffMaxParentBounceCents)||12)));
   if(!(exit>0)||!(ask>0))return{ok:false,reason:'handoff_not_still_up',bounceCents:bounce};
-  if(bounce>=Number(SCARLET_NEEDLE.handoffMaxParentBounceCents||8))return{ok:false,reason:'handoff_parent_bounce_complete',bounceCents:bounce};
+  if(bounce>=cap)return{ok:false,reason:'handoff_parent_bounce_complete',bounceCents:bounce,completeAtCents:cap};
   if(SCARLET_NEEDLE.handoffRequiresAskAboveParentExit===true&&!(ask>exit))return{ok:false,reason:'handoff_not_still_up',bounceCents:bounce};
-  return{ok:true,reason:'handoff_still_open',bounceCents:bounce};
+  return{ok:true,reason:'handoff_still_open',bounceCents:bounce,completeAtCents:cap};
 }
 
 

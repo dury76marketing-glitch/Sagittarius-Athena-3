@@ -86,6 +86,7 @@ export const CANONICAL_NUMERIC_SETTINGS = Object.freeze([
   'scarletNeedleMinEntryCents',
   'scarletNeedleMaxEntryCents',
   'scarletNeedleMaxRepeats',
+  'scarletHandoffMaxParentBounceCents',
   'justiceArrowStakeCents',
   'justiceArrowMinEntryCents',
   'justiceArrowMaxEntryCents',
@@ -199,6 +200,7 @@ export function originalSettings() {
     scarletNeedleMinEntryCents: 10,
     scarletNeedleMaxEntryCents: 89,
     scarletNeedleMaxRepeats: 1,
+    scarletHandoffMaxParentBounceCents: 12,
     justiceArrowStakeCents: 20000,
     justiceArrowMinEntryCents: 10,
     justiceArrowMaxEntryCents: 89,
@@ -288,6 +290,7 @@ export function freshInstallSettings() {
     scarletNeedleMinEntryCents:56,
     scarletNeedleMaxEntryCents:99,
     scarletNeedleMaxRepeats:1,
+    scarletHandoffMaxParentBounceCents:12,
     justiceArrowStakeCents:20000,
     justiceArrowMinEntryCents:80,
     justiceArrowMaxEntryCents:89,
@@ -379,6 +382,7 @@ export function sanitizeRuntimeSettings(value = {}, defaults = originalSettings(
   out.infinityBreakConfirmationWindowMs = Math.max(250, Math.floor(Number(out.infinityBreakConfirmationWindowMs) || 250));
   out.auroraDamageControlPercent = Math.max(1, Math.min(95, Number(out.auroraDamageControlPercent) || 45));
   out.scarletNeedleMaxRepeats = Math.max(0, Math.min(100, Math.floor(Number(out.scarletNeedleMaxRepeats) || 0)));
+  out.scarletHandoffMaxParentBounceCents = Math.max(4, Math.min(20, Math.floor(Number(out.scarletHandoffMaxParentBounceCents) || 12)));
   out.lightningPlasmaMaxStrikes = Math.max(1, Math.floor(Number(out.lightningPlasmaMaxStrikes) || 1));
   // R63 simulation/live parity: persisted legacy probabilities are neutralized.
   // SIM still requires fresh executable depth and may fill partially, but never

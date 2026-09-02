@@ -449,13 +449,15 @@ test('Soul ledger hydrates after a blank restart',()=>{
   assert.equal(b.snapshot().stories[0].ticker,'P');
 });
 
-test('Scarlet skips a finished 8c bounce and only rides a small print that is still up',()=>{
-  const bru=scarletHandoffGate({soulEnabled:true,parentEntryCents:56,parentExitCents:66,askCents:67});
-  assert.equal(bru.ok,false);assert.equal(bru.reason,'handoff_parent_bounce_complete');
+test('Scarlet skips a finished 12c bounce and rides a short Infinity that is still up',()=>{
+  const done=scarletHandoffGate({soulEnabled:true,parentEntryCents:80,parentExitCents:92,askCents:93});
+  assert.equal(done.ok,false);assert.equal(done.reason,'handoff_parent_bounce_complete');
+  const short=scarletHandoffGate({soulEnabled:true,parentEntryCents:60,parentExitCents:69,askCents:70});
+  assert.equal(short.ok,true);assert.equal(short.reason,'handoff_still_open');
   const late=scarletHandoffGate({soulEnabled:true,parentEntryCents:81,parentExitCents:86,askCents:86});
   assert.equal(late.ok,false);assert.equal(late.reason,'handoff_not_still_up');
   const ride=scarletHandoffGate({soulEnabled:true,parentEntryCents:81,parentExitCents:86,askCents:87});
   assert.equal(ride.ok,true);
-  const off=scarletHandoffGate({soulEnabled:false,parentEntryCents:56,parentExitCents:66,askCents:67});
+  const off=scarletHandoffGate({soulEnabled:false,parentEntryCents:80,parentExitCents:92,askCents:93});
   assert.equal(off.ok,true);
 });

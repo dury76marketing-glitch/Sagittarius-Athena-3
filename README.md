@@ -1,3 +1,5 @@
+SAGITTARIUS-R71-SOUL-G-SCARLET-12 — Chapter 2 Scarlet may follow a short Infinity (<12c parent bounce) if the tape is still above the parent exit. One repeat. Finished 12c+ stories stay closed.
+
 # SAGITTARIUS R63 — GEMINI / ANOTHER DIMENSION / LIVE-PARITY EXECUTION
 
 Release: `SAGITTARIUS-R63-GEMINI-ANOTHER-DIMENSION-LIVE-PARITY-2026-08-31`
